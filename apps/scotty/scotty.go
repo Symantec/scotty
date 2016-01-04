@@ -74,6 +74,7 @@ type lmmHandlerType struct {
 	timeSpentWritingDist    *tricorder.Distribution
 	timeSpentCollectingDist *tricorder.Distribution
 	totalTimeSpentDist      *tricorder.Distribution
+	perBatchWriteDist       *tricorder.Distribution
 	ttWriter                *timeTakenLmmWriter
 	startTime               time.Time
 	// Protects all fields below
@@ -89,6 +90,7 @@ func newLmmHandler(w lmmWriterType) *lmmHandlerType {
 		timeSpentWritingDist:    bucketer.NewDistribution(),
 		timeSpentCollectingDist: bucketer.NewDistribution(),
 		totalTimeSpentDist:      bucketer.NewDistribution(),
+		perBatchWriteDist:       bucketer.NewDistribution(),
 	}
 }
 
@@ -112,6 +114,7 @@ func (l *lmmHandlerType) StartVisit() {
 }
 
 func (l *lmmHandlerType) EndVisit() {
+	l.flush()
 	totalTimeSpent := time.Now().Sub(l.startTime)
 	l.timeSpentWritingDist.Add(l.ttWriter.TimeTaken)
 	l.totalTimeSpentDist.Add(totalTimeSpent)
@@ -139,24 +142,47 @@ func (l *lmmHandlerType) Visit(
 
 	// If we have enough values to write, write them out to LMM.
 	if len(l.toBeWritten) >= minLmmBatchSize {
-		if err := l.ttWriter.Write(l.toBeWritten); err != nil {
-			log.Fatal(err)
-		}
-		l.logWrite(len(l.toBeWritten))
-
-		// Reset toBeWritten saving on memory allocation
-		l.toBeWritten = l.toBeWritten[:0]
-
-		// We can close our session now that we have no Record
-		// pointers.
-		l.session.Close()
-		l.session = nil
+		l.flush()
 	}
 	l.logVisit()
 	return nil
 }
 
+func (l *lmmHandlerType) flush() {
+	// If we have no session, check that we have no records to be
+	// written and do nothing.
+	if l.session == nil {
+		if len(l.toBeWritten) > 0 {
+			panic("No session but metrics to be written to LMM")
+		}
+		return
+	}
+	// Part of flushing is closing the session
+	defer func() {
+		l.session.Close()
+		l.session = nil
+	}()
+	if len(l.toBeWritten) == 0 {
+		return
+	}
+	startTime := time.Now()
+	if err := l.ttWriter.Write(l.toBeWritten); err != nil {
+		log.Fatal(err)
+	}
+	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
+	l.logWrite(len(l.toBeWritten))
+
+	// Make toBeWritten be empty while saving on memory allocation
+	l.toBeWritten = l.toBeWritten[:0]
+
+}
+
 func (l *lmmHandlerType) RegisterMetrics() {
+	tricorder.RegisterMetric(
+		"writer/writeTimePerBatch",
+		l.perBatchWriteDist,
+		units.Millisecond,
+		"Time spent writing each batch")
 	tricorder.RegisterMetric(
 		"writer/timeSpentCollecting",
 		l.timeSpentCollectingDist,
@@ -255,7 +281,7 @@ type logger struct {
 }
 
 func newLogger() *logger {
-	bucketer := tricorder.NewGeometricBucketer(1e-4, 60.0)
+	bucketer := tricorder.NewGeometricBucketer(1e-4, 100.0)
 	return &logger{
 		statusMap:       make(map[collector.Status]int),
 		errorMap:        make(map[*collector.Machine]*messages.Error),
@@ -632,10 +658,6 @@ func newWriter() (lmmWriterType, error) {
 */
 
 func main() {
-	var sweepTime time.Time
-	var sweepDuration time.Duration
-	var writeTime time.Time
-	var writeDuration time.Duration
 	metricStore = store.New(60000, 1000)
 	if len(os.Args) < 2 {
 		log.Fatal("Need a file of hosts and ports")
@@ -680,26 +702,12 @@ func main() {
 	lmmHandler.RegisterMetrics()
 	logger := newLogger()
 	logger.RegisterMetrics()
-	tricorder.RegisterMetric(
-		"collector/sweepTime",
-		&sweepTime,
-		units.None,
-		"Sweep time")
+	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewDistribution()
 	tricorder.RegisterMetric(
 		"collector/sweepDuration",
-		&sweepDuration,
-		units.None,
+		sweepDurationDist,
+		units.Millisecond,
 		"Sweep duration")
-	tricorder.RegisterMetric(
-		"writer/writeTime",
-		&writeTime,
-		units.None,
-		"Write time")
-	tricorder.RegisterMetric(
-		"writer/writeDuration",
-		&writeDuration,
-		units.None,
-		"Write duration")
 	machines := make(map[string]*collector.Machine)
 	for i := 0; i < totalNumberOfMachines; i++ {
 		name, port := machineNameAndPort(i)
@@ -725,11 +733,12 @@ func main() {
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
 		for {
-			sweepTime = time.Now()
+			sweepTime := time.Now()
 			for _, machine := range machines {
 				machine.Poll(sweepTime)
 			}
-			sweepDuration = time.Now().Sub(sweepTime)
+			sweepDuration := time.Now().Sub(sweepTime)
+			sweepDurationDist.Add(sweepDuration)
 			if sweepDuration < time.Minute {
 				time.Sleep(time.Minute - sweepDuration)
 			}
@@ -742,11 +751,11 @@ func main() {
 	// accessing lmmHandler metrics is the one exception to this rule.
 	go func() {
 		for {
-			writeTime = time.Now()
+			writeTime := time.Now()
 			lmmHandler.StartVisit()
 			metricStore.VisitAllMachines(lmmHandler)
 			lmmHandler.EndVisit()
-			writeDuration = time.Now().Sub(writeTime)
+			writeDuration := time.Now().Sub(writeTime)
 			if writeDuration < time.Minute {
 				time.Sleep(time.Minute - writeDuration)
 			}

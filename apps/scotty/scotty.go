@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"flag"
 	"fmt"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lmm"
@@ -29,6 +30,14 @@ const (
 	aTopic                = "metricTopic"
 	minLmmBatchSize       = 1000
 	totalNumberOfMachines = 10000
+)
+
+var (
+	fBufferSizePerMachine int
+	fSpacingPerMachine    int
+	fHostFile             string
+	fPollCount            int
+	fConnectionCount      int
 )
 
 var (
@@ -658,25 +667,15 @@ func newWriter() (lmmWriterType, error) {
 */
 
 func main() {
-	metricStore = store.New(60000, 1000)
-	if len(os.Args) < 2 {
-		log.Fatal("Need a file of hosts and ports")
+	flag.Parse()
+	metricStore = store.New(fBufferSizePerMachine, fSpacingPerMachine)
+	if fPollCount > 0 {
+		collector.SetConcurrentPolls(fPollCount)
 	}
-	if len(os.Args) >= 4 {
-		x, _ := strconv.Atoi(os.Args[3])
-		if x < 1 {
-			log.Fatal("Need at least one polling goroutine")
-		}
-		collector.SetConcurrentPolls(x)
+	if fConnectionCount > 0 {
+		collector.SetConcurrentConnects(fConnectionCount)
 	}
-	if len(os.Args) >= 3 {
-		x, _ := strconv.Atoi(os.Args[2])
-		if x < 1 {
-			log.Fatal("Need at least one connecting goroutine")
-		}
-		collector.SetConcurrentConnects(x)
-	}
-	f, err := os.Open(os.Args[1])
+	f, err := os.Open(fHostFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -773,4 +772,32 @@ func main() {
 	if err := http.ListenAndServe(":8187", nil); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func init() {
+	flag.IntVar(
+		&fBufferSizePerMachine,
+		"buffer_size_per_machine",
+		60000,
+		"Buffer size per machine in records")
+	flag.IntVar(
+		&fSpacingPerMachine,
+		"spacing_per_machine",
+		1000,
+		"Space for new metrics for each machine in records")
+	flag.StringVar(
+		&fHostFile,
+		"host_file",
+		"hosts.txt",
+		"File containing all the nodes")
+	flag.IntVar(
+		&fPollCount,
+		"poll_count",
+		0,
+		"If specified, overrides the maximum number of concurrent polls")
+	flag.IntVar(
+		&fConnectionCount,
+		"connection_count",
+		0,
+		"If specified, overrides the maximum of concurrent connections")
 }

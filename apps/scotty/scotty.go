@@ -66,20 +66,29 @@ type lmmHandlerData struct {
 // includes at least minLmmBatchSize metrics.
 // lmmHandlerType is NOT threadsafe.
 type lmmHandlerType struct {
-	writer                lmmWriterType
-	lastValues            map[*collector.Machine]map[*store.MetricInfo]interface{}
-	lastValuesThisMachine map[*store.MetricInfo]interface{}
-	toBeWritten           []*store.Record
-	session               *store.Session
+	writer                  lmmWriterType
+	lastValues              map[*collector.Machine]map[*store.MetricInfo]interface{}
+	lastValuesThisMachine   map[*store.MetricInfo]interface{}
+	toBeWritten             []*store.Record
+	session                 *store.Session
+	timeSpentWritingDist    *tricorder.Distribution
+	timeSpentCollectingDist *tricorder.Distribution
+	totalTimeSpentDist      *tricorder.Distribution
+	ttWriter                *timeTakenLmmWriter
+	startTime               time.Time
 	// Protects all fields below
 	lock  sync.Mutex
 	stats lmmHandlerData
 }
 
 func newLmmHandler(w lmmWriterType) *lmmHandlerType {
+	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	return &lmmHandlerType{
-		writer:     w,
-		lastValues: make(map[*collector.Machine]map[*store.MetricInfo]interface{}),
+		writer:                  w,
+		lastValues:              make(map[*collector.Machine]map[*store.MetricInfo]interface{}),
+		timeSpentWritingDist:    bucketer.NewDistribution(),
+		timeSpentCollectingDist: bucketer.NewDistribution(),
+		totalTimeSpentDist:      bucketer.NewDistribution(),
 	}
 }
 
@@ -95,6 +104,18 @@ func (l *lmmHandlerType) Append(r *store.Record) bool {
 	l.lastValuesThisMachine[r.Info()] = r.Value()
 	l.toBeWritten = append(l.toBeWritten, r)
 	return true
+}
+
+func (l *lmmHandlerType) StartVisit() {
+	l.ttWriter = &timeTakenLmmWriter{Writer: l.writer}
+	l.startTime = time.Now()
+}
+
+func (l *lmmHandlerType) EndVisit() {
+	totalTimeSpent := time.Now().Sub(l.startTime)
+	l.timeSpentWritingDist.Add(l.ttWriter.TimeTaken)
+	l.totalTimeSpentDist.Add(totalTimeSpent)
+	l.timeSpentCollectingDist.Add(totalTimeSpent - l.ttWriter.TimeTaken)
 }
 
 func (l *lmmHandlerType) Visit(
@@ -118,7 +139,7 @@ func (l *lmmHandlerType) Visit(
 
 	// If we have enough values to write, write them out to LMM.
 	if len(l.toBeWritten) >= minLmmBatchSize {
-		if err := l.writer.Write(l.toBeWritten); err != nil {
+		if err := l.ttWriter.Write(l.toBeWritten); err != nil {
 			log.Fatal(err)
 		}
 		l.logWrite(len(l.toBeWritten))
@@ -136,6 +157,21 @@ func (l *lmmHandlerType) Visit(
 }
 
 func (l *lmmHandlerType) RegisterMetrics() {
+	tricorder.RegisterMetric(
+		"writer/timeSpentCollecting",
+		l.timeSpentCollectingDist,
+		units.Second,
+		"Time spent collecting metrics to write to Lmm per sweep")
+	tricorder.RegisterMetric(
+		"writer/timeSpentWriting",
+		l.timeSpentWritingDist,
+		units.Second,
+		"Time spent writing metrics to Lmm per sweep")
+	tricorder.RegisterMetric(
+		"writer/totalTimeSpent",
+		l.totalTimeSpentDist,
+		units.Second,
+		"total time spent per sweep")
 	var data lmmHandlerData
 	region := tricorder.RegisterRegion(func() { l.collectData(&data) })
 	tricorder.RegisterMetricInRegion(
@@ -220,11 +256,10 @@ type logger struct {
 
 func newLogger() *logger {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 60.0)
-	collectionTimes := bucketer.NewDistribution()
 	return &logger{
 		statusMap:       make(map[collector.Status]int),
 		errorMap:        make(map[*collector.Machine]*messages.Error),
-		collectionTimes: collectionTimes}
+		collectionTimes: bucketer.NewDistribution()}
 }
 
 func (l *logger) LogStateChange(
@@ -551,6 +586,18 @@ func (h byMachineHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
+type timeTakenLmmWriter struct {
+	Writer    lmmWriterType
+	TimeTaken time.Duration
+}
+
+func (t *timeTakenLmmWriter) Write(records []*store.Record) error {
+	start := time.Now()
+	result := t.Writer.Write(records)
+	t.TimeTaken += time.Now().Sub(start)
+	return result
+}
+
 // A fake lmmWriter implementation. This fake simply stalls 50ms with each
 // write.
 type stallLmmWriter struct {
@@ -696,7 +743,9 @@ func main() {
 	go func() {
 		for {
 			writeTime = time.Now()
+			lmmHandler.StartVisit()
 			metricStore.VisitAllMachines(lmmHandler)
+			lmmHandler.EndVisit()
 			writeDuration = time.Now().Sub(writeTime)
 			if writeDuration < time.Minute {
 				time.Sleep(time.Minute - writeDuration)

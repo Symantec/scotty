@@ -210,6 +210,7 @@ type collectorData struct {
 // logger implements the scotty.Logger interface
 // keeping track of collection statistics
 type logger struct {
+	collectionTimes    *tricorder.Distribution
 	lock               sync.Mutex
 	statusMap          map[collector.Status]int
 	errorMap           map[*collector.Machine]*messages.Error
@@ -217,13 +218,20 @@ type logger struct {
 }
 
 func newLogger() *logger {
+	bucketer := tricorder.NewGeometricBucketer(1e-4, 60.0)
+	collectionTimes := bucketer.NewDistribution()
 	return &logger{
-		statusMap: make(map[collector.Status]int),
-		errorMap:  make(map[*collector.Machine]*messages.Error)}
+		statusMap:       make(map[collector.Status]int),
+		errorMap:        make(map[*collector.Machine]*messages.Error),
+		collectionTimes: collectionTimes}
 }
 
 func (l *logger) LogStateChange(
 	m *collector.Machine, oldS, newS *collector.State) {
+	if newS.Status() == collector.Synced {
+		l.collectionTimes.Add(
+			newS.TimeSpentConnecting() + newS.TimeSpentPolling() + newS.TimeSpentWaitingToConnect() + newS.TimeSpentWaitingToPoll())
+	}
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	if oldS != nil {
@@ -285,6 +293,11 @@ func (l *logger) LogResponse(
 }
 
 func (l *logger) RegisterMetrics() {
+	tricorder.RegisterMetric(
+		"collector/collectionTimes",
+		l.collectionTimes,
+		units.Second,
+		"Collection Times")
 	var data collectorData
 	region := tricorder.RegisterRegion(func() { l.collectData(&data) })
 	tricorder.RegisterMetricInRegion(

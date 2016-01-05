@@ -37,6 +37,9 @@ var (
 	fHostFile             string
 	fPollCount            int
 	fConnectionCount      int
+	fCollectionFrequency  time.Duration
+	fLmmUpdateFrequency   time.Duration
+	fLmmBatchSize         int
 )
 
 var (
@@ -71,7 +74,7 @@ type lmmHandlerData struct {
 // It stores the last value for each machine and metric it wrote to LMM so
 // that it can avoid writing the same value twice.
 // an lmmHandlerType instance buffers writes so that each write to LMM
-// includes at least minLmmBatchSize metrics.
+// includes at least fLmmBatchSize metrics.
 // lmmHandlerType is NOT threadsafe.
 type lmmHandlerType struct {
 	writer                  lmmWriterType
@@ -149,7 +152,7 @@ func (l *lmmHandlerType) Visit(
 	theStore.LatestByMachine(l.session, machineId, l)
 
 	// If we have enough values to write, write them out to LMM.
-	if len(l.toBeWritten) >= minLmmBatchSize {
+	if len(l.toBeWritten) >= fLmmBatchSize {
 		l.flush()
 	}
 	l.logVisit()
@@ -718,8 +721,8 @@ func main() {
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
-			if sweepDuration < time.Minute {
-				time.Sleep(time.Minute - sweepDuration)
+			if sweepDuration < fCollectionFrequency {
+				time.Sleep(fCollectionFrequency - sweepDuration)
 			}
 		}
 	}()
@@ -735,8 +738,8 @@ func main() {
 			metricStore.VisitAllMachines(lmmHandler)
 			lmmHandler.EndVisit()
 			writeDuration := time.Now().Sub(writeTime)
-			if writeDuration < time.Minute {
-				time.Sleep(time.Minute - writeDuration)
+			if writeDuration < fLmmUpdateFrequency {
+				time.Sleep(fLmmUpdateFrequency - writeDuration)
 			}
 		}
 	}()
@@ -780,4 +783,19 @@ func init() {
 		"connection_count",
 		0,
 		"If specified, overrides the maximum of concurrent connections")
+	flag.DurationVar(
+		&fCollectionFrequency,
+		"collection_frequency",
+		30*time.Second,
+		"Amount of time between metric collections")
+	flag.DurationVar(
+		&fLmmUpdateFrequency,
+		"lmm_update_frequency",
+		30*time.Second,
+		"Amount of time between writing newest metrics to lmm")
+	flag.IntVar(
+		&fLmmBatchSize,
+		"lmm_batch_size",
+		1000,
+		"Batch to write at least this many records to Lmm")
 }

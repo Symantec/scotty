@@ -650,6 +650,7 @@ func newWriter() (lmmWriterType, error) {
 }
 
 func main() {
+	tricorder.RegisterFlags()
 	flag.Parse()
 	metricStore = store.New(fBufferSizePerMachine, fSpacingPerMachine)
 	collector.SetConcurrentPolls(fPollCount)

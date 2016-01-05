@@ -652,12 +652,8 @@ func newWriter() (lmmWriterType, error) {
 func main() {
 	flag.Parse()
 	metricStore = store.New(fBufferSizePerMachine, fSpacingPerMachine)
-	if fPollCount > 0 {
-		collector.SetConcurrentPolls(fPollCount)
-	}
-	if fConnectionCount > 0 {
-		collector.SetConcurrentConnects(fConnectionCount)
-	}
+	collector.SetConcurrentPolls(fPollCount)
+	collector.SetConcurrentConnects(fConnectionCount)
 	f, err := os.Open(fHostFile)
 	if err != nil {
 		log.Fatal(err)
@@ -776,13 +772,13 @@ func init() {
 	flag.IntVar(
 		&fPollCount,
 		"poll_count",
-		0,
-		"If specified, overrides the maximum number of concurrent polls")
+		collector.ConcurrentPolls(),
+		"Maximum number of concurrent polls")
 	flag.IntVar(
 		&fConnectionCount,
 		"connection_count",
-		0,
-		"If specified, overrides the maximum of concurrent connections")
+		collector.ConcurrentConnects(),
+		"Maximum number of concurrent connections")
 	flag.DurationVar(
 		&fCollectionFrequency,
 		"collection_frequency",

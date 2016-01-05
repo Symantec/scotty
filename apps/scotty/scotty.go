@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	collector "github.com/Symantec/scotty"
@@ -17,6 +18,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"sort"
@@ -49,6 +51,10 @@ var (
 	metricStore  *store.Store
 )
 
+var (
+	aWriteError = errors.New("A bad write error.")
+)
+
 func machineNameAndPort(i int) (name string, port int) {
 	length := len(machineNames)
 	return fmt.Sprintf(
@@ -65,9 +71,11 @@ type lmmWriterType interface {
 
 // metrics for lmmHandlerType instances
 type lmmHandlerData struct {
-	MetricsWritten  int64
-	WriteCount      int64
-	MachinesVisited int64
+	MetricsWritten   int64
+	WriteAttempts    int64
+	SuccessfulWrites int64
+	LastWriteError   string
+	MachinesVisited  int64
 }
 
 // lmmHandlerType implements store.Visitor.
@@ -179,10 +187,11 @@ func (l *lmmHandlerType) flush() {
 	}
 	startTime := time.Now()
 	if err := l.ttWriter.Write(l.toBeWritten); err != nil {
-		log.Fatal(err)
+		l.logWriteError(err)
+	} else {
+		l.logWrite(len(l.toBeWritten))
 	}
 	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
-	l.logWrite(len(l.toBeWritten))
 
 	// Make toBeWritten be empty while saving on memory allocation
 	l.toBeWritten = l.toBeWritten[:0]
@@ -219,11 +228,31 @@ func (l *lmmHandlerType) RegisterMetrics() {
 		units.None,
 		"Number of metrics written to LMM")
 	tricorder.RegisterMetricInRegion(
-		"writer/writeCount",
-		&data.WriteCount,
+		"writer/writeAttempts",
+		&data.WriteAttempts,
 		region,
 		units.None,
-		"Number of metrics written to LMM")
+		"Number of attempts to write to LMM")
+	tricorder.RegisterMetricInRegion(
+		"writer/successfulWrites",
+		&data.SuccessfulWrites,
+		region,
+		units.None,
+		"Number of successful writes to LMM")
+	tricorder.RegisterMetricInRegion(
+		"writer/successfulWriteRatio",
+		func() float64 {
+			return float64(data.SuccessfulWrites) / float64(data.WriteAttempts)
+		},
+		region,
+		units.None,
+		"Ratio of successful writes to write attempts")
+	tricorder.RegisterMetricInRegion(
+		"writer/lastWriteError",
+		&data.LastWriteError,
+		region,
+		units.None,
+		"Last write error")
 	tricorder.RegisterMetricInRegion(
 		"writer/machinesVisited",
 		&data.MachinesVisited,
@@ -241,18 +270,26 @@ func (l *lmmHandlerType) RegisterMetrics() {
 	tricorder.RegisterMetricInRegion(
 		"writer/averageMetricsPerBatch",
 		func() float64 {
-			return float64(data.MetricsWritten) / float64(data.WriteCount)
+			return float64(data.MetricsWritten) / float64(data.SuccessfulWrites)
 		},
 		region,
 		units.None,
-		"Average metrics written per machine per cycle.")
+		"Average metrics written per batch.")
 }
 
 func (l *lmmHandlerType) logWrite(numWritten int) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.stats.MetricsWritten += int64(numWritten)
-	l.stats.WriteCount++
+	l.stats.WriteAttempts++
+	l.stats.SuccessfulWrites++
+}
+
+func (l *lmmHandlerType) logWriteError(err error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	l.stats.WriteAttempts++
+	l.stats.LastWriteError = err.Error()
 }
 
 func (l *lmmHandlerType) logVisit() {
@@ -643,6 +680,9 @@ type stallLmmWriter struct {
 
 func (s stallLmmWriter) Write(records []*store.Record) error {
 	time.Sleep(50 * time.Millisecond)
+	if rand.Float64() < 0.01 {
+		return aWriteError
+	}
 	return nil
 }
 

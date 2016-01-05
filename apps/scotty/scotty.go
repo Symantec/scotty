@@ -40,6 +40,7 @@ var (
 	fCollectionFrequency  time.Duration
 	fLmmUpdateFrequency   time.Duration
 	fLmmBatchSize         int
+	fLmmEndpoints         []string
 )
 
 var (
@@ -646,27 +647,15 @@ func (s stallLmmWriter) Write(records []*store.Record) error {
 }
 
 func newWriter() (lmmWriterType, error) {
-	return stallLmmWriter{}, nil
-}
-
-// The *real* lmmWriter implementation is commented out here as it only works
-// on certain machines.
-/*
-func newWriter() (lmmWriterType, error) {
-	addresses := []string{
-		"192.168.9.36:9092",
-		"192.168.9.9:9092",
-		"192.168.9.20:9092",
-		"192.168.9.22:9092",
-		"192.168.9.24:9092",
+	if len(fLmmEndpoints) == 0 {
+		return stallLmmWriter{}, nil
 	}
 	return lmm.NewWriter(
 		aTopic,
 		"8afeb90e049741a8a044c905bb6f3275",
 		"afe5e75b-5e29-4f0d-994c-be36dbf54f94",
-		addresses)
+		fLmmEndpoints)
 }
-*/
 
 func main() {
 	tricorder.RegisterFlags()
@@ -773,7 +762,26 @@ func main() {
 	}
 }
 
+type flagStringListType []string
+
+func (f flagStringListType) String() string {
+	return strings.Join(f, ",")
+}
+
+func (f *flagStringListType) Set(s string) error {
+	*f = strings.Split(s, ",")
+	return nil
+}
+
+func (f flagStringListType) Get() interface{} {
+	return ([]string)(f)
+}
+
 func init() {
+	flag.Var(
+		(*flagStringListType)(&fLmmEndpoints),
+		"lmm_endpoints",
+		"Host and port of each LMM endpoint")
 	flag.IntVar(
 		&fBufferSizePerMachine,
 		"buffer_size_per_machine",

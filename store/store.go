@@ -108,12 +108,10 @@ func (r *readerLockType) lock() {
 	r.readers++
 }
 
-type appendToSliceType struct {
-	result *[]*Record
-}
+type recordListType []*Record
 
-func (a appendToSliceType) Append(r *Record) bool {
-	*a.result = append(*a.result, r)
+func (l *recordListType) Append(r *Record) bool {
+	*l = append(*l, r)
 	return true
 }
 

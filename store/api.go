@@ -111,7 +111,7 @@ type Appender interface {
 // to result. Note that the Append method of returned Appender always
 // returns true
 func AppendTo(result *[]*Record) Appender {
-	return appendToSliceType{result}
+	return (*recordListType)(result)
 }
 
 // Visitor visits machines registered with a Store instance.

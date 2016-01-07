@@ -421,11 +421,35 @@ func (c *circularBufferType) readerLock(tail int64) *readerLockType {
 	return &c.readerLocks[(tail/c.lockChunkSize)%2]
 }
 
-func (s *Store) registerMachine(machineId *scotty.Machine) {
-	if s.buffers[machineId] != nil {
+func (b *Builder) registerMachine(machineId *scotty.Machine) {
+	if b.buffers[machineId] != nil {
 		panic("Machine already registered")
 	}
-	s.buffers[machineId] = newCircularBufferType(s.bufferSizePerMachine, s.spacingPerMachine)
+	var buffer *circularBufferType
+	if b.prevStore != nil {
+		buffer = b.prevStore.buffers[machineId]
+	}
+	if buffer == nil {
+		buffer = newCircularBufferType(b.bufferSizePerMachine, b.spacingPerMachine)
+	}
+	b.buffers[machineId] = buffer
+}
+
+func (b *Builder) build() *Store {
+	buffers := b.buffers
+	b.buffers = nil
+	return &Store{
+		buffers:              buffers,
+		bufferSizePerMachine: b.bufferSizePerMachine,
+		spacingPerMachine:    b.spacingPerMachine}
+}
+
+func (s *Store) newBuilder() *Builder {
+	return &Builder{
+		buffers:              make(map[*scotty.Machine]*circularBufferType),
+		bufferSizePerMachine: s.bufferSizePerMachine,
+		spacingPerMachine:    s.spacingPerMachine,
+		prevStore:            s}
 }
 
 func (s *Store) add(

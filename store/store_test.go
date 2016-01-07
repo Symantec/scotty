@@ -13,14 +13,15 @@ import (
 )
 
 var (
-	kMachine0 = scotty.NewMachine("host1", 1001, nil)
-	kMachine1 = scotty.NewMachine("host2", 1002, nil)
+	kMachine0 = scotty.NewMachine("host1", 1001)
+	kMachine1 = scotty.NewMachine("host2", 1002)
 	kError    = errors.New("An error")
 )
 
 func TestBlockingWrite(t *testing.T) {
-	aStore := store.New(8, 3)
-	aStore.RegisterMachine(kMachine0)
+	builder := store.NewBuilder(8, 3)
+	builder.RegisterMachine(kMachine0)
+	aStore := builder.Build()
 
 	aMetric := messages.Metric{
 		Path:        "/foo/bar",
@@ -115,17 +116,19 @@ func (e *errVisitor) Visit(
 }
 
 func TestVisitorError(t *testing.T) {
-	aStore := store.New(7, 3)
-	aStore.RegisterMachine(kMachine0)
-	aStore.RegisterMachine(kMachine1)
+	builder := store.NewBuilder(7, 3)
+	builder.RegisterMachine(kMachine0)
+	builder.RegisterMachine(kMachine1)
+	aStore := builder.Build()
 	var ev errVisitor
 	assertValueEquals(t, kError, aStore.VisitAllMachines(&ev))
 }
 
 func TestAggregateAppenderAndVisitor(t *testing.T) {
-	aStore := store.New(7, 3)
-	aStore.RegisterMachine(kMachine0)
-	aStore.RegisterMachine(kMachine1)
+	builder := store.NewBuilder(7, 3)
+	builder.RegisterMachine(kMachine0)
+	builder.RegisterMachine(kMachine1)
+	aStore := builder.Build()
 
 	aMetric := messages.Metric{
 		Path:        "/foo/bar",
@@ -171,9 +174,10 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 }
 
 func TestByNameAndMachineAndMachine(t *testing.T) {
-	aStore := store.New(7, 1)
-	aStore.RegisterMachine(kMachine0)
-	aStore.RegisterMachine(kMachine1)
+	builder := store.NewBuilder(7, 1)
+	builder.RegisterMachine(kMachine0)
+	builder.RegisterMachine(kMachine1)
+	aStore := builder.Build()
 
 	var result []*store.Record
 	session := aStore.NewSession()

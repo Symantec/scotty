@@ -121,6 +121,44 @@ type Visitor interface {
 	Visit(store *Store, machine *scotty.Machine) error
 }
 
+type Builder struct {
+	buffers              map[*scotty.Machine]*circularBufferType
+	bufferSizePerMachine int
+	spacingPerMachine    int
+	prevStore            *Store
+}
+
+// NewBuilder creates a new store builder.
+// bufferSizePerMachine is the fixed size of each circular buffer as
+// number of records.
+// spacingPerMachine is the minimum amount of space allowed between the
+// head and tail of each circular buffer as number of records.
+// Therefore each circular buffer can store at most
+// bufferSizePerMachine - spacingPerMachine records.
+// NewBuilder panics if spacingPerMachine < 1 or
+// spacingPerMachine >= bufferSizePerMachine.
+func NewBuilder(bufferSizePerMachine, spacingPerMachine int) *Builder {
+	if spacingPerMachine < 1 || spacingPerMachine >= bufferSizePerMachine-2 {
+		panic("spacingPerMachine must be at least 1 and less than bufferSizePerMachine-2.")
+	}
+	return &Builder{
+		buffers:              make(map[*scotty.Machine]*circularBufferType),
+		bufferSizePerMachine: bufferSizePerMachine,
+		spacingPerMachine:    spacingPerMachine,
+	}
+}
+
+// RegisterMachine registers a machine with the store being built.
+// RegisterMachine panics if machine is already registered.
+func (b *Builder) RegisterMachine(machineId *scotty.Machine) {
+	b.registerMachine(machineId)
+}
+
+// Build returns the built store and destroys this builder.
+func (b *Builder) Build() *Store {
+	return b.build()
+}
+
 // Store is an in memory store of metrics.
 // For maximum write concurrency, store is a collection of circular buffers,
 // one per machine. Client must register all the machines with the Store
@@ -131,36 +169,15 @@ type Store struct {
 	spacingPerMachine    int
 }
 
-// NewStore creates a new store.
-// bufferSizePerMachine is the fixed size of each circular buffer as
-// number of records.
-// spacingPerMachine is the minimum amount of space allowed between the
-// head and tail of each circular buffer as number of records.
-// Therefore each circular buffer can store at most
-// bufferSizePerMachine - spacingPerMachine records.
-// New panics if spacingPerMachine < 1 or
-// spacingPerMachine >= bufferSizePerMachine.
-func New(bufferSizePerMachine, spacingPerMachine int) *Store {
-	if spacingPerMachine < 1 || spacingPerMachine >= bufferSizePerMachine-2 {
-		panic("spacingPerMachine must be at least 1 and less than bufferSizePerMachine-2.")
-	}
-	return &Store{
-		buffers:              make(map[*scotty.Machine]*circularBufferType),
-		bufferSizePerMachine: bufferSizePerMachine,
-		spacingPerMachine:    spacingPerMachine,
-	}
-}
-
 // NewSession creates an opened session for reading data from this instance.
 func (s *Store) NewSession() *Session {
 	return &Session{readerLocks: make(map[*readerLockType]bool)}
 }
 
-// RegisterMachine registers a machine with this Store instance.
-// RegisterMachine panics if machine is already registered.
-// Caller must register all machines before adding any metrics.
-func (s *Store) RegisterMachine(machineId *scotty.Machine) {
-	s.registerMachine(machineId)
+// NewBuilder returns a Builder for creating a new store when the
+// active machines change.
+func (s *Store) NewBuilder() *Builder {
+	return s.newBuilder()
 }
 
 // Add adds a metric value to this store. Add only stores a metric value

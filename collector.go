@@ -100,20 +100,19 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 }
 
 func newMachine(
-	host string, port int, logger Logger) *Machine {
+	host string, port int) *Machine {
 	return &Machine{
 		host:           host,
 		port:           port,
-		logger:         logger,
 		onePollAtATime: make(chan bool, 1),
 	}
 }
 
-func (m *Machine) poll(sweepStartTime time.Time) {
+func (m *Machine) poll(sweepStartTime time.Time, logger Logger) {
 	select {
 	case m.onePollAtATime <- true:
 		state := waitingToConnect(sweepStartTime)
-		m.logState(state)
+		m.logState(state, logger)
 		connectSemaphore <- true
 		go func(state *State) {
 			defer func() {
@@ -123,30 +122,30 @@ func (m *Machine) poll(sweepStartTime time.Time) {
 				<-connectSemaphore
 			}()
 			state = state.goToConnecting(time.Now())
-			m.logState(state)
+			m.logState(state, logger)
 			conn, err := m.connect()
 			if err != nil {
 				state = state.goToFailedToConnect(time.Now())
-				m.logError(err, state)
+				m.logError(err, state, logger)
 				return
 			}
 			defer conn.Close()
 			state = state.goToWaitingToPoll(time.Now())
-			m.logState(state)
+			m.logState(state, logger)
 			pollSemaphore <- true
 			defer func() {
 				<-pollSemaphore
 			}()
 			state = state.goToPolling(time.Now())
-			m.logState(state)
+			m.logState(state, logger)
 			metrics, err := m._poll(conn)
 			if err != nil {
 				state = state.goToFailedToPoll(time.Now())
-				m.logError(err, state)
+				m.logError(err, state, logger)
 				return
 			}
 			state = state.goToSynced(time.Now())
-			m.logMetrics(metrics, state)
+			m.logMetrics(metrics, state, logger)
 		}(state)
 	default:
 		return
@@ -166,35 +165,33 @@ func (m *Machine) _poll(conn *rpc.Client) (
 	return
 }
 
-func (m *Machine) logState(state *State) {
+func (m *Machine) logState(state *State, logger Logger) {
 	oldState := m._logState(state)
-	if m.logger != nil {
-		m.logger.LogStateChange(m, oldState, state)
+	if logger != nil {
+		logger.LogStateChange(m, oldState, state)
 	}
 }
 
-func (m *Machine) logMetrics(metrics messages.MetricList, state *State) {
+func (m *Machine) logMetrics(metrics messages.MetricList, state *State, logger Logger) {
 	oldState, hadError := m._setError(state, false)
-	if m.logger != nil {
-		m.logger.LogStateChange(m, oldState, state)
+	if logger != nil {
+		logger.LogStateChange(m, oldState, state)
 		if hadError {
-			m.logger.LogError(m, nil, nil)
+			logger.LogError(m, nil, nil)
 		}
-		m.logger.LogResponse(m, metrics, state)
+		logger.LogResponse(m, metrics, state)
 	}
 }
 
-func (m *Machine) logError(err error, state *State) {
+func (m *Machine) logError(err error, state *State, logger Logger) {
 	oldState, _ := m._setError(state, true)
-	if m.logger != nil {
-		m.logger.LogStateChange(m, oldState, state)
-		m.logger.LogError(m, err, state)
+	if logger != nil {
+		logger.LogStateChange(m, oldState, state)
+		logger.LogError(m, err, state)
 	}
 }
 
 func (m *Machine) _logState(state *State) *State {
-	m.lock.Lock()
-	defer m.lock.Unlock()
 	result := m.state
 	m.state = state
 	return result
@@ -202,8 +199,6 @@ func (m *Machine) _logState(state *State) *State {
 
 func (m *Machine) _setError(state *State, hasError bool) (
 	oldState *State, hadError bool) {
-	m.lock.Lock()
-	defer m.lock.Unlock()
 	oldState = m.state
 	hadError = m.errored
 	m.state = state

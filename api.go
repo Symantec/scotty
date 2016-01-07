@@ -3,7 +3,6 @@ package scotty
 
 import (
 	"github.com/Symantec/tricorder/go/tricorder/messages"
-	"sync"
 	"time"
 )
 
@@ -97,18 +96,15 @@ type Logger interface {
 type Machine struct {
 	host           string
 	port           int
-	logger         Logger
 	onePollAtATime chan bool
-	lock           sync.Mutex
 	state          *State
 	errored        bool
 }
 
 // NewMachine creates a new machine.
-// logger logs collection events for this machine
 func NewMachine(
-	hostname string, port int, logger Logger) *Machine {
-	return newMachine(hostname, port, logger)
+	hostname string, port int) *Machine {
+	return newMachine(hostname, port)
 }
 
 // HostName returns the host name of the machine.
@@ -126,8 +122,9 @@ func (m *Machine) Port() int {
 // requests for metrics are in progress. Poll returns immediately if this
 // instance is already in the process of collecting metrics.
 // sweepStartTime is the start time of the current collection of metrics.
-func (m *Machine) Poll(sweepStartTime time.Time) {
-	m.poll(sweepStartTime)
+// logger logs collection events for this polling
+func (m *Machine) Poll(sweepStartTime time.Time, logger Logger) {
+	m.poll(sweepStartTime, logger)
 }
 
 // SetConcurrentPolls sets the maximum number of concurrent polls.

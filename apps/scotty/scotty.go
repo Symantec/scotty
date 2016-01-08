@@ -10,6 +10,7 @@ import (
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lmm"
 	"github.com/Symantec/scotty/messages"
+	"github.com/Symantec/scotty/nodes"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
@@ -784,13 +785,29 @@ func newWriter() (result lmmWriterType, err error) {
 		config.Endpoints)
 }
 
-func updateMachines() {
+func updateMachines() error {
 	_, machines := gMachineNamesAndStore.Get()
 	machines = machines.Copy()
 	// TODO: update machines here with machines.AddIfAbsent
+	err := addMachines(machines)
+	if err != nil {
+		return err
+	}
 
 	// finally update the glboals
 	gMachineNamesAndStore.Update(machines)
+	return nil
+}
+
+func addMachines(machines machineNamesType) error {
+	machineNames, err := nodes.Get()
+	if err != nil {
+		return err
+	}
+	for _, name := range machineNames {
+		machines.AddIfAbsent(name, 6910)
+	}
+	return nil
 }
 
 func main() {
@@ -798,40 +815,45 @@ func main() {
 	flag.Parse()
 	collector.SetConcurrentPolls(fPollCount)
 	collector.SetConcurrentConnects(fConnectionCount)
-	f, err := os.Open(fHostFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-	var hostAndPort string
-	var machineNames []string
-	var machinePorts []int
-	_, err = fmt.Fscanln(f, &hostAndPort)
-	for ; err != io.EOF; _, err = fmt.Fscanln(f, &hostAndPort) {
-		if err != nil {
-			continue
-		}
-		splits := strings.SplitN(hostAndPort, ":", 2)
-		port, _ := strconv.Atoi(splits[1])
-		machineNames = append(machineNames, splits[0])
-		machinePorts = append(machinePorts, port)
-	}
-	fmt.Println(collector.ConcurrentPolls())
-	fmt.Println(collector.ConcurrentConnects())
+	firstMachines := make(machineNamesType)
+	realMachines := (fHostFile == "")
 	writer, err := newWriter()
 	if err != nil {
 		log.Fatal(err)
 	}
 	lmmHandler := newLmmHandler(writer)
-	firstMachines := make(machineNamesType)
-	for i := 0; i < totalNumberOfMachines; i++ {
-		name, port := machineNameAndPort(machineNames, machinePorts, i)
-		if i%1000 == 37 {
-			port = 7776
+	if !realMachines {
+		f, err := os.Open(fHostFile)
+		if err != nil {
+			log.Fatal(err)
 		}
-		firstMachines.AddIfAbsent(name, port)
+		defer f.Close()
+		var hostAndPort string
+		var machineNames []string
+		var machinePorts []int
+		_, err = fmt.Fscanln(f, &hostAndPort)
+		for ; err != io.EOF; _, err = fmt.Fscanln(f, &hostAndPort) {
+			if err != nil {
+				continue
+			}
+			splits := strings.SplitN(hostAndPort, ":", 2)
+			port, _ := strconv.Atoi(splits[1])
+			machineNames = append(machineNames, splits[0])
+			machinePorts = append(machinePorts, port)
+		}
+		for i := 0; i < totalNumberOfMachines; i++ {
+			name, port := machineNameAndPort(machineNames, machinePorts, i)
+			if i%1000 == 37 {
+				port = 7776
+			}
+			firstMachines.AddIfAbsent(name, port)
+		}
+	} else {
+		err := addMachines(firstMachines)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
-
 	tricorder.RegisterMetric(
 		"collector/collectionTimes",
 		gCollectionTimesDist,
@@ -939,7 +961,7 @@ func init() {
 	flag.StringVar(
 		&fHostFile,
 		"host_file",
-		"hosts.txt",
+		"",
 		"File containing all the nodes")
 	flag.IntVar(
 		&fPollCount,

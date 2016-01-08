@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	names, err := nodes.Get()
+	names, err := nodes.GetByCluster("ash1")
 	if err != nil {
 		log.Fatal(err)
 	}

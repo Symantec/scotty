@@ -27,6 +27,29 @@ const (
 	Synced
 )
 
+func (s Status) String() string {
+	switch s {
+	case Unknown:
+		return ""
+	case WaitingToConnect:
+		return "waiting to connect"
+	case Connecting:
+		return "connecting"
+	case WaitingToPoll:
+		return "waiting to poll"
+	case Polling:
+		return "polling"
+	case Synced:
+		return "synced"
+	case FailedToConnect:
+		return "failed to connect"
+	case FailedToPoll:
+		return "failed to poll"
+	default:
+		return ""
+	}
+}
+
 // State represents the state of collecting metrics from a machine.
 // State instances are immutable.
 type State struct {

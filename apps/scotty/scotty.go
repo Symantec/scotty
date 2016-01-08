@@ -8,6 +8,8 @@ import (
 	"flag"
 	"fmt"
 	collector "github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/apps/scotty/showallapps"
+	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lmm"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/nodes"
@@ -44,70 +46,17 @@ var (
 	fLmmUpdateFrequency   time.Duration
 	fLmmBatchSize         int
 	fLmmEndpoints         []string
+	fCluster              string
 )
 
 var (
-	gMachineNamesAndStore         machineNamesAndStoreType
+	gHostsPortsAndStore           datastructs.HostsPortsAndStore
 	gCollectionTimesDist          = tricorder.NewGeometricBucketer(1e-4, 100.0).NewDistribution()
 	gChangedMetricsPerMachineDist = tricorder.NewGeometricBucketer(1.0, 10000.0).NewDistribution()
 	gStatusCounts                 = newStatusCountType()
 	gConnectionErrors             = newConnectionErrorsType()
+	gApplicationStats             = datastructs.NewApplicationStatuses()
 )
-
-type machineNamesType map[string]*collector.Machine
-
-func (m machineNamesType) Copy() machineNamesType {
-	result := make(machineNamesType, len(m))
-	for key, value := range m {
-		result[key] = value
-	}
-	return result
-}
-
-func (m machineNamesType) AddIfAbsent(host string, port int) {
-	hostAndPort := fmt.Sprintf("%s:%d", host, port)
-	if m[hostAndPort] == nil {
-		m[hostAndPort] = collector.NewMachine(host, port)
-	}
-}
-
-func (m machineNamesType) UpdateBuilder(builder *store.Builder) {
-	for _, value := range m {
-		builder.RegisterMachine(value)
-	}
-}
-
-type machineNamesAndStoreType struct {
-	mutex sync.Mutex
-	store *store.Store
-	names machineNamesType
-}
-
-func (m *machineNamesAndStoreType) Get() (
-	s *store.Store, names machineNamesType) {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	return m.store, m.names
-}
-
-func (m *machineNamesAndStoreType) Init(sizePerMachine, spacingPerMachine int, names machineNamesType) {
-	m.update(names, store.NewBuilder(sizePerMachine, spacingPerMachine))
-}
-
-func (m *machineNamesAndStoreType) Update(names machineNamesType) {
-	oldStore, _ := m.Get()
-	m.update(names, oldStore.NewBuilder())
-}
-
-func (m *machineNamesAndStoreType) update(
-	names machineNamesType, builder *store.Builder) {
-	names.UpdateBuilder(builder)
-	newStore := builder.Build()
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-	m.names = names
-	m.store = newStore
-}
 
 type statusCountSnapshotType struct {
 	WaitingToConnectCount int
@@ -248,10 +197,12 @@ func (e *connectionErrorsType) Clear(m *collector.Machine) {
 }
 
 func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
-	result = make(messages.ErrorList, 0)
 	e.lock.Lock()
+	result = make(messages.ErrorList, len(e.errorMap))
+	idx := 0
 	for machine := range e.errorMap {
-		result = append(result, e.errorMap[machine])
+		result[idx] = e.errorMap[machine]
+		idx++
 	}
 	e.lock.Unlock()
 	sort.Sort(byHostName(result))
@@ -534,6 +485,7 @@ func (l *loggerType) LogStateChange(
 	} else {
 		gStatusCounts.Update(collector.Unknown, newS.Status())
 	}
+	gApplicationStats.Update(m, newS)
 }
 
 func (l *loggerType) LogError(m *collector.Machine, err error, state *collector.State) {
@@ -714,7 +666,7 @@ type byMachineHandler struct {
 }
 
 func (h byMachineHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metricStore, machines := gMachineNamesAndStore.Get()
+	metricStore, machines := gHostsPortsAndStore.Get()
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
 	hostAndPath := strings.SplitN(r.URL.Path, "/", 2)
@@ -777,7 +729,7 @@ func newWriter() (lmmWriterType, error) {
 }
 
 func updateMachines() error {
-	_, machines := gMachineNamesAndStore.Get()
+	_, machines := gHostsPortsAndStore.Get()
 	machines = machines.Copy()
 	// TODO: update machines here with machines.AddIfAbsent
 	err := addMachines(machines)
@@ -786,17 +738,17 @@ func updateMachines() error {
 	}
 
 	// finally update the glboals
-	gMachineNamesAndStore.Update(machines)
+	gHostsPortsAndStore.Update(machines)
 	return nil
 }
 
-func addMachines(machines machineNamesType) error {
-	machineNames, err := nodes.Get()
+func addMachines(hostsAndPorts datastructs.HostsAndPorts) error {
+	machineNames, err := nodes.GetByCluster(fCluster)
 	if err != nil {
 		return err
 	}
 	for _, name := range machineNames {
-		machines.AddIfAbsent(name, 6910)
+		hostsAndPorts.AddIfAbsent(name, 6910)
 	}
 	return nil
 }
@@ -806,7 +758,7 @@ func main() {
 	flag.Parse()
 	collector.SetConcurrentPolls(fPollCount)
 	collector.SetConcurrentConnects(fConnectionCount)
-	firstMachines := make(machineNamesType)
+	firstMachines := make(datastructs.HostsAndPorts)
 	realMachines := (fHostFile == "")
 	writer, err := newWriter()
 	if err != nil {
@@ -874,20 +826,20 @@ func main() {
 	tricorder.RegisterMetric(
 		"collector/activeMachineCount",
 		func() int {
-			_, machines := gMachineNamesAndStore.Get()
+			_, machines := gHostsPortsAndStore.Get()
 			return len(machines)
 		},
 		units.Second,
 		"elapsed time")
 
 	fmt.Println("Initialization started.")
-	gMachineNamesAndStore.Init(
+	gHostsPortsAndStore.Init(
 		fBufferSizePerMachine, fSpacingPerMachine, firstMachines)
 	fmt.Println("Initialization complete.")
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
 		for {
-			metricStore, machines := gMachineNamesAndStore.Get()
+			metricStore, machines := gHostsPortsAndStore.Get()
 			logger := &loggerType{Store: metricStore}
 			sweepTime := time.Now()
 			for _, machine := range machines {
@@ -907,7 +859,7 @@ func main() {
 	// accessing lmmHandler metrics is the one exception to this rule.
 	go func() {
 		for {
-			metricStore, _ := gMachineNamesAndStore.Get()
+			metricStore, _ := gHostsPortsAndStore.Get()
 			writeTime := time.Now()
 			lmmHandler.StartVisit()
 			metricStore.VisitAllMachines(lmmHandler)
@@ -919,6 +871,11 @@ func main() {
 		}
 	}()
 
+	http.Handle(
+		"/showAllApps",
+		gzipHandler{&showallapps.Handler{
+			AS:  gApplicationStats,
+			HPS: &gHostsPortsAndStore}})
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(
@@ -993,4 +950,9 @@ func init() {
 		"lmm_batch_size",
 		1000,
 		"Batch to write at least this many records to Lmm")
+	flag.StringVar(
+		&fCluster,
+		"cluster",
+		"ash1",
+		"The cluster name")
 }

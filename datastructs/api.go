@@ -59,6 +59,8 @@ type ApplicationStatus struct {
 	LastReadTime time.Time
 	// A zero value means no successful poll
 	PollTime time.Duration
+
+	Down bool
 }
 
 // Staleness returns the staleness for this application.

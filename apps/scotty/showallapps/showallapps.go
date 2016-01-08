@@ -14,10 +14,13 @@ const (
 	htmlTemplateStr = ` \
 	<html>
 	<body>
+	Total apps: {{.TotalApps}}<br>
+	Total failed apps: {{.TotalFailedApps}}<br>
 	<table border="1" style="width:100%">
 	  <tr>
 	    <th>Machine</th>
 	    <th>Port</th>
+	    <th>Down?</th>
 	    <th>Status</th>
 	    <th>Staleness</th>
 	    <th>Poll</th>
@@ -26,6 +29,7 @@ const (
 	  <tr>
 	    <td>{{.MachineId.HostName}}</td>
 	    <td>{{.MachineId.Port}}</td>
+	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{.Status}}</td>
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
 	    <td>{{if .PollTime}}{{.PollTime}}{{else}}&nbsp;{{end}}</td>
@@ -55,7 +59,20 @@ var (
 )
 
 type view struct {
-	Apps []*datastructs.ApplicationStatus
+	Apps            []*datastructs.ApplicationStatus
+	TotalApps       int
+	TotalFailedApps int
+}
+
+func newView(apps []*datastructs.ApplicationStatus) *view {
+	result := &view{Apps: apps}
+	for _, app := range result.Apps {
+		if app.Down {
+			result.TotalFailedApps++
+		}
+		result.TotalApps++
+	}
+	return result
 }
 
 type Handler struct {
@@ -95,7 +112,7 @@ func (h *Handler) ServeHTTP(
 	_, hostsAndPorts := h.HPS.Get()
 	result := h.AS.GetAll(hostsAndPorts)
 	sortByNameAndPort(result)
-	v := &view{Apps: result}
+	v := newView(result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
 		fmt.Fprintln(w, "Error in template: %v\n", err)
 	}

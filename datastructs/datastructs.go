@@ -62,6 +62,9 @@ func (a *ApplicationStatuses) update(
 	if record.Status == scotty.Synced {
 		record.PollTime = newState.TimeSpentPolling()
 		record.LastReadTime = time.Now()
+		record.Down = false
+	} else if record.Status < 0 {
+		record.Down = true
 	}
 }
 

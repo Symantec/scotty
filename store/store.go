@@ -1,28 +1,22 @@
 package store
 
 import (
+	"container/list"
 	"github.com/Symantec/scotty"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
+	"math"
+	"sort"
 	"strings"
 	"sync"
 )
 
-func (r *Record) isZero() bool {
-	return r.machineId == nil
-}
+const (
+	kReapingThreshold = 2
+)
 
-func (s *Session) _close() error {
-	for lock, ok := range s.readerLocks {
-		if ok {
-			lock.Unlock()
-		}
-	}
-	return nil
-}
-
-func (s *Session) isNew() bool {
-	return len(s.readerLocks) == 0
-}
+var (
+	kPlusInf = math.Inf(1)
+)
 
 // metricInfoStoreType keeps a pool of pointers to unique MetricInfo instances
 type metricInfoStoreType struct {
@@ -30,10 +24,9 @@ type metricInfoStoreType struct {
 	ByName map[string][]*MetricInfo
 }
 
-func newMetricInfoStore() *metricInfoStoreType {
-	return &metricInfoStoreType{
-		ByInfo: make(map[MetricInfo]*MetricInfo),
-		ByName: make(map[string][]*MetricInfo)}
+func (m *metricInfoStoreType) Init() {
+	m.ByInfo = make(map[MetricInfo]*MetricInfo)
+	m.ByName = make(map[string][]*MetricInfo)
 }
 
 // Register returns the correct MetricInfo instance from the pool for
@@ -56,444 +49,380 @@ func (m *metricInfoStoreType) Register(metric *trimessages.Metric) (
 	return
 }
 
-type linkedRecordType struct {
-	Record
-
-	// Points to the record for the same metric that comes just
-	// befor this one
-	Ptr int64
+type tsValueType struct {
+	TimeStamp float64
+	Value     interface{}
 }
 
-// earliestRecordByMetricType maps a MetricInfo pointer to the earliest
-// known record for that metric.
-// The pointer in this earliest record points to the latest record.
-type earliestRecordByMetricType map[*MetricInfo]*linkedRecordType
+type pageType []tsValueType
 
-// readerLockType represents a reader lock.
-// Multiple readers can hold a readerLockType lock.
-// A reader lock uses the mutex of its enclosing circularBufferType
-// instance. Caller must hold this mutex from enclosing instance
-// to call lower case methods; caller must not hold mutex from enclosing
-// instance to call capitalized methods.
-type readerLockType struct {
-	readers     int
-	zeroReached sync.Cond
+func (p *pageType) Add(timestamp float64, value interface{}) {
+	length := len(*p)
+	*p = (*p)[0 : length+1]
+	(*p)[length] = tsValueType{TimeStamp: timestamp, Value: value}
 }
 
-func (r *readerLockType) Unlock() {
-	r.zeroReached.L.Lock()
-	defer r.zeroReached.L.Unlock()
-	if r.readers == 0 {
-		panic("Already at 0")
-	}
-	r.readers--
-	if r.readers == 0 {
-		r.zeroReached.Broadcast()
-	}
+func (p *pageType) Reap() *pageType {
+	return p
 }
 
-// Initializes this lock with mutex from enclosing circularBufferType.
-func (r *readerLockType) init(l sync.Locker) {
-	r.zeroReached.L = l
+func (p *pageType) Clear() {
+	*p = (*p)[:0]
 }
 
-// wait blocks caller until nobody else has the lock.
-func (r *readerLockType) wait() {
-	for r.readers > 0 {
-		r.zeroReached.Wait()
-	}
+func (p pageType) LatestValue() (float64, interface{}) {
+	ptr := &p[len(p)-1]
+	return ptr.TimeStamp, ptr.Value
 }
 
-func (r *readerLockType) lock() {
-	r.readers++
+func (p pageType) IsFull() bool {
+	return len(p) == cap(p)
 }
 
-type recordListType []*Record
-
-func (l *recordListType) Append(r *Record) bool {
-	*l = append(*l, r)
-	return true
-}
-
-// circularBufferType represents a circular buffer of metrics.
-// Caller must hold this instance's mutex to call lowercase methods;
-// Caller must not hold this instance's mutex to call capitalized methods.
-type circularBufferType struct {
-	buffer    []linkedRecordType
-	bufferLen int64
-
-	// 2 * lockChunkSize -1 is the minimum spacing between the head and
-	// tail of the circular queue.
-	lockChunkSize int64
-
-	// This lock protects everything below
-	lock sync.Mutex
-
-	// head pointer. always increases from 0.
-	head int64
-
-	// tail pointer. always increases from 0
-	tail int64
-
-	// locks for readers. readers reading from tail where
-	// 2k * lockChunkSize <= tail < (2k+1) * lockChunkSize lock [0];
-	// readers reading from tail where
-	// (2k+1) * lockChunkSize <= tail < 2k * lockChunkSize lock [1].
-	// The lock with tail is the active lock. This is the lock
-	// issued to all new readers. The other lock is the inactive lock.
-	// The inactive lock is always being drained. It is never issued
-	// to new readers while readers that acquired it previously
-	// eventually unlock it.
-	readerLocks [2]readerLockType
-
-	earliestRecords earliestRecordByMetricType
-	metricInfoStore *metricInfoStoreType
-}
-
-// newCircularBufferType creates a new circular buffer
-// size is the fixed size of the buffer; spacing is the minimum
-// spacing between the head and tail of the buffer. spacing must
-// be at least 1. Make spacing large enough that goroutines reading
-// from the tail of the buffer finish before head overwrites what
-// was at the tail.
-func newCircularBufferType(size, spacing int) *circularBufferType {
-	var result circularBufferType
-	result.buffer = make([]linkedRecordType, size)
-	result.bufferLen = int64(size)
-	result.lockChunkSize = int64(spacing/2) + 1
-	result.head = 0
-	result.tail = 0
-	result.readerLocks[0].init(&result.lock)
-	result.readerLocks[1].init(&result.lock)
-	result.earliestRecords = make(earliestRecordByMetricType)
-	result.metricInfoStore = newMetricInfoStore()
-	return &result
-}
-
-// Add adds a record to this circular buffer.
-// Returns true if Add added a record or false if Add did not add a
-// record because the value remained unchanged.
-func (c *circularBufferType) Add(
-	machineId *scotty.Machine,
-	timestamp float64,
-	m *trimessages.Metric) bool {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	info := c.metricInfoStore.Register(m)
-	lastValue, lastTimestamp := c.getLatestValueAndTimestamp(info)
-	if timestamp <= lastTimestamp {
-		panic("Timestamps must be ever increasing.")
-	}
-	if lastValue != m.Value {
-		c.advanceHead()
-
-		// Now we have to write where head was.
-		newRec := c.get(c.head - 1)
-		newRec.machineId = machineId
-		newRec.info = info
-		newRec.timestamp = timestamp
-		newRec.value = m.Value
-		newRec.Ptr = c.updateLatestRecordPtr(info, c.head-1)
+func (p pageType) Fetch(
+	applicationId *scotty.Machine,
+	id *MetricInfo,
+	start, end float64,
+	result Appender) (keepGoing bool) {
+	lastIdx := p.FindGreaterOrEqual(end)
+	if lastIdx == 0 {
 		return true
 	}
-	return false
+	firstIdx := p.FindGreater(start) - 1
+	if firstIdx < 0 {
+		keepGoing = true
+		firstIdx = 0
+	}
+	record := Record{
+		ApplicationId: applicationId,
+		Info:          id}
+	for i := lastIdx - 1; i >= firstIdx; i-- {
+		record.TimeStamp = p[i].TimeStamp
+		record.Value = p[i].Value
+		result.Append(&record)
+	}
+	return
 }
 
-// ByName returns the records for metric(s) with given path.
-// ByName appends the records to result.
-func (c *circularBufferType) ByName(
-	sess *Session,
-	path string,
+func (p pageType) FindGreaterOrEqual(ts float64) int {
+	return sort.Search(
+		len(p),
+		func(idx int) bool { return p[idx].TimeStamp >= ts })
+}
+
+func (p pageType) FindGreater(ts float64) int {
+	return sort.Search(
+		len(p),
+		func(idx int) bool { return p[idx].TimeStamp > ts })
+}
+
+type timeSeriesType struct {
+	id    *MetricInfo
+	lock  sync.Mutex
+	pages list.List
+}
+
+func newTimeSeriesType(
+	id *MetricInfo,
+	page *pageType,
+	timestamp float64,
+	value interface{}) *timeSeriesType {
+	page.Add(timestamp, value)
+	result := &timeSeriesType{id: id}
+	result.pages.Init().PushBack(page)
+	return result
+}
+
+func (t *timeSeriesType) Reap() *pageType {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.pages.Remove(t.pages.Front()).(*pageType)
+}
+
+func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
+	needToAdd, needPage bool) {
+	latestPage := t.latestPage()
+	latestTs, latestValue := latestPage.LatestValue()
+	if timestamp <= latestTs || value == latestValue {
+		return false, false
+	}
+	return true, latestPage.IsFull()
+}
+
+func (t *timeSeriesType) NeedToAdd(timestamp float64, value interface{}) (
+	needToAdd, needPage bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.needToAdd(timestamp, value)
+}
+
+// Must call NeedToAdd first!
+func (t *timeSeriesType) Add(
+	timestamp float64, value interface{}, page *pageType) (
+	isEligibleForReaping bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	needToAdd, needPage := t.needToAdd(timestamp, value)
+	if !needToAdd || (needPage && page == nil) || (!needPage && page != nil) {
+		panic("Multiple goroutines trying to add to this time series!")
+	}
+	var latestPage *pageType
+	if page == nil {
+		latestPage = t.latestPage()
+	} else {
+		t.pages.PushBack(page)
+		if t.pages.Len() > kReapingThreshold {
+			isEligibleForReaping = true
+		}
+		latestPage = page
+	}
+	latestPage.Add(timestamp, value)
+	return
+}
+
+func (t *timeSeriesType) Fetch(
+	applicationId *scotty.Machine,
 	start, end float64,
 	result Appender) {
-	// no-op if start exceeds end
-	if start >= end {
-		return
-	}
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	var recordsAdded bool
-	infoList := c.metricInfoStore.ByName[path]
-	for _, info := range infoList {
-		if c.fetch(info, start, end, result) {
-			recordsAdded = true
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	var e *list.Element
+	for e = t.pages.Back(); e != nil; e = e.Prev() {
+		page := e.Value.(*pageType)
+		if !page.Fetch(applicationId, t.id, start, end, result) {
+			break
 		}
 	}
-	if recordsAdded {
-		c.obtainReadLock(sess)
-	}
 }
 
-// ByPrefix returns the records for metric(s) with given path.
-// ByPrefix appends the records to result.
-func (c *circularBufferType) ByPrefix(
-	sess *Session,
-	prefix string,
-	start, end float64,
-	result Appender) {
-	// no-op if start exceeds end
-	if start >= end {
-		return
+func (t *timeSeriesType) latestPage() *pageType {
+	return t.pages.Back().Value.(*pageType)
+}
+
+type timeSeriesCollectionType struct {
+	applicationId   *scotty.Machine
+	lock            sync.Mutex
+	timeSeries      map[*MetricInfo]*timeSeriesType
+	metricInfoStore metricInfoStoreType
+}
+
+func newTimeSeriesCollectionType(
+	app *scotty.Machine) *timeSeriesCollectionType {
+	result := &timeSeriesCollectionType{
+		applicationId: app,
+		timeSeries:    make(map[*MetricInfo]*timeSeriesType),
 	}
+	result.metricInfoStore.Init()
+	return result
+}
+
+func (c *timeSeriesCollectionType) Lookup(m *trimessages.Metric) (
+	id *MetricInfo, timeSeries *timeSeriesType) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	var recordsAdded bool
+	id = c.metricInfoStore.Register(m)
+	timeSeries = c.timeSeries[id]
+	return
+}
+
+func (c *timeSeriesCollectionType) TsByName(name string) (
+	result []*timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	infoList := c.metricInfoStore.ByName[name]
+	// We aren't guarnateed that returned array will be the
+	// same length as infoList. When adding a new
+	// timeSeries, we add its id first, release the lock to
+	// get a new page, then reacquire the lock to add the new
+	// timeSeries.
+	for _, info := range infoList {
+		result = append(result, c.timeSeries[info])
+	}
+	return
+}
+
+func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
+	result []*timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	for _, info := range c.metricInfoStore.ByInfo {
 		if strings.HasPrefix(info.Path(), prefix) {
-			if c.fetch(info, start, end, result) {
-				recordsAdded = true
-			}
-		}
-	}
-	if recordsAdded {
-		c.obtainReadLock(sess)
-	}
-}
-
-// Latest returns the latest records for all metrics.
-// Latest appends the records to result.
-func (c *circularBufferType) Latest(sess *Session, result Appender) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	var recordsAdded bool
-	for _, info := range c.metricInfoStore.ByInfo {
-		earliest := c.earliestRecords[info]
-		if earliest == nil {
-			continue
-		}
-		arecord := c.get(earliest.Ptr)
-		if arecord != nil {
-			if result.Append(&arecord.Record) {
-				recordsAdded = true
-			}
-		} else {
-			// We have to copy because the read locks only protect
-			// the records in the circular buffer not the ones in
-			// the EarliestRecords map.
-			copyOfEarliest := earliest.Record
-			if result.Append(&copyOfEarliest) {
-				recordsAdded = true
-			}
-		}
-	}
-	if recordsAdded {
-		c.obtainReadLock(sess)
-	}
-}
-
-// obtainReadLock obtains read lock from current tail for s.
-// If s already has the lock, obatinReadLock is a no-op.
-func (c *circularBufferType) obtainReadLock(s *Session) {
-	rLock := c.readerLock(c.tail)
-	if !s.readerLocks[rLock] {
-		rLock.lock()
-		s.readerLocks[rLock] = true
-	}
-}
-
-// get returns the record in this instance corresponding to ptr.
-// If ptr is negative or ptr < tail or ptr >= head returns nil.
-func (c *circularBufferType) get(ptr int64) *linkedRecordType {
-	if ptr < 0 || ptr < c.tail || ptr >= c.head {
-		return nil
-	}
-	return &c.buffer[ptr%c.bufferLen]
-}
-
-// getLatestValueAndTimestamp returns the last recorded value for given metric.
-// along with its timestamp. If there is no latest value, returns nil and 0.0.
-func (c *circularBufferType) getLatestValueAndTimestamp(
-	info *MetricInfo) (value interface{}, timestamp float64) {
-	earliest := c.earliestRecords[info]
-	if earliest == nil {
-		return
-	}
-	arecord := c.get(earliest.Ptr)
-	if arecord == nil {
-		return earliest.Value(), earliest.Timestamp()
-	}
-	return arecord.Value(), arecord.Timestamp()
-}
-
-// As adding to this circular buffer overwrites old values with new ones,
-// updatEarlist updates the earliest known record for a given metric
-// to be the contents of rec.
-func (c *circularBufferType) updateEarliest(rec *Record) {
-	c.earliestRecords[rec.Info()].Record = *rec
-}
-
-// fetch fetches all the records for a given metric in descending order
-// and appends them to output. fetch() goes just before start when
-// possible so that the value of the metric is known at time start.
-func (c *circularBufferType) fetch(
-	metric *MetricInfo,
-	start, end float64,
-	output Appender) (fetched bool) {
-	if start >= end {
-		return
-	}
-	earliest := c.earliestRecords[metric]
-	if earliest == nil {
-		return
-	}
-	// Earliest record points to latest record
-	arecord := c.get(earliest.Ptr)
-	for arecord != nil && arecord.Timestamp() > start {
-		if arecord.Timestamp() < end {
-			if output.Append(&arecord.Record) {
-				fetched = true
-			}
-		}
-		arecord = c.get(arecord.Ptr)
-	}
-	if arecord != nil {
-		// We know arecord.Timestamp() < end
-		if output.Append(&arecord.Record) {
-			fetched = true
-		}
-	} else if !earliest.isZero() {
-		if earliest.Timestamp() < end {
-			// We have to copy because the read locks only protect
-			// the records in the circular buffer not the ones in
-			// the EarliestRecords map.
-			copyOfEarliest := earliest.Record
-			if output.Append(&copyOfEarliest) {
-				fetched = true
-			}
+			result = append(result, c.timeSeries[info])
 		}
 	}
 	return
 }
 
-// advanceTail advances the tail of the buffer by 1. Each time it advances
-// the tail, it updates earliestRecordIndex with the record
-// that just fell off the buffer.
-func (c *circularBufferType) advanceTail() {
-	c.updateEarliest(&c.get(c.tail).Record)
-	c.tail++
+func (c *timeSeriesCollectionType) AddTimeSeries(
+	id *MetricInfo, series *timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.timeSeries[id] != nil {
+		panic("Multiple goroutines trying to add to this time series collection.")
+	}
+	c.timeSeries[id] = series
 }
 
-// advanceHead advances the head pointer of this circular buffer.
-// advanceHead will block if it can't advance the head pointer
-// because there are readers still using data.
-func (c *circularBufferType) advanceHead() {
-
-	// overwritePtr is where the head pointer will overwrite
-	// It will be negative the first time around the circular buffer.
-	overwritePtr := c.head - c.bufferLen
-
-	// When overwritePtr % c.lockChunkSize == 0, we are crossing a
-	// reader lock boundary. We need to wait on any outstanding
-	// readers to finish before advancing head.
-	if overwritePtr >= 0 && overwritePtr%c.lockChunkSize == 0 {
-		c.readerLock(overwritePtr).wait()
+func (c *timeSeriesCollectionType) Add(
+	timestamp float64,
+	m *trimessages.Metric,
+	supplier pageSupplierType) bool {
+	// We must take care not to call supplier.Get() while we are holding
+	// a lock. Because supplier.Get() may have to obtain a lock to reap
+	// a page, calling it while holding a lock will make deadlock
+	// possible.
+	id, timeSeries := c.Lookup(m)
+	if timeSeries == nil {
+		timeSeries := newTimeSeriesType(
+			id, supplier.Get(), timestamp, m.Value)
+		c.AddTimeSeries(id, timeSeries)
+		return true
 	}
-	// Advance tail so that it is 2*lockChunkSize away from where
-	// we are writing. This way if we are crossing a read
-	// lock boundary, we will start to drain the next read lock
-	// boundary of readers so that it will likely be available
-	// for writing when we get to it.
-	for c.tail < overwritePtr+2*c.lockChunkSize {
-		c.advanceTail()
+	needToAdd, needPage := timeSeries.NeedToAdd(timestamp, m.Value)
+	if needToAdd {
+		var page *pageType
+		if needPage {
+			page = supplier.Get()
+		}
+		if timeSeries.Add(timestamp, m.Value, page) {
+			supplier <- timeSeries
+		}
+		return true
 	}
-	// Finally advance head
-	c.head++
+	return false
 }
 
-// updateLatestRecordPtr updates the pointer to the latest record for
-// a particular metric and returns the previous pointer or -1 if there
-// was no previous pointer.
-func (c *circularBufferType) updateLatestRecordPtr(
-	info *MetricInfo, ptr int64) int64 {
-	earliestRecord := c.earliestRecords[info]
-	if earliestRecord == nil {
-		earliestRecord = &linkedRecordType{Ptr: -1}
-		c.earliestRecords[info] = earliestRecord
+func (c *timeSeriesCollectionType) ByName(
+	name string, start, end float64, result Appender) {
+	// no-op if start exceeds end
+	if start >= end {
+		return
 	}
-	result := earliestRecord.Ptr
-	earliestRecord.Ptr = ptr
+	for _, timeSeries := range c.TsByName(name) {
+		timeSeries.Fetch(c.applicationId, start, end, result)
+	}
+}
+
+func (c *timeSeriesCollectionType) ByPrefix(
+	prefix string, start, end float64, result Appender) {
+	// no-op if start exceeds end
+	if start >= end {
+		return
+	}
+	for _, timeSeries := range c.TsByPrefix(prefix) {
+		timeSeries.Fetch(c.applicationId, start, end, result)
+	}
+}
+
+func (c *timeSeriesCollectionType) Latest(result Appender) {
+	for _, timeSeries := range c.TsByPrefix("") {
+		timeSeries.Fetch(c.applicationId, kPlusInf, kPlusInf, result)
+	}
+}
+
+type reaperType interface {
+	// Reap must succeed and return a non-nil page
+	Reap() *pageType
+}
+
+type pageSupplierType chan reaperType
+
+func newPageSupplierType(valueCountPerPage, pageCount int) pageSupplierType {
+	result := make(pageSupplierType, pageCount)
+	for i := 0; i < pageCount; i++ {
+		newPage := make(pageType, valueCountPerPage)
+		result <- &newPage
+	}
 	return result
 }
 
-// readerLock returns the readerLock corresponding to a particular
-// tail.
-func (c *circularBufferType) readerLock(tail int64) *readerLockType {
-	return &c.readerLocks[(tail/c.lockChunkSize)%2]
+func (s pageSupplierType) Get() *pageType {
+	select {
+	case reaper := <-s:
+		result := reaper.Reap()
+		result.Clear()
+		return result
+	default:
+		panic("No more pages left! Make page size smaller, add memory, or both.")
+	}
+}
+
+type recordListType []*Record
+
+func (l *recordListType) Append(r *Record) {
+	recordCopy := *r
+	*l = append(*l, &recordCopy)
 }
 
 func (b *Builder) registerMachine(machineId *scotty.Machine) {
-	if b.buffers[machineId] != nil {
+	if b.byApplication[machineId] != nil {
 		panic("Machine already registered")
 	}
-	var buffer *circularBufferType
+	var collection *timeSeriesCollectionType
 	if b.prevStore != nil {
-		buffer = b.prevStore.buffers[machineId]
+		collection = b.prevStore.byApplication[machineId]
 	}
-	if buffer == nil {
-		buffer = newCircularBufferType(b.bufferSizePerMachine, b.spacingPerMachine)
+	if collection == nil {
+		collection = newTimeSeriesCollectionType(machineId)
 	}
-	b.buffers[machineId] = buffer
+	b.byApplication[machineId] = collection
 }
 
 func (b *Builder) build() *Store {
-	buffers := b.buffers
-	b.buffers = nil
+	byApplication := b.byApplication
+	supplier := b.supplier
+	b.byApplication = nil
+	b.supplier = nil
 	return &Store{
-		buffers:              buffers,
-		bufferSizePerMachine: b.bufferSizePerMachine,
-		spacingPerMachine:    b.spacingPerMachine}
+		byApplication: byApplication,
+		supplier:      supplier,
+	}
 }
 
 func (s *Store) newBuilder() *Builder {
 	return &Builder{
-		buffers:              make(map[*scotty.Machine]*circularBufferType),
-		bufferSizePerMachine: s.bufferSizePerMachine,
-		spacingPerMachine:    s.spacingPerMachine,
-		prevStore:            s}
+		byApplication: make(map[*scotty.Machine]*timeSeriesCollectionType),
+		supplier:      s.supplier,
+		prevStore:     s}
 }
 
 func (s *Store) add(
 	machineId *scotty.Machine,
-	timestamp float64,
-	m *trimessages.Metric) bool {
-	return s.buffers[machineId].Add(machineId, timestamp, m)
+	timestamp float64, m *trimessages.Metric) bool {
+	return s.byApplication[machineId].Add(timestamp, m, s.supplier)
 }
 
 func (s *Store) byNameAndMachine(
-	sess *Session,
 	name string,
 	machineId *scotty.Machine,
 	start, end float64,
 	result Appender) {
-	s.buffers[machineId].ByName(sess, name, start, end, result)
+	s.byApplication[machineId].ByName(name, start, end, result)
 }
 
 func (s *Store) byPrefixAndMachine(
-	sess *Session,
 	prefix string,
 	machineId *scotty.Machine,
 	start, end float64,
 	result Appender) {
-	s.buffers[machineId].ByPrefix(sess, prefix, start, end, result)
+	s.byApplication[machineId].ByPrefix(prefix, start, end, result)
 }
 
 func (s *Store) byMachine(
-	sess *Session,
 	machineId *scotty.Machine,
 	start, end float64,
 	result Appender) {
-	s.buffers[machineId].ByPrefix(sess, "", start, end, result)
+	s.byApplication[machineId].ByPrefix("", start, end, result)
 }
 
 func (s *Store) latestByMachine(
-	sess *Session,
 	machineId *scotty.Machine,
 	result Appender) {
-	s.buffers[machineId].Latest(sess, result)
+	s.byApplication[machineId].Latest(result)
 }
 
 func (s *Store) visitAllMachines(v Visitor) (err error) {
-	for machineId := range s.buffers {
+	for machineId := range s.byApplication {
 		if err = v.Visit(s, machineId); err != nil {
 			return
 		}

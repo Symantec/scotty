@@ -89,19 +89,27 @@ type recordType struct {
 }
 
 func (r recordType) Kind() types.Type {
-	return r.Info().Kind()
+	return r.Info.Kind()
 }
 
 func (r recordType) Unit() units.Unit {
-	return r.Info().Unit()
+	return r.Info.Unit()
 }
 
 func (r recordType) Path() string {
-	return r.Info().Path()
+	return r.Info.Path()
 }
 
 func (r recordType) HostName() string {
-	return r.MachineId().HostName()
+	return r.ApplicationId.HostName()
+}
+
+func (r recordType) Timestamp() float64 {
+	return r.TimeStamp
+}
+
+func (r recordType) Value() interface{} {
+	return r.Value
 }
 
 // recordSerializerType serializes a record to bytes for LMM.

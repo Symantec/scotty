@@ -37,16 +37,16 @@ const (
 )
 
 var (
-	fBufferSizePerMachine int
-	fSpacingPerMachine    int
-	fHostFile             string
-	fPollCount            int
-	fConnectionCount      int
-	fCollectionFrequency  time.Duration
-	fLmmUpdateFrequency   time.Duration
-	fLmmBatchSize         int
-	fLmmEndpoints         []string
-	fCluster              string
+	fBytesPerPage        int
+	fPageCount           int
+	fHostFile            string
+	fPollCount           int
+	fConnectionCount     int
+	fCollectionFrequency time.Duration
+	fLmmUpdateFrequency  time.Duration
+	fLmmBatchSize        int
+	fLmmEndpoints        []string
+	fCluster             string
 )
 
 var (
@@ -250,8 +250,8 @@ type lmmHandlerType struct {
 	writer                  lmmWriterType
 	lastValues              map[*collector.Machine]map[*store.MetricInfo]interface{}
 	lastValuesThisMachine   map[*store.MetricInfo]interface{}
-	toBeWritten             []*store.Record
-	session                 *store.Session
+	toBeWritten             []store.Record
+	toBeWrittenPtrs         []*store.Record
 	timeSpentWritingDist    *tricorder.Distribution
 	timeSpentCollectingDist *tricorder.Distribution
 	totalTimeSpentDist      *tricorder.Distribution
@@ -276,17 +276,16 @@ func newLmmHandler(w lmmWriterType) *lmmHandlerType {
 }
 
 // Do not call this directly!
-func (l *lmmHandlerType) Append(r *store.Record) bool {
-	kind := r.Info().Kind()
+func (l *lmmHandlerType) Append(r *store.Record) {
+	kind := r.Info.Kind()
 	if !lmm.IsTypeSupported(kind) {
-		return false
+		return
 	}
-	if l.lastValuesThisMachine[r.Info()] == r.Value() {
-		return false
+	if l.lastValuesThisMachine[r.Info] == r.Value {
+		return
 	}
-	l.lastValuesThisMachine[r.Info()] = r.Value()
-	l.toBeWritten = append(l.toBeWritten, r)
-	return true
+	l.lastValuesThisMachine[r.Info] = r.Value
+	l.toBeWritten = append(l.toBeWritten, *r)
 }
 
 func (l *lmmHandlerType) StartVisit() {
@@ -304,10 +303,7 @@ func (l *lmmHandlerType) EndVisit() {
 
 func (l *lmmHandlerType) Visit(
 	theStore *store.Store, machineId *collector.Machine) error {
-	// Be sure we have a session
-	if l.session == nil {
-		l.session = theStore.NewSession()
-	}
+
 	// Get the last known values for this machine creating the map
 	// if necessary.
 	l.lastValuesThisMachine = l.lastValues[machineId]
@@ -319,7 +315,7 @@ func (l *lmmHandlerType) Visit(
 
 	// Get the latest values to write to lmm, but get only the
 	// values that changed.
-	theStore.LatestByMachine(l.session, machineId, l)
+	theStore.LatestByMachine(machineId, l)
 
 	// If we have enough values to write, write them out to LMM.
 	if len(l.toBeWritten) >= fLmmBatchSize {
@@ -330,24 +326,29 @@ func (l *lmmHandlerType) Visit(
 }
 
 func (l *lmmHandlerType) flush() {
-	// If we have no session, check that we have no records to be
-	// written and do nothing.
-	if l.session == nil {
-		if len(l.toBeWritten) > 0 {
-			panic("No session but metrics to be written to LMM")
-		}
-		return
-	}
-	// Part of flushing is closing the session
-	defer func() {
-		l.session.Close()
-		l.session = nil
-	}()
 	if len(l.toBeWritten) == 0 {
 		return
 	}
+	// Make toWrittenPtrs slice be big enough to hold all the pointers
+	// We do it this way so that we only allocate a new ptr slice if
+	// the capacity of the records to be written slice increases
+	if cap(l.toBeWrittenPtrs) < cap(l.toBeWritten) {
+		l.toBeWrittenPtrs = make(
+			[]*store.Record, len(l.toBeWritten), cap(l.toBeWritten))
+	} else {
+		l.toBeWrittenPtrs = l.toBeWrittenPtrs[0:len(l.toBeWritten)]
+	}
+
+	// record the pointers
+	for i := range l.toBeWritten {
+		l.toBeWrittenPtrs[i] = &l.toBeWritten[i]
+	}
+
 	startTime := time.Now()
-	if err := l.ttWriter.Write(l.toBeWritten); err != nil {
+	err := l.ttWriter.Write(l.toBeWrittenPtrs)
+	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
+
+	if err != nil {
 		l.logWriteError(err)
 	} else {
 		l.logWrite(len(l.toBeWritten))
@@ -356,7 +357,6 @@ func (l *lmmHandlerType) flush() {
 
 	// Make toBeWritten be empty while saving on memory allocation
 	l.toBeWritten = l.toBeWritten[:0]
-
 }
 
 func (l *lmmHandlerType) RegisterMetrics() {
@@ -539,8 +539,6 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // machineMetricsAppender is an implementation of store.Appender that
 // appends to a messages.MachineMetricsList.
 // machineMetricsAppender is NOT threadsafe.
-// No session instance required to use as this implementation of Appender
-// copies from store.Record instances rather than holding onto pointers.
 type machineMetricsAppender struct {
 	machineMetrics *messages.MachineMetricsList
 	lastInfo       *store.MetricInfo
@@ -553,11 +551,9 @@ func newMachineMetricsAppender(result *messages.MachineMetricsList) *machineMetr
 	return &machineMetricsAppender{machineMetrics: result}
 }
 
-// This implementation of Append always returns false as it copies data
-// from passed store.Record rather than holding onto the pointer.
-func (a *machineMetricsAppender) Append(r *store.Record) bool {
-	if r.Info() != a.lastInfo {
-		a.lastInfo = r.Info()
+func (a *machineMetricsAppender) Append(r *store.Record) {
+	if r.Info != a.lastInfo {
+		a.lastInfo = r.Info
 		_, jsonKind := trimessages.AsJson(nil, a.lastInfo.Kind(), a.lastInfo.Unit())
 		a.lastMetric = &messages.MachineMetrics{
 			Path:        a.lastInfo.Path(),
@@ -567,13 +563,12 @@ func (a *machineMetricsAppender) Append(r *store.Record) bool {
 			Unit:        a.lastInfo.Unit()}
 		*a.machineMetrics = append(*a.machineMetrics, a.lastMetric)
 	}
-	jsonValue, _ := trimessages.AsJson(r.Value(), a.lastInfo.Kind(), a.lastInfo.Unit())
+	jsonValue, _ := trimessages.AsJson(r.Value, a.lastInfo.Kind(), a.lastInfo.Unit())
 	newTimestampedValue := &messages.TimestampedValue{
-		Timestamp: trimessages.SinceEpochFloat(r.Timestamp()).String(),
+		Timestamp: trimessages.SinceEpochFloat(r.TimeStamp).String(),
 		Value:     jsonValue,
 	}
 	a.lastMetric.Values = append(a.lastMetric.Values, newTimestampedValue)
-	return false
 }
 
 // gatherDataForMachine serves api/hosts pages.
@@ -595,10 +590,9 @@ func gatherDataForMachine(
 	now := trimessages.TimeToFloat(time.Now())
 	appender := newMachineMetricsAppender(&result)
 	if path == "" {
-		metricStore.ByMachine(nil, machine, now-60.0*float64(history), math.Inf(1), appender)
+		metricStore.ByMachine(machine, now-60.0*float64(history), math.Inf(1), appender)
 	} else {
 		metricStore.ByNameAndMachine(
-			nil,
 			path,
 			machine,
 			now-60.0*float64(history),
@@ -606,7 +600,6 @@ func gatherDataForMachine(
 			appender)
 		if !isSingleton {
 			metricStore.ByPrefixAndMachine(
-				nil,
 				path+"/",
 				machine,
 				now-60.0*float64(history),
@@ -833,8 +826,9 @@ func main() {
 		"elapsed time")
 
 	fmt.Println("Initialization started.")
+	// Value interface + float64 = 24 bytes
 	gHostsPortsAndStore.Init(
-		fBufferSizePerMachine, fSpacingPerMachine, firstMachines)
+		fBytesPerPage/24, fPageCount, firstMachines)
 	fmt.Println("Initialization complete.")
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
@@ -910,15 +904,17 @@ func init() {
 		(*flagStringListType)(&fLmmEndpoints),
 		"lmm_endpoints",
 		"Host and port of each LMM endpoint")
+	// TODO: Work with Richard to get the flags the way he
+	// wants them to be. Correct way to measure total physical memory?
 	flag.IntVar(
-		&fBufferSizePerMachine,
-		"buffer_size_per_machine",
-		60000,
+		&fPageCount,
+		"page_count",
+		30*1000*1000,
 		"Buffer size per machine in records")
 	flag.IntVar(
-		&fSpacingPerMachine,
-		"spacing_per_machine",
-		1000,
+		&fBytesPerPage,
+		"bytes_per_page",
+		1024,
 		"Space for new metrics for each machine in records")
 	flag.StringVar(
 		&fHostFile,

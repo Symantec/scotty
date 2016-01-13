@@ -38,10 +38,10 @@ func (h *HostsPortsAndStore) Get() (
 
 // Initialize this instance for the first time
 func (h *HostsPortsAndStore) Init(
-	sizePerMachine, spacingPerMachine int, hostsAndPorts HostsAndPorts) {
+	valueCountPerPage, pageCount int, hostsAndPorts HostsAndPorts) {
 	h.update(
 		hostsAndPorts,
-		store.NewBuilder(sizePerMachine, spacingPerMachine))
+		store.NewBuilder(valueCountPerPage, pageCount))
 }
 
 // Update this instance with new hosts and ports.

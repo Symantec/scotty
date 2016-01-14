@@ -68,6 +68,23 @@ func (a *ApplicationStatuses) update(
 	}
 }
 
+func (a *ApplicationStatuses) logChangedMetricCount(
+	m *scotty.Machine, metricCount int) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	record := a.byMachine[m]
+	if record == nil {
+		record = newApplicationStatus(m)
+		a.byMachine[m] = record
+	}
+	if record.InitialMetricCount == 0 {
+		record.InitialMetricCount = metricCount
+	} else {
+		record.changedMetrics_Sum += int64(metricCount)
+		record.changedMetrics_Count++
+	}
+}
+
 func (a *ApplicationStatuses) getAll(
 	hostsAndPorts HostsAndPorts) (result []*ApplicationStatus) {
 	result = make([]*ApplicationStatus, len(hostsAndPorts))

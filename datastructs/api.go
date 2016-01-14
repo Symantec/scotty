@@ -60,7 +60,21 @@ type ApplicationStatus struct {
 	// A zero value means no successful poll
 	PollTime time.Duration
 
+	// Initial metric count
+	InitialMetricCount int
+
+	// Whether or not it is currently down.
 	Down bool
+
+	changedMetrics_Sum   int64
+	changedMetrics_Count int64
+}
+
+func (a *ApplicationStatus) AverageChangedMetrics() float64 {
+	if a.changedMetrics_Count == 0 {
+		return 0.0
+	}
+	return float64(a.changedMetrics_Sum) / float64(a.changedMetrics_Count)
 }
 
 // Staleness returns the staleness for this application.
@@ -90,6 +104,11 @@ func NewApplicationStatuses() *ApplicationStatuses {
 func (a *ApplicationStatuses) Update(
 	m *scotty.Machine, newState *scotty.State) {
 	a.update(m, newState)
+}
+
+func (a *ApplicationStatuses) LogChangedMetricCount(
+	m *scotty.Machine, metricCount int) {
+	a.logChangedMetricCount(m, metricCount)
 }
 
 func (a *ApplicationStatuses) GetAll(

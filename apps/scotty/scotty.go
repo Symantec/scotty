@@ -508,6 +508,7 @@ func (l *loggerType) LogResponse(
 			added++
 		}
 	}
+	gApplicationStats.LogChangedMetricCount(m, added)
 	gChangedMetricsPerMachineDist.Add(float64(added))
 }
 

@@ -25,7 +25,25 @@ var (
 	gPagesPerMetricDist = tricorder.NewGeometricBucketer(
 		1.0, 1e6).NewDistribution()
 	gLatestTimeEvicted *time.Time
+	gMetricValueCount  = &countType{}
 )
+
+type countType struct {
+	lock  sync.Mutex
+	value int64
+}
+
+func (c *countType) Add(i int64) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.value += i
+}
+
+func (c *countType) Get() int64 {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.value
+}
 
 // metricInfoStoreType keeps a pool of pointers to unique MetricInfo instances
 type metricInfoStoreType struct {
@@ -152,6 +170,10 @@ func (t *timeSeriesType) Reap() *pageType {
 	latestTime, _ := result.LatestValue()
 	goLatestTime := trimessages.FloatToTime(latestTime)
 	gLatestTimeEvicted = &goLatestTime
+	if !result.IsFull() {
+		panic("Oops, timeSeries is giving up a partially filled page.")
+	}
+	gMetricValueCount.Add(int64(-len(*result)))
 	return result
 }
 
@@ -410,6 +432,24 @@ func (s *Store) add(
 	return s.byApplication[machineId].Add(timestamp, m, s.supplier)
 }
 
+func (s *Store) addBatch(
+	machineId *scotty.Machine,
+	timestamp float64,
+	metricList trimessages.MetricList,
+	filter func(*trimessages.Metric) bool) int {
+	result := 0
+	for _, metric := range metricList {
+		if filter != nil && !filter(metric) {
+			continue
+		}
+		if s.add(machineId, timestamp, metric) {
+			result++
+		}
+	}
+	gMetricValueCount.Add(int64(result))
+	return result
+}
+
 func (s *Store) byNameAndMachine(
 	name string,
 	machineId *scotty.Machine,
@@ -470,6 +510,13 @@ func (s *Store) registerMetrics() {
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"/store/metricValueCount",
+		gMetricValueCount.Get,
+		units.None,
+		"Number of stored metrics values and timestamps"); err != nil {
 		panic(err)
 	}
 }

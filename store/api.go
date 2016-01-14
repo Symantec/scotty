@@ -192,3 +192,10 @@ func (s *Store) LatestByMachine(
 func (s *Store) VisitAllMachines(v Visitor) error {
 	return s.visitAllMachines(v)
 }
+
+// RegisterMetrics registers metrics associated with this Store instance
+// Calling this covers any new store created by calling NewBuilder() on
+// this instance.
+func (s *Store) RegisterMetrics() {
+	s.registerMetrics()
+}

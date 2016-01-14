@@ -839,6 +839,8 @@ func main() {
 	gHostsPortsAndStore.Init(
 		fBytesPerPage/24, fPageCount, firstMachines)
 	fmt.Println("Initialization complete.")
+	firstStore, _ := gHostsPortsAndStore.Get()
+	firstStore.RegisterMetrics()
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
 		for {

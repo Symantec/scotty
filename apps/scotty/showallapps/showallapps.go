@@ -23,8 +23,11 @@ const (
 	    <th>Down?</th>
 	    <th>Status</th>
 	    <th>Staleness</th>
+	    <th>Init Metric Count</th>
+	    <th>Avg. changing metrics</th>
 	    <th>Poll</th>
           </tr>
+	\ {{with $top := .}} \
 	\ {{range .Apps}} \
 	  <tr>
 	    <td>{{.MachineId.HostName}}</td>
@@ -32,8 +35,11 @@ const (
 	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{.Status}}</td>
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{with .InitialMetricCount}}{{.}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{with .AverageChangedMetrics}}{{$top.Float32 .}}{{else}}&nbsp;{{end}}</td>
 	    <td>{{if .PollTime}}{{.PollTime}}{{else}}&nbsp;{{end}}</td>
 	  </tr>
+	\ {{end}} \
 	\ {{end}} \
 	</table>
 	</body>
@@ -62,6 +68,10 @@ type view struct {
 	Apps            []*datastructs.ApplicationStatus
 	TotalApps       int
 	TotalFailedApps int
+}
+
+func (v *view) Float32(x float64) float32 {
+	return float32(x)
 }
 
 func newView(apps []*datastructs.ApplicationStatus) *view {

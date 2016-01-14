@@ -3,11 +3,14 @@ package store
 import (
 	"container/list"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 const (
@@ -16,6 +19,12 @@ const (
 
 var (
 	kPlusInf = math.Inf(1)
+)
+
+var (
+	gPagesPerMetricDist = tricorder.NewGeometricBucketer(
+		1.0, 1e6).NewDistribution()
+	gLatestTimeEvicted *time.Time
 )
 
 // metricInfoStoreType keeps a pool of pointers to unique MetricInfo instances
@@ -130,13 +139,20 @@ func newTimeSeriesType(
 	page.Add(timestamp, value)
 	result := &timeSeriesType{id: id}
 	result.pages.Init().PushBack(page)
+	gPagesPerMetricDist.Add(1.0)
 	return result
 }
 
 func (t *timeSeriesType) Reap() *pageType {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	return t.pages.Remove(t.pages.Front()).(*pageType)
+	oldLen := float64(t.pages.Len())
+	result := t.pages.Remove(t.pages.Front()).(*pageType)
+	gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
+	latestTime, _ := result.LatestValue()
+	goLatestTime := trimessages.FloatToTime(latestTime)
+	gLatestTimeEvicted = &goLatestTime
+	return result
 }
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
@@ -170,7 +186,9 @@ func (t *timeSeriesType) Add(
 	if page == nil {
 		latestPage = t.latestPage()
 	} else {
+		oldLen := float64(t.pages.Len())
 		t.pages.PushBack(page)
+		gPagesPerMetricDist.Update(oldLen, oldLen+1)
 		if t.pages.Len() > kReapingThreshold {
 			isEligibleForReaping = true
 		}
@@ -428,4 +446,30 @@ func (s *Store) visitAllMachines(v Visitor) (err error) {
 		}
 	}
 	return
+}
+
+func (s *Store) registerMetrics() {
+	if err := tricorder.RegisterMetric(
+		"/store/pagesPerMEtric",
+		gPagesPerMetricDist,
+		units.None,
+		"Number of pages used per metric"); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"/store/latestTimeStampEvicted",
+		&gLatestTimeEvicted,
+		units.None,
+		"Latest timestamp evicted from data store."); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"/store/availablePages",
+		func() int {
+			return len(s.supplier)
+		},
+		units.None,
+		"Number of pages available to hold new metrics."); err != nil {
+		panic(err)
+	}
 }

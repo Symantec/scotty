@@ -450,7 +450,7 @@ func (s *Store) visitAllMachines(v Visitor) (err error) {
 
 func (s *Store) registerMetrics() {
 	if err := tricorder.RegisterMetric(
-		"/store/pagesPerMEtric",
+		"/store/pagesPerMetric",
 		gPagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {

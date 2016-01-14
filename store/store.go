@@ -24,8 +24,9 @@ var (
 var (
 	gPagesPerMetricDist = tricorder.NewGeometricBucketer(
 		1.0, 1e6).NewDistribution()
-	gLatestTimeEvicted *time.Time
-	gMetricValueCount  = &countType{}
+	gLastTimeEvicted  *time.Time
+	gMetricValueCount = &countType{}
+	gMaxValuesPerPage int
 )
 
 type countType struct {
@@ -166,14 +167,14 @@ func (t *timeSeriesType) Reap() *pageType {
 	defer t.lock.Unlock()
 	oldLen := float64(t.pages.Len())
 	result := t.pages.Remove(t.pages.Front()).(*pageType)
-	gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
 	latestTime, _ := result.LatestValue()
 	goLatestTime := trimessages.FloatToTime(latestTime)
-	gLatestTimeEvicted = &goLatestTime
+	gLastTimeEvicted = &goLatestTime
 	if !result.IsFull() {
 		panic("Oops, timeSeries is giving up a partially filled page.")
 	}
 	gMetricValueCount.Add(int64(-len(*result)))
+	gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
 	return result
 }
 
@@ -368,6 +369,10 @@ type reaperType interface {
 type pageSupplierType chan reaperType
 
 func newPageSupplierType(valueCountPerPage, pageCount int) pageSupplierType {
+	if gMaxValuesPerPage != 0 {
+		panic("Oops, initialized a store from scratch already.")
+	}
+	gMaxValuesPerPage = valueCountPerPage
 	result := make(pageSupplierType, pageCount)
 	for i := 0; i < pageCount; i++ {
 		newPage := make(pageType, valueCountPerPage)
@@ -497,8 +502,8 @@ func (s *Store) registerMetrics() {
 		panic(err)
 	}
 	if err := tricorder.RegisterMetric(
-		"/store/latestTimeStampEvicted",
-		&gLatestTimeEvicted,
+		"/store/lastTimeStampEvicted",
+		&gLastTimeEvicted,
 		units.None,
 		"Latest timestamp evicted from data store."); err != nil {
 		panic(err)
@@ -510,6 +515,15 @@ func (s *Store) registerMetrics() {
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"/store/pageUtilization",
+		func() float64 {
+			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(gMaxValuesPerPage)
+		},
+		units.None,
+		"Page utilization 0.0 - 1.0"); err != nil {
 		panic(err)
 	}
 	if err := tricorder.RegisterMetric(

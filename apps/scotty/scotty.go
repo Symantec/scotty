@@ -499,15 +499,13 @@ func (l *loggerType) LogError(m *collector.Machine, err error, state *collector.
 func (l *loggerType) LogResponse(
 	m *collector.Machine, metrics trimessages.MetricList, state *collector.State) {
 	ts := trimessages.TimeToFloat(state.Timestamp())
-	var added int
-	for i := range metrics {
-		if metrics[i].Kind == types.Dist {
-			continue
-		}
-		if l.Store.Add(m, ts, metrics[i]) {
-			added++
-		}
-	}
+	added := l.Store.AddBatch(
+		m,
+		ts,
+		metrics,
+		func(ametric *trimessages.Metric) bool {
+			return ametric.Kind != types.Dist
+		})
 	gApplicationStats.LogChangedMetricCount(m, added)
 	gChangedMetricsPerMachineDist.Add(float64(added))
 }

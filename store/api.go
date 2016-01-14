@@ -126,6 +126,21 @@ func (s *Store) Add(
 	return s.add(machineId, timestamp, m)
 }
 
+// AddBatch works like Add but adds several metric values at once.
+// If filter is non-nill, AddBatch ignores any metrics in metricList for
+// which filter returns false.
+// AddBatch returns the total number of metric values added.
+// No two goroutines may call AddBatch() on a Store instance concurrently
+// with the same machineId. However multiple goroutines may call
+// AddBatch() as long as long as each passes a different machineId.
+func (s *Store) AddBatch(
+	machineId *scotty.Machine,
+	timestamp float64,
+	metricList trimessages.MetricList,
+	filter func(*trimessages.Metric) bool) int {
+	return s.addBatch(machineId, timestamp, metricList, filter)
+}
+
 // ByNameAndMachine returns records for a metric by path and machine and
 // start and end times.
 // ByNameAndMachine will go back just before start when possible so that

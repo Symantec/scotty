@@ -51,8 +51,8 @@ var (
 
 var (
 	gHostsPortsAndStore           datastructs.HostsPortsAndStore
-	gCollectionTimesDist          = tricorder.NewGeometricBucketer(1e-4, 100.0).NewDistribution()
-	gChangedMetricsPerMachineDist = tricorder.NewGeometricBucketer(1.0, 10000.0).NewDistribution()
+	gCollectionTimesDist          = tricorder.NewGeometricBucketer(1e-4, 100.0).NewCumulativeDistribution()
+	gChangedMetricsPerMachineDist = tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
 	gStatusCounts                 = newStatusCountType()
 	gConnectionErrors             = newConnectionErrorsType()
 	gApplicationStats             = datastructs.NewApplicationStatuses()
@@ -252,10 +252,10 @@ type lmmHandlerType struct {
 	lastValuesThisMachine   map[*store.MetricInfo]interface{}
 	toBeWritten             []store.Record
 	toBeWrittenPtrs         []*store.Record
-	timeSpentWritingDist    *tricorder.Distribution
-	timeSpentCollectingDist *tricorder.Distribution
-	totalTimeSpentDist      *tricorder.Distribution
-	perBatchWriteDist       *tricorder.Distribution
+	timeSpentWritingDist    *tricorder.CumulativeDistribution
+	timeSpentCollectingDist *tricorder.CumulativeDistribution
+	totalTimeSpentDist      *tricorder.CumulativeDistribution
+	perBatchWriteDist       *tricorder.CumulativeDistribution
 	ttWriter                *timeTakenLmmWriter
 	startTime               time.Time
 	// Protects all fields below
@@ -268,10 +268,10 @@ func newLmmHandler(w lmmWriterType) *lmmHandlerType {
 	return &lmmHandlerType{
 		writer:                  w,
 		lastValues:              make(map[*collector.Machine]map[*store.MetricInfo]interface{}),
-		timeSpentWritingDist:    bucketer.NewDistribution(),
-		timeSpentCollectingDist: bucketer.NewDistribution(),
-		totalTimeSpentDist:      bucketer.NewDistribution(),
-		perBatchWriteDist:       bucketer.NewDistribution(),
+		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
+		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
+		totalTimeSpentDist:      bucketer.NewCumulativeDistribution(),
+		perBatchWriteDist:       bucketer.NewCumulativeDistribution(),
 	}
 }
 
@@ -800,7 +800,7 @@ func main() {
 		gChangedMetricsPerMachineDist,
 		units.None,
 		"Changed metrics per sweep")
-	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewDistribution()
+	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	tricorder.RegisterMetric(
 		"collector/sweepDuration",
 		sweepDurationDist,

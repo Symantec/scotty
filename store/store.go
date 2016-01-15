@@ -22,11 +22,11 @@ var (
 )
 
 var (
+	// application wide metrics
 	gPagesPerMetricDist = tricorder.NewGeometricBucketer(
-		1.0, 1e6).NewDistribution()
+		1.0, 1e6).NewNonCumulativeDistribution()
 	gLastTimeEvicted  *time.Time
 	gMetricValueCount = &countType{}
-	gMaxValuesPerPage int
 )
 
 type countType struct {
@@ -369,10 +369,6 @@ type reaperType interface {
 type pageSupplierType chan reaperType
 
 func newPageSupplierType(valueCountPerPage, pageCount int) pageSupplierType {
-	if gMaxValuesPerPage != 0 {
-		panic("Oops, initialized a store from scratch already.")
-	}
-	gMaxValuesPerPage = valueCountPerPage
 	result := make(pageSupplierType, pageCount)
 	for i := 0; i < pageCount; i++ {
 		newPage := make(pageType, valueCountPerPage)
@@ -419,16 +415,20 @@ func (b *Builder) build() *Store {
 	b.byApplication = nil
 	b.supplier = nil
 	return &Store{
-		byApplication: byApplication,
-		supplier:      supplier,
+		byApplication:    byApplication,
+		supplier:         supplier,
+		totalPageCount:   b.totalPageCount,
+		maxValuesPerPage: b.maxValuesPerPage,
 	}
 }
 
 func (s *Store) newBuilder() *Builder {
 	return &Builder{
-		byApplication: make(map[*scotty.Machine]*timeSeriesCollectionType),
-		supplier:      s.supplier,
-		prevStore:     s}
+		byApplication:    make(map[*scotty.Machine]*timeSeriesCollectionType),
+		supplier:         s.supplier,
+		totalPageCount:   s.totalPageCount,
+		maxValuesPerPage: s.maxValuesPerPage,
+		prevStore:        s}
 }
 
 func (s *Store) add(
@@ -518,9 +518,23 @@ func (s *Store) registerMetrics() {
 		panic(err)
 	}
 	if err := tricorder.RegisterMetric(
+		"/store/totalPages",
+		&s.totalPageCount,
+		units.None,
+		"Total number of pages."); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"/store/maxValuesPerPage",
+		&s.maxValuesPerPage,
+		units.None,
+		"Maximum number ofvalues that can fit in a page."); err != nil {
+		panic(err)
+	}
+	if err := tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
-			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(gMaxValuesPerPage)
+			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(s.maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {

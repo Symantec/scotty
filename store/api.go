@@ -74,17 +74,21 @@ type Visitor interface {
 }
 
 type Builder struct {
-	byApplication map[*scotty.Machine]*timeSeriesCollectionType
-	supplier      pageSupplierType
-	prevStore     *Store
+	byApplication    map[*scotty.Machine]*timeSeriesCollectionType
+	supplier         pageSupplierType
+	totalPageCount   int
+	maxValuesPerPage int
+	prevStore        *Store
 }
 
 // NewBuilder creates a new store builder.
 func NewBuilder(
 	valueCountPerPage, pageCount int) *Builder {
 	return &Builder{
-		byApplication: make(map[*scotty.Machine]*timeSeriesCollectionType),
-		supplier:      newPageSupplierType(valueCountPerPage, pageCount),
+		byApplication:    make(map[*scotty.Machine]*timeSeriesCollectionType),
+		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
+		totalPageCount:   pageCount,
+		maxValuesPerPage: valueCountPerPage,
 	}
 }
 
@@ -103,8 +107,10 @@ func (b *Builder) Build() *Store {
 // Client must register all the machines with the Store
 // instance before storing any metrics.
 type Store struct {
-	byApplication map[*scotty.Machine]*timeSeriesCollectionType
-	supplier      pageSupplierType
+	byApplication    map[*scotty.Machine]*timeSeriesCollectionType
+	supplier         pageSupplierType
+	totalPageCount   int
+	maxValuesPerPage int
 }
 
 // NewBuilder returns a Builder for creating a new store when the

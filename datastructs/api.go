@@ -8,7 +8,7 @@ import (
 )
 
 // HostsAndPorts is a map between "hostname:port" and corresponding Id
-type HostsAndPorts map[string]*scotty.Machine
+type HostsAndPorts map[string]*scotty.Endpoint
 
 // Copy returns a copy of this instance.
 func (h HostsAndPorts) Copy() HostsAndPorts {
@@ -52,8 +52,8 @@ func (h *HostsPortsAndStore) Update(hostsAndPorts HostsAndPorts) {
 
 // ApplicationStatus represents the status of a single application.
 type ApplicationStatus struct {
-	MachineId *scotty.Machine
-	Status    scotty.Status
+	EndpointId *scotty.Endpoint
+	Status     scotty.Status
 
 	// The zero value means no successful read
 	LastReadTime time.Time
@@ -92,23 +92,23 @@ type ApplicationStatuses struct {
 	// The ApplicationStatus objects in the map are mutable to make
 	// updates more memory efficient. lock protects each ApplicationStatus
 	// object as well as the map itself.
-	byMachine map[*scotty.Machine]*ApplicationStatus
+	byEndpoint map[*scotty.Endpoint]*ApplicationStatus
 }
 
 func NewApplicationStatuses() *ApplicationStatuses {
 	return &ApplicationStatuses{
-		byMachine: make(map[*scotty.Machine]*ApplicationStatus),
+		byEndpoint: make(map[*scotty.Endpoint]*ApplicationStatus),
 	}
 }
 
 func (a *ApplicationStatuses) Update(
-	m *scotty.Machine, newState *scotty.State) {
-	a.update(m, newState)
+	e *scotty.Endpoint, newState *scotty.State) {
+	a.update(e, newState)
 }
 
 func (a *ApplicationStatuses) LogChangedMetricCount(
-	m *scotty.Machine, metricCount int) {
-	a.logChangedMetricCount(m, metricCount)
+	e *scotty.Endpoint, metricCount int) {
+	a.logChangedMetricCount(e, metricCount)
 }
 
 func (a *ApplicationStatuses) GetAll(

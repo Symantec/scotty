@@ -1,5 +1,5 @@
 /*
-Package scotty collects machine health metrics asynchronously. Although the
+Package scotty collects endpoint health metrics asynchronously. Although the
 GO API in this package is subject to change at anytime, the REST API that
 the scotty application provides will be stable.
 
@@ -15,7 +15,7 @@ REST urls (always use GET)
 		along with values for the last hour. If not metrics match,
 		returns an empty list.
 	http://scottyhostname.com/api/errors
-		Returns a list of every machine that scotty cannot currently
+		Returns a list of every endpoint that scotty cannot currently
 		reach along with the timestamp of the last attempt and the
 		error encountered. If no errors, returns an empty list.
 

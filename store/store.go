@@ -108,7 +108,7 @@ func (p pageType) IsFull() bool {
 }
 
 func (p pageType) Fetch(
-	applicationId *scotty.Machine,
+	applicationId *scotty.Endpoint,
 	id *MetricInfo,
 	start, end float64,
 	result Appender) (keepGoing bool) {
@@ -222,7 +222,7 @@ func (t *timeSeriesType) Add(
 }
 
 func (t *timeSeriesType) Fetch(
-	applicationId *scotty.Machine,
+	applicationId *scotty.Endpoint,
 	start, end float64,
 	result Appender) {
 	t.lock.Lock()
@@ -241,14 +241,14 @@ func (t *timeSeriesType) latestPage() *pageType {
 }
 
 type timeSeriesCollectionType struct {
-	applicationId   *scotty.Machine
+	applicationId   *scotty.Endpoint
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
 }
 
 func newTimeSeriesCollectionType(
-	app *scotty.Machine) *timeSeriesCollectionType {
+	app *scotty.Endpoint) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
 		applicationId: app,
 		timeSeries:    make(map[*MetricInfo]*timeSeriesType),
@@ -395,18 +395,18 @@ func (l *recordListType) Append(r *Record) {
 	*l = append(*l, &recordCopy)
 }
 
-func (b *Builder) registerMachine(machineId *scotty.Machine) {
-	if b.byApplication[machineId] != nil {
-		panic("Machine already registered")
+func (b *Builder) registerEndpoint(endpointId *scotty.Endpoint) {
+	if b.byApplication[endpointId] != nil {
+		panic("Endpoint already registered")
 	}
 	var collection *timeSeriesCollectionType
 	if b.prevStore != nil {
-		collection = b.prevStore.byApplication[machineId]
+		collection = b.prevStore.byApplication[endpointId]
 	}
 	if collection == nil {
-		collection = newTimeSeriesCollectionType(machineId)
+		collection = newTimeSeriesCollectionType(endpointId)
 	}
-	b.byApplication[machineId] = collection
+	b.byApplication[endpointId] = collection
 }
 
 func (b *Builder) build() *Store {
@@ -424,7 +424,7 @@ func (b *Builder) build() *Store {
 
 func (s *Store) newBuilder() *Builder {
 	return &Builder{
-		byApplication:    make(map[*scotty.Machine]*timeSeriesCollectionType),
+		byApplication:    make(map[*scotty.Endpoint]*timeSeriesCollectionType),
 		supplier:         s.supplier,
 		totalPageCount:   s.totalPageCount,
 		maxValuesPerPage: s.maxValuesPerPage,
@@ -432,13 +432,13 @@ func (s *Store) newBuilder() *Builder {
 }
 
 func (s *Store) add(
-	machineId *scotty.Machine,
+	endpointId *scotty.Endpoint,
 	timestamp float64, m *trimessages.Metric) bool {
-	return s.byApplication[machineId].Add(timestamp, m, s.supplier)
+	return s.byApplication[endpointId].Add(timestamp, m, s.supplier)
 }
 
 func (s *Store) addBatch(
-	machineId *scotty.Machine,
+	endpointId *scotty.Endpoint,
 	timestamp float64,
 	metricList trimessages.MetricList,
 	filter func(*trimessages.Metric) bool) int {
@@ -447,7 +447,7 @@ func (s *Store) addBatch(
 		if filter != nil && !filter(metric) {
 			continue
 		}
-		if s.add(machineId, timestamp, metric) {
+		if s.add(endpointId, timestamp, metric) {
 			result++
 		}
 	}
@@ -455,38 +455,38 @@ func (s *Store) addBatch(
 	return result
 }
 
-func (s *Store) byNameAndMachine(
+func (s *Store) byNameAndEndpoint(
 	name string,
-	machineId *scotty.Machine,
+	endpointId *scotty.Endpoint,
 	start, end float64,
 	result Appender) {
-	s.byApplication[machineId].ByName(name, start, end, result)
+	s.byApplication[endpointId].ByName(name, start, end, result)
 }
 
-func (s *Store) byPrefixAndMachine(
+func (s *Store) byPrefixAndEndpoint(
 	prefix string,
-	machineId *scotty.Machine,
+	endpointId *scotty.Endpoint,
 	start, end float64,
 	result Appender) {
-	s.byApplication[machineId].ByPrefix(prefix, start, end, result)
+	s.byApplication[endpointId].ByPrefix(prefix, start, end, result)
 }
 
-func (s *Store) byMachine(
-	machineId *scotty.Machine,
+func (s *Store) byEndpoint(
+	endpointId *scotty.Endpoint,
 	start, end float64,
 	result Appender) {
-	s.byApplication[machineId].ByPrefix("", start, end, result)
+	s.byApplication[endpointId].ByPrefix("", start, end, result)
 }
 
-func (s *Store) latestByMachine(
-	machineId *scotty.Machine,
+func (s *Store) latestByEndpoint(
+	endpointId *scotty.Endpoint,
 	result Appender) {
-	s.byApplication[machineId].Latest(result)
+	s.byApplication[endpointId].Latest(result)
 }
 
-func (s *Store) visitAllMachines(v Visitor) (err error) {
-	for machineId := range s.byApplication {
-		if err = v.Visit(s, machineId); err != nil {
+func (s *Store) visitAllEndpoints(v Visitor) (err error) {
+	for endpointId := range s.byApplication {
+		if err = v.Visit(s, endpointId); err != nil {
 			return
 		}
 	}

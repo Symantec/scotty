@@ -7,7 +7,7 @@ import (
 
 // Timestamped value represents a single timestamped value.
 // The type of value stored in the value field depends on the kind field
-// of the enclosing MachineMetrics struct.
+// of the enclosing EndpointMetrics struct.
 // See https://godoc.org/github.com/Symantec/tricorder/go/tricorder/messages#Metric
 // for more detail.
 type TimestampedValue struct {
@@ -23,8 +23,8 @@ type TimestampedValue struct {
 // in place.
 type TimestampedValueList []*TimestampedValue
 
-// MachineMetrics represents the current metrics on a machine
-type MachineMetrics struct {
+// EndpointMetrics represents the current metrics on an endpoint
+type EndpointMetrics struct {
 	HostName    string               `json:"hostName,omitempty"`
 	Path        string               `json:"path,omitempty"`
 	Description string               `json:"description"`
@@ -34,12 +34,12 @@ type MachineMetrics struct {
 	Values      TimestampedValueList `json:"values"`
 }
 
-// MachineMetricsList represents a list of MachineMetrics. Client should
-// treat MachineMetricsList instances as immutable. In particular,
-// clients should not modify contained MachineMetrics instances in place.
-type MachineMetricsList []*MachineMetrics
+// EndpointMetricsList represents a list of EndpointMetrics. Client should
+// treat EndpointMetricsList instances as immutable. In particular,
+// clients should not modify contained EndpointMetrics instances in place.
+type EndpointMetricsList []*EndpointMetrics
 
-// Error represents an error retrieving metrics from a particular machine
+// Error represents an error retrieving metrics from a particular endpoint
 type Error struct {
 	HostName  string `json:"hostName"`
 	Timestamp string `json:"timestamp"`

@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	minLmmBatchSize       = 1000
-	totalNumberOfMachines = 10000
+	minLmmBatchSize        = 1000
+	totalNumberOfEndpoints = 10000
 )
 
 var (
@@ -50,12 +50,12 @@ var (
 )
 
 var (
-	gHostsPortsAndStore           datastructs.HostsPortsAndStore
-	gCollectionTimesDist          = tricorder.NewGeometricBucketer(1e-4, 100.0).NewCumulativeDistribution()
-	gChangedMetricsPerMachineDist = tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
-	gStatusCounts                 = newStatusCountType()
-	gConnectionErrors             = newConnectionErrorsType()
-	gApplicationStats             = datastructs.NewApplicationStatuses()
+	gHostsPortsAndStore            datastructs.HostsPortsAndStore
+	gCollectionTimesDist           = tricorder.NewGeometricBucketer(1e-4, 100.0).NewCumulativeDistribution()
+	gChangedMetricsPerEndpointDist = tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
+	gStatusCounts                  = newStatusCountType()
+	gConnectionErrors              = newConnectionErrorsType()
+	gApplicationStats              = datastructs.NewApplicationStatuses()
 )
 
 type statusCountSnapshotType struct {
@@ -138,7 +138,7 @@ func (s *statusCountType) RegisterMetrics() {
 		&data.SyncedCount,
 		region,
 		units.None,
-		"Number of machines synced")
+		"Number of endpoints synced")
 	tricorder.RegisterMetricInRegion(
 		"collector/connectFailures",
 		&data.FailedToConnectCount,
@@ -169,17 +169,17 @@ func (b byHostName) Swap(i, j int) {
 
 type connectionErrorsType struct {
 	lock     sync.Mutex
-	errorMap map[*collector.Machine]*messages.Error
+	errorMap map[*collector.Endpoint]*messages.Error
 }
 
 func newConnectionErrorsType() *connectionErrorsType {
 	return &connectionErrorsType{
-		errorMap: make(map[*collector.Machine]*messages.Error),
+		errorMap: make(map[*collector.Endpoint]*messages.Error),
 	}
 }
 
 func (e *connectionErrorsType) Set(
-	m *collector.Machine, err error, timestamp time.Time) {
+	m *collector.Endpoint, err error, timestamp time.Time) {
 	newError := &messages.Error{
 		HostName:  m.HostName(),
 		Timestamp: trimessages.SinceEpoch(timestamp).String(),
@@ -190,7 +190,7 @@ func (e *connectionErrorsType) Set(
 	e.errorMap[m] = newError
 }
 
-func (e *connectionErrorsType) Clear(m *collector.Machine) {
+func (e *connectionErrorsType) Clear(m *collector.Endpoint) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	delete(e.errorMap, m)
@@ -200,8 +200,8 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 	e.lock.Lock()
 	result = make(messages.ErrorList, len(e.errorMap))
 	idx := 0
-	for machine := range e.errorMap {
-		result[idx] = e.errorMap[machine]
+	for endpoint := range e.errorMap {
+		result[idx] = e.errorMap[endpoint]
 		idx++
 	}
 	e.lock.Unlock()
@@ -213,16 +213,16 @@ var (
 	aWriteError = errors.New("A bad write error.")
 )
 
-func machineNameAndPort(
-	machineNames []string,
-	machinePorts []int,
+func endpointNameAndPort(
+	endpointNames []string,
+	endpointPorts []int,
 	i int) (name string, port int) {
-	length := len(machineNames)
+	length := len(endpointNames)
 	return fmt.Sprintf(
 			"%s*%d",
-			machineNames[i%length],
+			endpointNames[i%length],
 			i),
-		machinePorts[i%length]
+		endpointPorts[i%length]
 }
 
 // lmmWriterType implementations write to LMM
@@ -236,20 +236,20 @@ type lmmHandlerData struct {
 	WriteAttempts    int64
 	SuccessfulWrites int64
 	LastWriteError   string
-	MachinesVisited  int64
+	EndpointsVisited int64
 }
 
 // lmmHandlerType implements store.Visitor.
 // Its Visit method writes the latest value for each metric in the store to LMM.
-// It stores the last value for each machine and metric it wrote to LMM so
+// It stores the last value for each endpoint and metric it wrote to LMM so
 // that it can avoid writing the same value twice.
 // an lmmHandlerType instance buffers writes so that each write to LMM
 // includes at least fLmmBatchSize metrics.
 // lmmHandlerType is NOT threadsafe.
 type lmmHandlerType struct {
 	writer                  lmmWriterType
-	lastValues              map[*collector.Machine]map[*store.MetricInfo]interface{}
-	lastValuesThisMachine   map[*store.MetricInfo]interface{}
+	lastValues              map[*collector.Endpoint]map[*store.MetricInfo]interface{}
+	lastValuesThisEndpoint  map[*store.MetricInfo]interface{}
 	toBeWritten             []store.Record
 	toBeWrittenPtrs         []*store.Record
 	timeSpentWritingDist    *tricorder.CumulativeDistribution
@@ -267,7 +267,7 @@ func newLmmHandler(w lmmWriterType) *lmmHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	return &lmmHandlerType{
 		writer:                  w,
-		lastValues:              make(map[*collector.Machine]map[*store.MetricInfo]interface{}),
+		lastValues:              make(map[*collector.Endpoint]map[*store.MetricInfo]interface{}),
 		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
 		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
 		totalTimeSpentDist:      bucketer.NewCumulativeDistribution(),
@@ -281,10 +281,10 @@ func (l *lmmHandlerType) Append(r *store.Record) {
 	if !lmm.IsTypeSupported(kind) {
 		return
 	}
-	if l.lastValuesThisMachine[r.Info] == r.Value {
+	if l.lastValuesThisEndpoint[r.Info] == r.Value {
 		return
 	}
-	l.lastValuesThisMachine[r.Info] = r.Value
+	l.lastValuesThisEndpoint[r.Info] = r.Value
 	l.toBeWritten = append(l.toBeWritten, *r)
 }
 
@@ -302,20 +302,20 @@ func (l *lmmHandlerType) EndVisit() {
 }
 
 func (l *lmmHandlerType) Visit(
-	theStore *store.Store, machineId *collector.Machine) error {
+	theStore *store.Store, endpointId *collector.Endpoint) error {
 
-	// Get the last known values for this machine creating the map
+	// Get the last known values for this endpoint creating the map
 	// if necessary.
-	l.lastValuesThisMachine = l.lastValues[machineId]
-	if l.lastValuesThisMachine == nil {
-		l.lastValuesThisMachine = make(
+	l.lastValuesThisEndpoint = l.lastValues[endpointId]
+	if l.lastValuesThisEndpoint == nil {
+		l.lastValuesThisEndpoint = make(
 			map[*store.MetricInfo]interface{})
-		l.lastValues[machineId] = l.lastValuesThisMachine
+		l.lastValues[endpointId] = l.lastValuesThisEndpoint
 	}
 
 	// Get the latest values to write to lmm, but get only the
 	// values that changed.
-	theStore.LatestByMachine(machineId, l)
+	theStore.LatestByEndpoint(endpointId, l)
 
 	// If we have enough values to write, write them out to LMM.
 	if len(l.toBeWritten) >= fLmmBatchSize {
@@ -415,19 +415,19 @@ func (l *lmmHandlerType) RegisterMetrics() {
 		units.None,
 		"Last write error")
 	tricorder.RegisterMetricInRegion(
-		"writer/machinesVisited",
-		&data.MachinesVisited,
+		"writer/endpointsVisited",
+		&data.EndpointsVisited,
 		region,
 		units.None,
-		"Number of machines visited")
+		"Number of endpoints visited")
 	tricorder.RegisterMetricInRegion(
-		"writer/averageMetricsPerMachine",
+		"writer/averageMetricsPerEndpoint",
 		func() float64 {
-			return float64(data.MetricsWritten) / float64(data.MachinesVisited)
+			return float64(data.MetricsWritten) / float64(data.EndpointsVisited)
 		},
 		region,
 		units.None,
-		"Average metrics written per machine per cycle.")
+		"Average metrics written per endpoint per cycle.")
 	tricorder.RegisterMetricInRegion(
 		"writer/averageMetricsPerBatch",
 		func() float64 {
@@ -456,7 +456,7 @@ func (l *lmmHandlerType) logWriteError(err error) {
 func (l *lmmHandlerType) logVisit() {
 	l.lock.Lock()
 	defer l.lock.Unlock()
-	l.stats.MachinesVisited++
+	l.stats.EndpointsVisited++
 }
 
 // collectData collects metrics about this instance.
@@ -475,7 +475,7 @@ type loggerType struct {
 }
 
 func (l *loggerType) LogStateChange(
-	m *collector.Machine, oldS, newS *collector.State) {
+	e *collector.Endpoint, oldS, newS *collector.State) {
 	if newS.Status() == collector.Synced {
 		gCollectionTimesDist.Add(
 			newS.TimeSpentConnecting() + newS.TimeSpentPolling() + newS.TimeSpentWaitingToConnect() + newS.TimeSpentWaitingToPoll())
@@ -485,29 +485,29 @@ func (l *loggerType) LogStateChange(
 	} else {
 		gStatusCounts.Update(collector.Unknown, newS.Status())
 	}
-	gApplicationStats.Update(m, newS)
+	gApplicationStats.Update(e, newS)
 }
 
-func (l *loggerType) LogError(m *collector.Machine, err error, state *collector.State) {
+func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector.State) {
 	if err == nil {
-		gConnectionErrors.Clear(m)
+		gConnectionErrors.Clear(e)
 	} else {
-		gConnectionErrors.Set(m, err, state.Timestamp())
+		gConnectionErrors.Set(e, err, state.Timestamp())
 	}
 }
 
 func (l *loggerType) LogResponse(
-	m *collector.Machine, metrics trimessages.MetricList, state *collector.State) {
+	e *collector.Endpoint, metrics trimessages.MetricList, state *collector.State) {
 	ts := trimessages.TimeToFloat(state.Timestamp())
 	added := l.Store.AddBatch(
-		m,
+		e,
 		ts,
 		metrics,
 		func(ametric *trimessages.Metric) bool {
 			return ametric.Kind != types.Dist
 		})
-	gApplicationStats.LogChangedMetricCount(m, added)
-	gChangedMetricsPerMachineDist.Add(float64(added))
+	gApplicationStats.LogChangedMetricCount(e, added)
+	gChangedMetricsPerEndpointDist.Add(float64(added))
 }
 
 type gzipResponseWriter struct {
@@ -535,32 +535,32 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.H.ServeHTTP(gzr, r)
 }
 
-// machineMetricsAppender is an implementation of store.Appender that
-// appends to a messages.MachineMetricsList.
-// machineMetricsAppender is NOT threadsafe.
-type machineMetricsAppender struct {
-	machineMetrics *messages.MachineMetricsList
-	lastInfo       *store.MetricInfo
-	lastMetric     *messages.MachineMetrics
+// endpointMetricsAppender is an implementation of store.Appender that
+// appends to a messages.EndpointMetricsList.
+// endpointMetricsAppender is NOT threadsafe.
+type endpointMetricsAppender struct {
+	endpointMetrics *messages.EndpointMetricsList
+	lastInfo        *store.MetricInfo
+	lastMetric      *messages.EndpointMetrics
 }
 
-// newMachineMetricsAppender creates a machineMetricsAppender that appends
+// newEndpointMetricsAppender creates a endpointMetricsAppender that appends
 // to result.
-func newMachineMetricsAppender(result *messages.MachineMetricsList) *machineMetricsAppender {
-	return &machineMetricsAppender{machineMetrics: result}
+func newEndpointMetricsAppender(result *messages.EndpointMetricsList) *endpointMetricsAppender {
+	return &endpointMetricsAppender{endpointMetrics: result}
 }
 
-func (a *machineMetricsAppender) Append(r *store.Record) {
+func (a *endpointMetricsAppender) Append(r *store.Record) {
 	if r.Info != a.lastInfo {
 		a.lastInfo = r.Info
 		_, jsonKind := trimessages.AsJson(nil, a.lastInfo.Kind(), a.lastInfo.Unit())
-		a.lastMetric = &messages.MachineMetrics{
+		a.lastMetric = &messages.EndpointMetrics{
 			Path:        a.lastInfo.Path(),
 			Kind:        jsonKind,
 			Description: a.lastInfo.Description(),
 			Bits:        a.lastInfo.Bits(),
 			Unit:        a.lastInfo.Unit()}
-		*a.machineMetrics = append(*a.machineMetrics, a.lastMetric)
+		*a.endpointMetrics = append(*a.endpointMetrics, a.lastMetric)
 	}
 	jsonValue, _ := trimessages.AsJson(r.Value, a.lastInfo.Kind(), a.lastInfo.Unit())
 	newTimestampedValue := &messages.TimestampedValue{
@@ -570,37 +570,37 @@ func (a *machineMetricsAppender) Append(r *store.Record) {
 	a.lastMetric.Values = append(a.lastMetric.Values, newTimestampedValue)
 }
 
-// gatherDataForMachine serves api/hosts pages.
+// gatherDataForEndpoint serves api/hosts pages.
 // metricStore is the metric store.
-// machine is the machine from which we are getting historical metrics.
+// endpoint is the endpoint from which we are getting historical metrics.
 // path is the path of the metrics or the empty string for all metrics
 // history is the amount of time to go back in minutes.
 // If isSingleton is true, fetched metrics have to match path exactly.
 // Otherwise fetched metrics have to be found underneath path.
-// On no match, gatherDataForMachine returns an empty
-// messages.MachineMetricsList instance
-func gatherDataForMachine(
+// On no match, gatherDataForEndpoint returns an empty
+// messages.EndpointMetricsList instance
+func gatherDataForEndpoint(
 	metricStore *store.Store,
-	machine *collector.Machine,
+	endpoint *collector.Endpoint,
 	path string,
 	history int,
-	isSingleton bool) (result messages.MachineMetricsList) {
-	result = make(messages.MachineMetricsList, 0)
+	isSingleton bool) (result messages.EndpointMetricsList) {
+	result = make(messages.EndpointMetricsList, 0)
 	now := trimessages.TimeToFloat(time.Now())
-	appender := newMachineMetricsAppender(&result)
+	appender := newEndpointMetricsAppender(&result)
 	if path == "" {
-		metricStore.ByMachine(machine, now-60.0*float64(history), math.Inf(1), appender)
+		metricStore.ByEndpoint(endpoint, now-60.0*float64(history), math.Inf(1), appender)
 	} else {
-		metricStore.ByNameAndMachine(
+		metricStore.ByNameAndEndpoint(
 			path,
-			machine,
+			endpoint,
 			now-60.0*float64(history),
 			math.Inf(1),
 			appender)
 		if !isSingleton {
-			metricStore.ByPrefixAndMachine(
+			metricStore.ByPrefixAndEndpoint(
 				path+"/",
-				machine,
+				endpoint,
 				now-60.0*float64(history),
 				math.Inf(1),
 				appender)
@@ -613,7 +613,7 @@ func gatherDataForMachine(
 }
 
 // byPath sorts metrics by path lexographically
-type byPath messages.MachineMetricsList
+type byPath messages.EndpointMetricsList
 
 func (b byPath) Len() int {
 	return len(b)
@@ -627,7 +627,7 @@ func (b byPath) Swap(i, j int) {
 	b[j], b[i] = b[i], b[j]
 }
 
-func sortMetricsByPath(result messages.MachineMetricsList) {
+func sortMetricsByPath(result messages.EndpointMetricsList) {
 	sort.Sort(byPath(result))
 }
 
@@ -653,12 +653,12 @@ func (h errorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, gConnectionErrors.GetErrors(), r.Form.Get("format") == "text")
 }
 
-// byMachineHandler handles serving api/hosts requests
-type byMachineHandler struct {
+// byEndpointHandler handles serving api/hosts requests
+type byEndpointHandler struct {
 }
 
-func (h byMachineHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metricStore, machines := gHostsPortsAndStore.Get()
+func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	metricStore, endpoints := gHostsPortsAndStore.Get()
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
 	hostAndPath := strings.SplitN(r.URL.Path, "/", 2)
@@ -674,12 +674,12 @@ func (h byMachineHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		history = 60
 	}
-	var data messages.MachineMetricsList
-	machine := machines[host]
-	if machine != nil {
-		data = gatherDataForMachine(metricStore, machine, path, history, isSingleton)
+	var data messages.EndpointMetricsList
+	endpoint := endpoints[host]
+	if endpoint != nil {
+		data = gatherDataForEndpoint(metricStore, endpoint, path, history, isSingleton)
 	} else {
-		data = make(messages.MachineMetricsList, 0)
+		data = make(messages.EndpointMetricsList, 0)
 	}
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
@@ -729,26 +729,26 @@ func newWriter() (result lmmWriterType, err error) {
 		config.Endpoints)
 }
 
-func updateMachines() error {
-	_, machines := gHostsPortsAndStore.Get()
-	machines = machines.Copy()
-	// TODO: update machines here with machines.AddIfAbsent
-	err := addMachines(machines)
+func updateEndpoints() error {
+	_, endpoints := gHostsPortsAndStore.Get()
+	endpoints = endpoints.Copy()
+	// TODO: update endpoints here with endpoints.AddIfAbsent
+	err := addEndpoints(endpoints)
 	if err != nil {
 		return err
 	}
 
 	// finally update the glboals
-	gHostsPortsAndStore.Update(machines)
+	gHostsPortsAndStore.Update(endpoints)
 	return nil
 }
 
-func addMachines(hostsAndPorts datastructs.HostsAndPorts) error {
-	machineNames, err := nodes.GetByCluster(fCluster)
+func addEndpoints(hostsAndPorts datastructs.HostsAndPorts) error {
+	endpointNames, err := nodes.GetByCluster(fCluster)
 	if err != nil {
 		return err
 	}
-	for _, name := range machineNames {
+	for _, name := range endpointNames {
 		hostsAndPorts.AddIfAbsent(name, 6910)
 	}
 	return nil
@@ -759,22 +759,22 @@ func main() {
 	flag.Parse()
 	collector.SetConcurrentPolls(fPollCount)
 	collector.SetConcurrentConnects(fConnectionCount)
-	firstMachines := make(datastructs.HostsAndPorts)
-	realMachines := (fHostFile == "")
+	firstEndpoints := make(datastructs.HostsAndPorts)
+	realEndpoints := (fHostFile == "")
 	writer, err := newWriter()
 	if err != nil {
 		log.Fatal(err)
 	}
 	lmmHandler := newLmmHandler(writer)
-	if !realMachines {
+	if !realEndpoints {
 		f, err := os.Open(fHostFile)
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer f.Close()
 		var hostAndPort string
-		var machineNames []string
-		var machinePorts []int
+		var endpointNames []string
+		var endpointPorts []int
 		_, err = fmt.Fscanln(f, &hostAndPort)
 		for ; err != io.EOF; _, err = fmt.Fscanln(f, &hostAndPort) {
 			if err != nil {
@@ -782,18 +782,18 @@ func main() {
 			}
 			splits := strings.SplitN(hostAndPort, ":", 2)
 			port, _ := strconv.Atoi(splits[1])
-			machineNames = append(machineNames, splits[0])
-			machinePorts = append(machinePorts, port)
+			endpointNames = append(endpointNames, splits[0])
+			endpointPorts = append(endpointPorts, port)
 		}
-		for i := 0; i < totalNumberOfMachines; i++ {
-			name, port := machineNameAndPort(machineNames, machinePorts, i)
+		for i := 0; i < totalNumberOfEndpoints; i++ {
+			name, port := endpointNameAndPort(endpointNames, endpointPorts, i)
 			if i%1000 == 37 {
 				port = 7776
 			}
-			firstMachines.AddIfAbsent(name, port)
+			firstEndpoints.AddIfAbsent(name, port)
 		}
 	} else {
-		err := addMachines(firstMachines)
+		err := addEndpoints(firstEndpoints)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -804,8 +804,8 @@ func main() {
 		units.Second,
 		"Collection Times")
 	tricorder.RegisterMetric(
-		"collector/changedMetricsPerMachine",
-		gChangedMetricsPerMachineDist,
+		"collector/changedMetricsPerEndpoint",
+		gChangedMetricsPerEndpointDist,
 		units.None,
 		"Changed metrics per sweep")
 	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
@@ -825,10 +825,10 @@ func main() {
 		units.Second,
 		"elapsed time")
 	tricorder.RegisterMetric(
-		"collector/activeMachineCount",
+		"collector/activeEndpointCount",
 		func() int {
-			_, machines := gHostsPortsAndStore.Get()
-			return len(machines)
+			_, endpoints := gHostsPortsAndStore.Get()
+			return len(endpoints)
 		},
 		units.Second,
 		"elapsed time")
@@ -836,18 +836,18 @@ func main() {
 	fmt.Println("Initialization started.")
 	// Value interface + float64 = 24 bytes
 	gHostsPortsAndStore.Init(
-		fBytesPerPage/24, fPageCount, firstMachines)
+		fBytesPerPage/24, fPageCount, firstEndpoints)
 	fmt.Println("Initialization complete.")
 	firstStore, _ := gHostsPortsAndStore.Get()
 	firstStore.RegisterMetrics()
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
 		for {
-			metricStore, machines := gHostsPortsAndStore.Get()
+			metricStore, endpoints := gHostsPortsAndStore.Get()
 			logger := &loggerType{Store: metricStore}
 			sweepTime := time.Now()
-			for _, machine := range machines {
-				machine.Poll(sweepTime, logger)
+			for _, endpoint := range endpoints {
+				endpoint.Poll(sweepTime, logger)
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
@@ -866,7 +866,7 @@ func main() {
 			metricStore, _ := gHostsPortsAndStore.Get()
 			writeTime := time.Now()
 			lmmHandler.StartVisit()
-			metricStore.VisitAllMachines(lmmHandler)
+			metricStore.VisitAllEndpoints(lmmHandler)
 			lmmHandler.EndVisit()
 			writeDuration := time.Now().Sub(writeTime)
 			if writeDuration < fLmmUpdateFrequency {
@@ -884,7 +884,7 @@ func main() {
 		"/api/hosts/",
 		http.StripPrefix(
 			"/api/hosts/",
-			gzipHandler{byMachineHandler{}}))
+			gzipHandler{byEndpointHandler{}}))
 	http.Handle(
 		"/api/errors/",
 		gzipHandler{errorHandler{}},
@@ -904,12 +904,12 @@ func init() {
 		&fPageCount,
 		"page_count",
 		30*1000*1000,
-		"Buffer size per machine in records")
+		"Buffer size per endpoint in records")
 	flag.IntVar(
 		&fBytesPerPage,
 		"bytes_per_page",
 		1024,
-		"Space for new metrics for each machine in records")
+		"Space for new metrics for each endpoint in records")
 	flag.StringVar(
 		&fHostFile,
 		"host_file",

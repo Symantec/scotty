@@ -30,8 +30,8 @@ const (
 	\ {{with $top := .}} \
 	\ {{range .Apps}} \
 	  <tr>
-	    <td>{{.MachineId.HostName}}</td>
-	    <td>{{.MachineId.Port}}</td>
+	    <td>{{.EndpointId.HostName}}</td>
+	    <td>{{.EndpointId.Port}}</td>
 	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{.Status}}</td>
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
@@ -95,13 +95,13 @@ type byNameAndPort []*datastructs.ApplicationStatus
 func (b byNameAndPort) Len() int { return len(b) }
 
 func (b byNameAndPort) Less(i, j int) bool {
-	ihostname := b[i].MachineId.HostName()
-	jhostname := b[j].MachineId.HostName()
+	ihostname := b[i].EndpointId.HostName()
+	jhostname := b[j].EndpointId.HostName()
 	if ihostname < jhostname {
 		return true
 	} else if jhostname < ihostname {
 		return false
-	} else if b[i].MachineId.Port() < b[j].MachineId.Port() {
+	} else if b[i].EndpointId.Port() < b[j].EndpointId.Port() {
 		return true
 	}
 	return false

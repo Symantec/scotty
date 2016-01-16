@@ -99,109 +99,109 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 	return s.finishedPolling(t, FailedToPoll)
 }
 
-func newMachine(
-	host string, port int) *Machine {
-	return &Machine{
+func newEndpoint(
+	host string, port int) *Endpoint {
+	return &Endpoint{
 		host:           host,
 		port:           port,
 		onePollAtATime: make(chan bool, 1),
 	}
 }
 
-func (m *Machine) poll(sweepStartTime time.Time, logger Logger) {
+func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 	select {
-	case m.onePollAtATime <- true:
+	case e.onePollAtATime <- true:
 		state := waitingToConnect(sweepStartTime)
-		m.logState(state, logger)
+		e.logState(state, logger)
 		connectSemaphore <- true
 		go func(state *State) {
 			defer func() {
-				<-m.onePollAtATime
+				<-e.onePollAtATime
 			}()
 			defer func() {
 				<-connectSemaphore
 			}()
 			state = state.goToConnecting(time.Now())
-			m.logState(state, logger)
-			conn, err := m.connect()
+			e.logState(state, logger)
+			conn, err := e.connect()
 			if err != nil {
 				state = state.goToFailedToConnect(time.Now())
-				m.logError(err, state, logger)
+				e.logError(err, state, logger)
 				return
 			}
 			defer conn.Close()
 			state = state.goToWaitingToPoll(time.Now())
-			m.logState(state, logger)
+			e.logState(state, logger)
 			pollSemaphore <- true
 			defer func() {
 				<-pollSemaphore
 			}()
 			state = state.goToPolling(time.Now())
-			m.logState(state, logger)
-			metrics, err := m._poll(conn)
+			e.logState(state, logger)
+			metrics, err := e._poll(conn)
 			if err != nil {
 				state = state.goToFailedToPoll(time.Now())
-				m.logError(err, state, logger)
+				e.logError(err, state, logger)
 				return
 			}
 			state = state.goToSynced(time.Now())
-			m.logMetrics(metrics, state, logger)
+			e.logMetrics(metrics, state, logger)
 		}(state)
 	default:
 		return
 	}
 }
 
-func (m *Machine) connect() (conn *rpc.Client, err error) {
-	hostname := strings.SplitN(m.host, "*", 2)[0]
+func (e *Endpoint) connect() (conn *rpc.Client, err error) {
+	hostname := strings.SplitN(e.host, "*", 2)[0]
 	return rpc.DialHTTP(
 		"tcp",
-		fmt.Sprintf("%s:%d", hostname, m.port))
+		fmt.Sprintf("%s:%d", hostname, e.port))
 }
 
-func (m *Machine) _poll(conn *rpc.Client) (
+func (e *Endpoint) _poll(conn *rpc.Client) (
 	metrics messages.MetricList, err error) {
 	err = conn.Call("MetricsServer.ListMetrics", "", &metrics)
 	return
 }
 
-func (m *Machine) logState(state *State, logger Logger) {
-	oldState := m._logState(state)
+func (e *Endpoint) logState(state *State, logger Logger) {
+	oldState := e._logState(state)
 	if logger != nil {
-		logger.LogStateChange(m, oldState, state)
+		logger.LogStateChange(e, oldState, state)
 	}
 }
 
-func (m *Machine) logMetrics(metrics messages.MetricList, state *State, logger Logger) {
-	oldState, hadError := m._setError(state, false)
+func (e *Endpoint) logMetrics(metrics messages.MetricList, state *State, logger Logger) {
+	oldState, hadError := e._setError(state, false)
 	if logger != nil {
-		logger.LogStateChange(m, oldState, state)
+		logger.LogStateChange(e, oldState, state)
 		if hadError {
-			logger.LogError(m, nil, nil)
+			logger.LogError(e, nil, nil)
 		}
-		logger.LogResponse(m, metrics, state)
+		logger.LogResponse(e, metrics, state)
 	}
 }
 
-func (m *Machine) logError(err error, state *State, logger Logger) {
-	oldState, _ := m._setError(state, true)
+func (e *Endpoint) logError(err error, state *State, logger Logger) {
+	oldState, _ := e._setError(state, true)
 	if logger != nil {
-		logger.LogStateChange(m, oldState, state)
-		logger.LogError(m, err, state)
+		logger.LogStateChange(e, oldState, state)
+		logger.LogError(e, err, state)
 	}
 }
 
-func (m *Machine) _logState(state *State) *State {
-	result := m.state
-	m.state = state
+func (e *Endpoint) _logState(state *State) *State {
+	result := e.state
+	e.state = state
 	return result
 }
 
-func (m *Machine) _setError(state *State, hasError bool) (
+func (e *Endpoint) _setError(state *State, hasError bool) (
 	oldState *State, hadError bool) {
-	oldState = m.state
-	hadError = m.errored
-	m.state = state
-	m.errored = hasError
+	oldState = e.state
+	hadError = e.errored
+	e.state = state
+	e.errored = hasError
 	return
 }

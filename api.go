@@ -1,4 +1,4 @@
-// Package scotty collects machine health metrics asynchronously.
+// Package scotty collects endpoint health metrics asynchronously.
 package scotty
 
 import (
@@ -7,12 +7,12 @@ import (
 )
 
 // Status represents the status of metric collection for a particular
-// machine. Failure statuses are negative, success statuses are
+// endpoint. Failure statuses are negative, success statuses are
 // positive.
 type Status int
 
 const (
-	// failed to connect to machine
+	// failed to connect to endpoint
 	FailedToConnect Status = -1 - iota
 	// connected, but failed to collect metrics
 	FailedToPoll
@@ -50,7 +50,7 @@ func (s Status) String() string {
 	}
 }
 
-// State represents the state of collecting metrics from a machine.
+// State represents the state of collecting metrics from a endpoint.
 // State instances are immutable.
 type State struct {
 	timestamp             time.Time
@@ -100,23 +100,23 @@ func (s *State) Status() Status {
 }
 
 // Logger is the interface for instances that log metric collection events.
-// Machine instances call Logger methods immediately after updating themselves.
+// Endpoint instances call Logger methods immediately after updating themselves.
 // Logger instances must be safe to use among multiple goroutines.
 type Logger interface {
-	// Called when new metrics come in from a given machine
-	LogResponse(m *Machine, response messages.MetricList, state *State)
+	// Called when new metrics come in from a given endpoint
+	LogResponse(e *Endpoint, response messages.MetricList, state *State)
 	// Called when error happens collecting metrics from a given
-	// machine.
+	// endpoint.
 	// Also called when an error clears. In such a case both err and
 	// state are nil.
-	LogError(m *Machine, err error, state *State)
-	// Called when collection status changes on a given machine
-	LogStateChange(m *Machine, oldState, newState *State)
+	LogError(e *Endpoint, err error, state *State)
+	// Called when collection status changes on a given endpoint
+	LogStateChange(e *Endpoint, oldState, newState *State)
 }
 
-// Machine represents a particular machine with health metrics.
-// Machine instances are safe to use with multiple goroutines.
-type Machine struct {
+// Endpoint represents a particular endpoint with health metrics.
+// Endpoint instances are safe to use with multiple goroutines.
+type Endpoint struct {
 	host           string
 	port           int
 	onePollAtATime chan bool
@@ -124,35 +124,35 @@ type Machine struct {
 	errored        bool
 }
 
-// NewMachine creates a new machine.
-func NewMachine(
-	hostname string, port int) *Machine {
-	return newMachine(hostname, port)
+// NewEndpoint creates a new endpoint.
+func NewEndpoint(
+	hostname string, port int) *Endpoint {
+	return newEndpoint(hostname, port)
 }
 
-// HostName returns the host name of the machine.
-func (m *Machine) HostName() string {
-	return m.host
+// HostName returns the host name of the endpoint.
+func (e *Endpoint) HostName() string {
+	return e.host
 }
 
 // Port returns the port to collect metrics.
-func (m *Machine) Port() int {
-	return m.port
+func (e *Endpoint) Port() int {
+	return e.port
 }
 
-// Poll polls for metrics for this machine asynchronously.
+// Poll polls for metrics for this endpoint asynchronously.
 // However, Poll may block while it waits to begin connecting if too many
 // requests for metrics are in progress. Poll returns immediately if this
 // instance is already in the process of collecting metrics.
 // sweepStartTime is the start time of the current collection of metrics.
 // logger logs collection events for this polling
-func (m *Machine) Poll(sweepStartTime time.Time, logger Logger) {
-	m.poll(sweepStartTime, logger)
+func (e *Endpoint) Poll(sweepStartTime time.Time, logger Logger) {
+	e.poll(sweepStartTime, logger)
 }
 
 // SetConcurrentPolls sets the maximum number of concurrent polls.
 // Call SetConcurrentPolls at the beginning of the main() function before
-// calling Machine.Poll
+// calling Endpoint.Poll
 func SetConcurrentPolls(x int) {
 	setConcurrentPolls(x)
 }
@@ -165,7 +165,7 @@ func ConcurrentPolls() int {
 
 // SetConcurrentConnects sets the maximum number of concurrent connects.
 // Call SetConcurrentConnects at the beginning of the main() function before
-// calling Machine.Poll
+// calling Endpoint.Poll
 func SetConcurrentConnects(x int) {
 	setConcurrentConnects(x)
 }

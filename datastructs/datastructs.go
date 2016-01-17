@@ -1,9 +1,14 @@
 package datastructs
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/store"
+	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -15,10 +20,13 @@ func (h HostsAndPorts) copy() HostsAndPorts {
 	return result
 }
 
-func (h HostsAndPorts) addIfAbsent(host string, port int) {
+func (h HostsAndPorts) addIfAbsent(orig HostsAndPorts, host string, port int) {
 	hostAndPort := fmt.Sprintf("%s:%d", host, port)
-	if h[hostAndPort] == nil {
+	origEndpoint := orig[hostAndPort]
+	if origEndpoint == nil {
 		h[hostAndPort] = scotty.NewEndpoint(host, port)
+	} else {
+		h[hostAndPort] = origEndpoint
 	}
 }
 
@@ -102,4 +110,57 @@ func (a *ApplicationStatuses) getAll(
 		idx++
 	}
 	return
+}
+
+func (a *ApplicationList) all() (result []*Application) {
+	result = make([]*Application, len(a.byPort))
+	idx := 0
+	for _, val := range a.byPort {
+		result[idx] = val
+		idx++
+	}
+	return
+}
+
+func newApplicationListBuilder() *ApplicationListBuilder {
+	byPort := make(map[int]*Application)
+	return &ApplicationListBuilder{byPortPtr: &byPort}
+}
+
+func (a *ApplicationListBuilder) add(port int, applicationName string) {
+	(*a.byPortPtr)[port] = &Application{name: applicationName, port: port}
+}
+
+func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {
+	return a.readConfig(r)
+}
+
+func (a *ApplicationListBuilder) build() *ApplicationList {
+	byPort := *a.byPortPtr
+	*a.byPortPtr = nil
+	return &ApplicationList{byPort: byPort}
+}
+
+func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if len(line) == 0 {
+			continue
+		}
+		splits := strings.SplitN(line, "\t", 2)
+		if len(splits) < 2 {
+			return errors.New(
+				"Config file lines must be portNum<tab>name")
+		}
+		port, err := strconv.Atoi(splits[0])
+		if err != nil {
+			return err
+		}
+		a.Add(port, splits[1])
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return nil
 }

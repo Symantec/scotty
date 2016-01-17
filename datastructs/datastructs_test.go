@@ -1,0 +1,58 @@
+package datastructs
+
+import (
+	"bytes"
+	"reflect"
+	"testing"
+)
+
+const (
+	kConfigFile = `
+6910	Health Metrics
+2222	An application
+
+6970	Dominator
+`
+	kSomeBadPort = 9876
+)
+
+func TestConfigFile(t *testing.T) {
+	config := bytes.NewBuffer(([]byte)(kConfigFile))
+	builder := NewApplicationListBuilder()
+	if err := builder.ReadConfig(config); err != nil {
+		t.Fatal("Got error reading config file", err)
+	}
+	applicationList := builder.Build()
+	assertApplication(t, 6910, "Health Metrics", applicationList.ByPort(6910))
+	assertApplication(t, 6970, "Dominator", applicationList.ByPort(6970))
+	assertApplication(t, 2222, "An application", applicationList.ByPort(2222))
+	if applicationList.ByPort(kSomeBadPort) != nil {
+		t.Error("Expected no application at given port.")
+	}
+	applications := applicationList.All()
+	if len(applications) != 3 {
+		t.Error("Expected 3 applications.")
+	}
+	portAndName := make(map[int]string)
+	for _, app := range applications {
+		portAndName[app.Port()] = app.Name()
+	}
+	expected := map[int]string{
+		2222: "An application",
+		6910: "Health Metrics",
+		6970: "Dominator",
+	}
+	if !reflect.DeepEqual(expected, portAndName) {
+		t.Errorf("Expected %v, got %v", expected, portAndName)
+	}
+}
+
+func assertApplication(
+	t *testing.T, port int, name string, app *Application) {
+	if name != app.Name() {
+		t.Errorf("Expected '%s', got '%s'", name, app.Name())
+	}
+	if port != app.Port() {
+		t.Errorf("Expected '%d', got '%d'", port, app.Port())
+	}
+}

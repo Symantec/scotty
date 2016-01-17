@@ -7,12 +7,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/dom/mdbd"
+	"github.com/Symantec/Dominator/lib/mdb"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lmm"
 	"github.com/Symantec/scotty/messages"
-	"github.com/Symantec/scotty/nodes"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
@@ -40,6 +41,8 @@ var (
 	fBytesPerPage        int
 	fPageCount           int
 	fHostFile            string
+	fAppFile             string
+	fMdbFile             string
 	fPollCount           int
 	fConnectionCount     int
 	fCollectionFrequency time.Duration
@@ -56,6 +59,7 @@ var (
 	gStatusCounts                  = newStatusCountType()
 	gConnectionErrors              = newConnectionErrorsType()
 	gApplicationStats              = datastructs.NewApplicationStatuses()
+	gApplicationList               *datastructs.ApplicationList
 )
 
 type statusCountSnapshotType struct {
@@ -729,34 +733,40 @@ func newWriter() (result lmmWriterType, err error) {
 		config.Endpoints)
 }
 
-func updateEndpoints() error {
+func updateEndpoints(machines *mdb.Mdb) {
 	_, endpoints := gHostsPortsAndStore.Get()
-	endpoints = endpoints.Copy()
-	// TODO: update endpoints here with endpoints.AddIfAbsent
-	err := addEndpoints(endpoints)
-	if err != nil {
-		return err
-	}
-
-	// finally update the glboals
-	gHostsPortsAndStore.Update(endpoints)
-	return nil
+	newEndpoints := make(datastructs.HostsAndPorts)
+	addEndpoints(machines, endpoints, newEndpoints)
+	gHostsPortsAndStore.Update(newEndpoints)
 }
 
-func addEndpoints(hostsAndPorts datastructs.HostsAndPorts) error {
-	endpointNames, err := nodes.GetByCluster(fCluster)
+func addEndpoints(
+	machines *mdb.Mdb, origHostsAndPorts, hostsAndPorts datastructs.HostsAndPorts) {
+	apps := gApplicationList.All()
+	for _, machine := range machines.Machines {
+		for _, app := range apps {
+			hostsAndPorts.AddIfAbsent(origHostsAndPorts, machine.Hostname, app.Port())
+		}
+	}
+}
+
+func initApplicationList() {
+	f, err := os.Open(fAppFile)
 	if err != nil {
-		return err
+		log.Fatal(err)
 	}
-	for _, name := range endpointNames {
-		hostsAndPorts.AddIfAbsent(name, 6910)
+	defer f.Close()
+	builder := datastructs.NewApplicationListBuilder()
+	if err := builder.ReadConfig(f); err != nil {
+		log.Fatal(err)
 	}
-	return nil
+	gApplicationList = builder.Build()
 }
 
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
+	var mdbChannel <-chan *mdb.Mdb
 	collector.SetConcurrentPolls(fPollCount)
 	collector.SetConcurrentConnects(fConnectionCount)
 	firstEndpoints := make(datastructs.HostsAndPorts)
@@ -790,13 +800,16 @@ func main() {
 			if i%1000 == 37 {
 				port = 7776
 			}
-			firstEndpoints.AddIfAbsent(name, port)
+			firstEndpoints.AddIfAbsent(nil, name, port)
 		}
+		builder := datastructs.NewApplicationListBuilder()
+		builder.Add(6910, "Health Metrics")
+		builder.Add(7776, "Non existent App")
+		gApplicationList = builder.Build()
 	} else {
-		err := addEndpoints(firstEndpoints)
-		if err != nil {
-			log.Fatal(err)
-		}
+		initApplicationList()
+		mdbChannel = mdbd.StartMdbDaemon(fMdbFile, log.New(os.Stderr, "", log.LstdFlags))
+		addEndpoints(<-mdbChannel, nil, firstEndpoints)
 	}
 	tricorder.RegisterMetric(
 		"collector/collectionTimes",
@@ -840,6 +853,15 @@ func main() {
 	fmt.Println("Initialization complete.")
 	firstStore, _ := gHostsPortsAndStore.Get()
 	firstStore.RegisterMetrics()
+	// Endpoint refresher goroutine
+	if realEndpoints {
+		go func() {
+			for {
+				updateEndpoints(<-mdbChannel)
+			}
+		}()
+	}
+
 	// Metric collection goroutine. Collect metrics every minute.
 	go func() {
 		for {
@@ -915,6 +937,16 @@ func init() {
 		"host_file",
 		"",
 		"File containing all the nodes")
+	flag.StringVar(
+		&fAppFile,
+		"app_file",
+		"apps.txt",
+		"File containing mapping of ports to apps")
+	flag.StringVar(
+		&fMdbFile,
+		"mdb_file",
+		"/var/lib/Dominator/mdb",
+		"Name of file from which to read mdb data.")
 	flag.IntVar(
 		&fPollCount,
 		"poll_count",

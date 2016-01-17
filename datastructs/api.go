@@ -16,9 +16,12 @@ func (h HostsAndPorts) Copy() HostsAndPorts {
 }
 
 // AddIfAbsent adds a new host and port to this instance if they are
-// not already there.
-func (h HostsAndPorts) AddIfAbsent(host string, port int) {
-	h.addIfAbsent(host, port)
+// not already there. If orig is non nil, AddIfAbsent looks for a matching
+// endpoint object in orig. If it finds one, it reuses it instead of creating
+// a new one.
+func (h HostsAndPorts) AddIfAbsent(
+	orig HostsAndPorts, host string, port int) {
+	h.addIfAbsent(orig, host, port)
 }
 
 // HostsPortsAndStore consists of the current active hosts and ports and the
@@ -31,6 +34,9 @@ type HostsPortsAndStore struct {
 }
 
 // Return the current store along with the hosts and ports
+// Caller must not modify contents of hostsAndPorts directly. Insteead,
+// caller must call Copy() and hostsAndPorts to get a copy and mofiy the
+// copy.
 func (h *HostsPortsAndStore) Get() (
 	s *store.Store, hostsAndPorts HostsAndPorts) {
 	return h.get()
@@ -114,4 +120,45 @@ func (a *ApplicationStatuses) LogChangedMetricCount(
 func (a *ApplicationStatuses) GetAll(
 	hostsAndPorts HostsAndPorts) (result []*ApplicationStatus) {
 	return a.getAll(hostsAndPorts)
+}
+
+type Application struct {
+	name string
+	port int
+}
+
+func (a *Application) Name() string {
+	return a.name
+}
+
+func (a *Application) Port() int {
+	return a.port
+}
+
+type ApplicationList struct {
+	byPort map[int]*Application
+}
+
+func (a *ApplicationList) All() []*Application {
+	return a.all()
+}
+
+func (a *ApplicationList) ByPort(port int) *Application {
+	return a.byPort[port]
+}
+
+type ApplicationListBuilder struct {
+	byPortPtr *map[int]*Application
+}
+
+func NewApplicationListBuilder() *ApplicationListBuilder {
+	return newApplicationListBuilder()
+}
+
+func (a *ApplicationListBuilder) Add(port int, applicationName string) {
+	a.add(port, applicationName)
+}
+
+func (a *ApplicationListBuilder) Build() *ApplicationList {
+	return a.build()
 }

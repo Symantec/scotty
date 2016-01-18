@@ -123,13 +123,20 @@ func (a *ApplicationList) all() (result []*Application) {
 }
 
 func newApplicationListBuilder() *ApplicationListBuilder {
-	list := &ApplicationList{byPort: make(map[int]*Application)}
+	list := &ApplicationList{
+		byPort: make(map[int]*Application),
+		byName: make(map[string]*Application),
+	}
 	return &ApplicationListBuilder{listPtr: &list}
 }
 
 func (a *ApplicationListBuilder) add(port int, applicationName string) {
-	(*a.listPtr).byPort[port] =
-		&Application{name: applicationName, port: port}
+	if (*a.listPtr).byPort[port] != nil || (*a.listPtr).byName[applicationName] != nil {
+		panic("Both name and port must be unique.")
+	}
+	app := &Application{name: applicationName, port: port}
+	(*a.listPtr).byPort[port] = app
+	(*a.listPtr).byName[applicationName] = app
 }
 
 func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {

@@ -137,6 +137,7 @@ func (a *Application) Port() int {
 
 type ApplicationList struct {
 	byPort map[int]*Application
+	byName map[string]*Application
 }
 
 func (a *ApplicationList) All() []*Application {
@@ -145,6 +146,10 @@ func (a *ApplicationList) All() []*Application {
 
 func (a *ApplicationList) ByPort(port int) *Application {
 	return a.byPort[port]
+}
+
+func (a *ApplicationList) ByName(name string) *Application {
+	return a.byName[name]
 }
 
 type ApplicationListBuilder struct {

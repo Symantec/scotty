@@ -14,6 +14,7 @@ const (
 6970	Dominator
 `
 	kSomeBadPort = 9876
+	kSomeBadName = "A bad name"
 )
 
 func TestConfigFile(t *testing.T) {
@@ -26,8 +27,15 @@ func TestConfigFile(t *testing.T) {
 	assertApplication(t, 6910, "Health Metrics", applicationList.ByPort(6910))
 	assertApplication(t, 6970, "Dominator", applicationList.ByPort(6970))
 	assertApplication(t, 2222, "An application", applicationList.ByPort(2222))
+
+	assertApplication(t, 6910, "Health Metrics", applicationList.ByName("Health Metrics"))
+	assertApplication(t, 6970, "Dominator", applicationList.ByName("Dominator"))
+	assertApplication(t, 2222, "An application", applicationList.ByName("An application"))
 	if applicationList.ByPort(kSomeBadPort) != nil {
 		t.Error("Expected no application at given port.")
+	}
+	if applicationList.ByName(kSomeBadName) != nil {
+		t.Error("Expected no application at given name.")
 	}
 	applications := applicationList.All()
 	if len(applications) != 3 {

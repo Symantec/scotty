@@ -7,13 +7,13 @@ Fetching metrics from scotty using REST API
 
 REST urls (always use GET)
 
-	http://scottyhostname.com/api/hosts/someHostName
-		Returns every metric from someHostName along with values
-		for the last hour.
-	http://scottyhostname.com/api/hosts/someHostName/a/path
-		Returns every metric under /a/path from someHostName
-		along with values for the last hour. If not metrics match,
-		returns an empty list.
+	http://scottyhostname.com/api/hosts/someHostName/someAppName
+		Returns every metric from someAppName on someHostName
+		along with values for the last hour.
+	http://scottyhostname.com/api/hosts/someHostName/someAppName/a/path
+		Returns every metric under /a/path from someAppName on
+		someHostName along with values for the last hour.
+		If no metrics match, returns an empty list.
 	http://scottyhostname.com/api/errors
 		Returns a list of every endpoint that scotty cannot currently
 		reach along with the timestamp of the last attempt and the

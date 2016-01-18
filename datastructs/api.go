@@ -148,7 +148,7 @@ func (a *ApplicationList) ByPort(port int) *Application {
 }
 
 type ApplicationListBuilder struct {
-	byPortPtr *map[int]*Application
+	listPtr **ApplicationList
 }
 
 func NewApplicationListBuilder() *ApplicationListBuilder {

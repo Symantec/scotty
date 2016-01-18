@@ -123,12 +123,13 @@ func (a *ApplicationList) all() (result []*Application) {
 }
 
 func newApplicationListBuilder() *ApplicationListBuilder {
-	byPort := make(map[int]*Application)
-	return &ApplicationListBuilder{byPortPtr: &byPort}
+	list := &ApplicationList{byPort: make(map[int]*Application)}
+	return &ApplicationListBuilder{listPtr: &list}
 }
 
 func (a *ApplicationListBuilder) add(port int, applicationName string) {
-	(*a.byPortPtr)[port] = &Application{name: applicationName, port: port}
+	(*a.listPtr).byPort[port] =
+		&Application{name: applicationName, port: port}
 }
 
 func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {
@@ -136,9 +137,9 @@ func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {
 }
 
 func (a *ApplicationListBuilder) build() *ApplicationList {
-	byPort := *a.byPortPtr
-	*a.byPortPtr = nil
-	return &ApplicationList{byPort: byPort}
+	result := *a.listPtr
+	*a.listPtr = nil
+	return result
 }
 
 func (a *ApplicationListBuilder) readConfig(r io.Reader) error {

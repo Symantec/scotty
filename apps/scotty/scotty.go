@@ -657,6 +657,16 @@ func (h errorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, gConnectionErrors.GetErrors(), r.Form.Get("format") == "text")
 }
 
+func httpError(w http.ResponseWriter, status int) {
+	http.Error(
+		w,
+		fmt.Sprintf(
+			"%d %s",
+			status,
+			http.StatusText(status)),
+		status)
+}
+
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
 }
@@ -665,21 +675,31 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	metricStore, endpoints := gHostsPortsAndStore.Get()
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
-	hostAndPath := strings.SplitN(r.URL.Path, "/", 2)
+	hostNameAndPath := strings.SplitN(r.URL.Path, "/", 3)
 	var host string
+	var name string
 	var path string
-	if len(hostAndPath) == 1 {
-		host, path = hostAndPath[0], ""
+	if len(hostNameAndPath) == 1 {
+		httpError(w, 404)
+		return
+	} else if len(hostNameAndPath) == 2 {
+		host, name, path = hostNameAndPath[0], hostNameAndPath[1], ""
 	} else {
-		host, path = hostAndPath[0], "/"+hostAndPath[1]
+		host, name, path = hostNameAndPath[0], hostNameAndPath[1], "/"+hostNameAndPath[2]
 	}
 	history, err := strconv.Atoi(r.Form.Get("history"))
 	isSingleton := r.Form.Get("singleton") != ""
 	if err != nil {
 		history = 60
 	}
+	app := gApplicationList.ByName(name)
+	if app == nil {
+		httpError(w, 404)
+		return
+	}
+	hostAndPort := fmt.Sprintf("%s:%d", host, app.Port())
 	var data messages.EndpointMetricsList
-	endpoint := endpoints[host]
+	endpoint := endpoints[hostAndPort]
 	if endpoint != nil {
 		data = gatherDataForEndpoint(metricStore, endpoint, path, history, isSingleton)
 	} else {
@@ -892,7 +912,10 @@ func main() {
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
 			AS:  gApplicationStats,
-			HPS: &gHostsPortsAndStore}})
+			HPS: &gHostsPortsAndStore,
+			AL:  gApplicationList,
+		}})
+
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(

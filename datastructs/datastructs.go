@@ -167,8 +167,5 @@ func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
 		}
 		a.Add(port, splits[1])
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	return nil
+	return scanner.Err()
 }

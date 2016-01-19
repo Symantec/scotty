@@ -15,6 +15,7 @@ import (
 	"github.com/Symantec/scotty/lmm"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -859,6 +860,13 @@ func main() {
 
 	fmt.Println("Initialization started.")
 	// Value interface + float64 = 24 bytes
+	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if totalMemoryToUse > 0 {
+		fPageCount = int(totalMemoryToUse / uint64(fBytesPerPage))
+	}
 	gHostsPortsAndStore.Init(
 		fBytesPerPage/24, fPageCount, firstEndpoints)
 	fmt.Println("Initialization complete.")

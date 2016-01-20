@@ -162,11 +162,21 @@ func newTimeSeriesType(
 	return result
 }
 
+func (t *timeSeriesType) PageCount() int {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.pages.Len()
+}
+
 func (t *timeSeriesType) Reap() *pageType {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	oldLen := float64(t.pages.Len())
-	result := t.pages.Remove(t.pages.Front()).(*pageType)
+	front := t.pages.Front()
+	if front == nil {
+		return nil
+	}
+	result := t.pages.Remove(front).(*pageType)
 	latestTime, _ := result.LatestValue()
 	goLatestTime := trimessages.FloatToTime(latestTime)
 	gLastTimeEvicted = &goLatestTime
@@ -307,7 +317,7 @@ func (c *timeSeriesCollectionType) AddTimeSeries(
 func (c *timeSeriesCollectionType) Add(
 	timestamp float64,
 	m *trimessages.Metric,
-	supplier pageSupplierType) bool {
+	supplier *pageSupplierType) bool {
 	// We must take care not to call supplier.Get() while we are holding
 	// a lock. Because supplier.Get() may have to obtain a lock to reap
 	// a page, calling it while holding a lock will make deadlock
@@ -326,7 +336,7 @@ func (c *timeSeriesCollectionType) Add(
 			page = supplier.Get()
 		}
 		if timeSeries.Add(timestamp, m.Value, page) {
-			supplier <- timeSeries
+			supplier.Add(timeSeries)
 		}
 		return true
 	}
@@ -366,26 +376,71 @@ type reaperType interface {
 	Reap() *pageType
 }
 
-type pageSupplierType chan reaperType
+type pageSupplierType struct {
+	lock  sync.Mutex
+	queue list.List
+}
 
-func newPageSupplierType(valueCountPerPage, pageCount int) pageSupplierType {
-	result := make(pageSupplierType, pageCount)
+func newPageSupplierType(valueCountPerPage, pageCount int) *pageSupplierType {
+	var result pageSupplierType
+	result.queue.Init()
 	for i := 0; i < pageCount; i++ {
 		newPage := make(pageType, valueCountPerPage)
-		result <- &newPage
+		result.queue.PushBack(&newPage)
 	}
+	return &result
+}
+
+func (s *pageSupplierType) Get() (result *pageType) {
+	for result == nil {
+		reaper := s.pop()
+		result = reaper.Reap()
+	}
+	result.Clear()
 	return result
 }
 
-func (s pageSupplierType) Get() *pageType {
-	select {
-	case reaper := <-s:
-		result := reaper.Reap()
-		result.Clear()
-		return result
-	default:
+func (s *pageSupplierType) Add(r reaperType) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.queue.PushBack(r)
+}
+
+func (s *pageSupplierType) Len() int {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.queue.Len()
+}
+
+func (s *pageSupplierType) MoveToFront(belongsInFront map[*timeSeriesType]bool) {
+	frontCounts := make(map[reaperType]int, len(belongsInFront))
+	for series, ok := range belongsInFront {
+		if ok {
+			frontCounts[series] = series.PageCount()
+		}
+	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	for e := s.queue.Front(); e != nil; e = e.Next() {
+		if _, ok := frontCounts[e.Value.(reaperType)]; ok {
+			s.queue.Remove(e)
+		}
+	}
+	for reaper, count := range frontCounts {
+		for i := 0; i < count; i++ {
+			s.queue.PushFront(reaper)
+		}
+	}
+}
+
+func (s *pageSupplierType) pop() reaperType {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	front := s.queue.Front()
+	if front == nil {
 		panic("No more pages left! Make page size smaller, add memory, or both.")
 	}
+	return s.queue.Remove(front).(reaperType)
 }
 
 type recordListType []*Record
@@ -511,7 +566,7 @@ func (s *Store) registerMetrics() {
 	if err := tricorder.RegisterMetric(
 		"/store/availablePages",
 		func() int {
-			return len(s.supplier)
+			return s.supplier.Len()
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {

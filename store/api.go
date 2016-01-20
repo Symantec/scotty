@@ -75,7 +75,7 @@ type Visitor interface {
 
 type Builder struct {
 	byApplication    map[*scotty.Endpoint]*timeSeriesCollectionType
-	supplier         pageSupplierType
+	supplier         *pageSupplierType
 	totalPageCount   int
 	maxValuesPerPage int
 	prevStore        *Store
@@ -108,7 +108,7 @@ func (b *Builder) Build() *Store {
 // instance before storing any metrics.
 type Store struct {
 	byApplication    map[*scotty.Endpoint]*timeSeriesCollectionType
-	supplier         pageSupplierType
+	supplier         *pageSupplierType
 	totalPageCount   int
 	maxValuesPerPage int
 }

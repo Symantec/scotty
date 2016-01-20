@@ -148,6 +148,10 @@ type timeSeriesType struct {
 	id    *MetricInfo
 	lock  sync.Mutex
 	pages list.List
+
+	// True if time series is closed. No new values may be added
+	// to a closed time series, but closed time series may give up pages.
+	closed bool
 }
 
 func newTimeSeriesType(
@@ -168,6 +172,12 @@ func (t *timeSeriesType) PageCount() int {
 	return t.pages.Len()
 }
 
+func (t *timeSeriesType) Close() {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.closed = true
+}
+
 func (t *timeSeriesType) Reap() *pageType {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -176,24 +186,36 @@ func (t *timeSeriesType) Reap() *pageType {
 	if front == nil {
 		return nil
 	}
-	result := t.pages.Remove(front).(*pageType)
-	latestTime, _ := result.LatestValue()
-	goLatestTime := trimessages.FloatToTime(latestTime)
-	gLastTimeEvicted = &goLatestTime
-	if !result.IsFull() {
-		panic("Oops, timeSeries is giving up a partially filled page.")
+	result := t.pages.Remove(t.pages.Front()).(*pageType)
+	// Don't update last time evicted for closed time series.
+	// Also closed time series give up all their pages even
+	// partially filled ones.
+	if !t.closed {
+		latestTime, _ := result.LatestValue()
+		goLatestTime := trimessages.FloatToTime(latestTime)
+		gLastTimeEvicted = &goLatestTime
+		if !result.IsFull() {
+			panic("Oops, timeSeries is giving up a partially filled page.")
+		}
 	}
 	gMetricValueCount.Add(int64(-len(*result)))
-	gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
+	if oldLen == 1.0 {
+		gPagesPerMetricDist.Remove(oldLen)
+	} else {
+		gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
+	}
 	return result
 }
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd, needPage bool) {
+	if t.closed {
+		return
+	}
 	latestPage := t.latestPage()
 	latestTs, latestValue := latestPage.LatestValue()
 	if timestamp <= latestTs || value == latestValue {
-		return false, false
+		return
 	}
 	return true, latestPage.IsFull()
 }
@@ -208,9 +230,12 @@ func (t *timeSeriesType) NeedToAdd(timestamp float64, value interface{}) (
 // Must call NeedToAdd first!
 func (t *timeSeriesType) Add(
 	timestamp float64, value interface{}, page *pageType) (
-	isEligibleForReaping bool) {
+	isAddSucceeded, isEligibleForReaping bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	if t.closed {
+		return
+	}
 	needToAdd, needPage := t.needToAdd(timestamp, value)
 	if !needToAdd || (needPage && page == nil) || (!needPage && page != nil) {
 		panic("Multiple goroutines trying to add to this time series!")
@@ -228,6 +253,7 @@ func (t *timeSeriesType) Add(
 		latestPage = page
 	}
 	latestPage.Add(timestamp, value)
+	isAddSucceeded = true
 	return
 }
 
@@ -255,6 +281,7 @@ type timeSeriesCollectionType struct {
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
+	closed          bool
 }
 
 func newTimeSeriesCollectionType(
@@ -265,6 +292,21 @@ func newTimeSeriesCollectionType(
 	}
 	result.metricInfoStore.Init()
 	return result
+}
+
+func (c *timeSeriesCollectionType) Close() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.closed = true
+}
+
+func (c *timeSeriesCollectionType) All() (result []*timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for _, ts := range c.timeSeries {
+		result = append(result, ts)
+	}
+	return
 }
 
 func (c *timeSeriesCollectionType) Lookup(m *trimessages.Metric) (
@@ -305,13 +347,17 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 }
 
 func (c *timeSeriesCollectionType) AddTimeSeries(
-	id *MetricInfo, series *timeSeriesType) {
+	id *MetricInfo, series *timeSeriesType) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.closed {
+		return false
+	}
 	if c.timeSeries[id] != nil {
 		panic("Multiple goroutines trying to add to this time series collection.")
 	}
 	c.timeSeries[id] = series
+	return true
 }
 
 func (c *timeSeriesCollectionType) Add(
@@ -324,9 +370,13 @@ func (c *timeSeriesCollectionType) Add(
 	// possible.
 	id, timeSeries := c.Lookup(m)
 	if timeSeries == nil {
+		newPage := supplier.Get()
 		timeSeries := newTimeSeriesType(
-			id, supplier.Get(), timestamp, m.Value)
-		c.AddTimeSeries(id, timeSeries)
+			id, newPage, timestamp, m.Value)
+		if !c.AddTimeSeries(id, timeSeries) {
+			supplier.AddFront(newPage)
+			return false
+		}
 		return true
 	}
 	needToAdd, needPage := timeSeries.NeedToAdd(timestamp, m.Value)
@@ -335,7 +385,15 @@ func (c *timeSeriesCollectionType) Add(
 		if needPage {
 			page = supplier.Get()
 		}
-		if timeSeries.Add(timestamp, m.Value, page) {
+		isAddSucceeded, isEligibleForReaping := timeSeries.Add(
+			timestamp, m.Value, page)
+		if !isAddSucceeded {
+			if page != nil {
+				supplier.AddFront(page)
+			}
+			return false
+		}
+		if isEligibleForReaping {
 			supplier.Add(timeSeries)
 		}
 		return true
@@ -406,6 +464,12 @@ func (s *pageSupplierType) Add(r reaperType) {
 	s.queue.PushBack(r)
 }
 
+func (s *pageSupplierType) AddFront(r reaperType) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.queue.PushFront(r)
+}
+
 func (s *pageSupplierType) Len() int {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -421,9 +485,14 @@ func (s *pageSupplierType) MoveToFront(belongsInFront map[*timeSeriesType]bool) 
 	}
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for e := s.queue.Front(); e != nil; e = e.Next() {
-		if _, ok := frontCounts[e.Value.(reaperType)]; ok {
-			s.queue.Remove(e)
+	e := s.queue.Front()
+	for e != nil {
+		current := e
+		// Advance e ahead of time as removing an Element resets its
+		// pointers.
+		e = e.Next()
+		if _, ok := frontCounts[current.Value.(reaperType)]; ok {
+			s.queue.Remove(current)
 		}
 	}
 	for reaper, count := range frontCounts {
@@ -451,7 +520,8 @@ func (l *recordListType) Append(r *Record) {
 }
 
 func (b *Builder) registerEndpoint(endpointId *scotty.Endpoint) {
-	if b.byApplication[endpointId] != nil {
+
+	if (*b.store).byApplication[endpointId] != nil {
 		panic("Endpoint already registered")
 	}
 	var collection *timeSeriesCollectionType
@@ -461,29 +531,26 @@ func (b *Builder) registerEndpoint(endpointId *scotty.Endpoint) {
 	if collection == nil {
 		collection = newTimeSeriesCollectionType(endpointId)
 	}
-	b.byApplication[endpointId] = collection
+	(*b.store).byApplication[endpointId] = collection
 }
 
 func (b *Builder) build() *Store {
-	byApplication := b.byApplication
-	supplier := b.supplier
-	b.byApplication = nil
-	b.supplier = nil
-	return &Store{
-		byApplication:    byApplication,
-		supplier:         supplier,
-		totalPageCount:   b.totalPageCount,
-		maxValuesPerPage: b.maxValuesPerPage,
+	if b.prevStore != nil {
+		closeUnusedInPreviousStore(*b.store, b.prevStore)
 	}
+	result := *b.store
+	*b.store = nil
+	return result
 }
 
 func (s *Store) newBuilder() *Builder {
-	return &Builder{
+	store := &Store{
 		byApplication:    make(map[*scotty.Endpoint]*timeSeriesCollectionType),
 		supplier:         s.supplier,
 		totalPageCount:   s.totalPageCount,
 		maxValuesPerPage: s.maxValuesPerPage,
-		prevStore:        s}
+	}
+	return &Builder{store: &store, prevStore: s}
 }
 
 func (s *Store) add(
@@ -549,6 +616,10 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 }
 
 func (s *Store) registerMetrics() {
+	// Let Garbage collector reclaim s.
+	supplier := s.supplier
+	totalPageCount := s.totalPageCount
+	maxValuesPerPage := s.maxValuesPerPage
 	if err := tricorder.RegisterMetric(
 		"/store/pagesPerMetric",
 		gPagesPerMetricDist,
@@ -566,7 +637,7 @@ func (s *Store) registerMetrics() {
 	if err := tricorder.RegisterMetric(
 		"/store/availablePages",
 		func() int {
-			return s.supplier.Len()
+			return supplier.Len()
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {
@@ -574,14 +645,14 @@ func (s *Store) registerMetrics() {
 	}
 	if err := tricorder.RegisterMetric(
 		"/store/totalPages",
-		&s.totalPageCount,
+		&totalPageCount,
 		units.None,
 		"Total number of pages."); err != nil {
 		panic(err)
 	}
 	if err := tricorder.RegisterMetric(
 		"/store/maxValuesPerPage",
-		&s.maxValuesPerPage,
+		&maxValuesPerPage,
 		units.None,
 		"Maximum number ofvalues that can fit in a page."); err != nil {
 		panic(err)
@@ -589,7 +660,7 @@ func (s *Store) registerMetrics() {
 	if err := tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
-			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(s.maxValuesPerPage)
+			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {
@@ -602,4 +673,35 @@ func (s *Store) registerMetrics() {
 		"Number of stored metrics values and timestamps"); err != nil {
 		panic(err)
 	}
+}
+
+func reclaimPages(
+	collections []*timeSeriesCollectionType, supplier *pageSupplierType) {
+	// First close all the collections to ensure that no new time series
+	// come in while we close all the existing time series.
+	for _, coll := range collections {
+		coll.Close()
+	}
+	// Now close each time series
+	closedTimeSeries := make(map[*timeSeriesType]bool)
+	for _, coll := range collections {
+		timeSeriesList := coll.All()
+		for _, timeSeries := range timeSeriesList {
+			timeSeries.Close()
+			closedTimeSeries[timeSeries] = true
+		}
+	}
+	supplier.MoveToFront(closedTimeSeries)
+}
+
+func closeUnusedInPreviousStore(store, prevStore *Store) {
+	var unusedTimeSeriesCollections []*timeSeriesCollectionType
+	for endpointId := range prevStore.byApplication {
+		if store.byApplication[endpointId] == nil {
+			unusedTimeSeriesCollections = append(
+				unusedTimeSeriesCollections,
+				prevStore.byApplication[endpointId])
+		}
+	}
+	reclaimPages(unusedTimeSeriesCollections, prevStore.supplier)
 }

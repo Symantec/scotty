@@ -74,22 +74,21 @@ type Visitor interface {
 }
 
 type Builder struct {
-	byApplication    map[*scotty.Endpoint]*timeSeriesCollectionType
-	supplier         *pageSupplierType
-	totalPageCount   int
-	maxValuesPerPage int
-	prevStore        *Store
+	store     **Store
+	prevStore *Store
 }
 
 // NewBuilder creates a new store builder.
 func NewBuilder(
 	valueCountPerPage, pageCount int) *Builder {
-	return &Builder{
+	store := &Store{
 		byApplication:    make(map[*scotty.Endpoint]*timeSeriesCollectionType),
 		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
 		totalPageCount:   pageCount,
 		maxValuesPerPage: valueCountPerPage,
 	}
+
+	return &Builder{store: &store}
 }
 
 // RegisterEndpoint registers a endpoint with the store being built.
@@ -219,4 +218,11 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 // this instance.
 func (s *Store) RegisterMetrics() {
 	s.registerMetrics()
+}
+
+// AvailablePages returns the number of pages available for collecting
+// new metrics. This count incudes pages that are currently in use but
+// are eligible to be recycled.
+func (s *Store) AvailablePages() int {
+	return s.supplier.Len()
 }

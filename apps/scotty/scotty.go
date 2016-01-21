@@ -40,6 +40,7 @@ var (
 	fCollectionFrequency  time.Duration
 	fLmmUpdateFrequency   time.Duration
 	fLmmBatchSize         int
+	fLmmConfigFile        string
 )
 
 var (
@@ -645,8 +646,24 @@ func (s stallLmmWriter) Write(records []*store.Record) error {
 	return nil
 }
 
-func newWriter() (lmmWriterType, error) {
-	return stallLmmWriter{}, nil
+func newWriter() (result lmmWriterType, err error) {
+	if fLmmConfigFile == "" {
+		return stallLmmWriter{}, nil
+	}
+	f, err := os.Open(fLmmConfigFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	var config lmm.Config
+	if err = config.Read(f); err != nil {
+		return
+	}
+	return lmm.NewWriter(
+		config.Topic,
+		config.TenantId,
+		config.ApiKey,
+		config.Endpoints)
 }
 
 func main() {
@@ -755,6 +772,11 @@ func main() {
 }
 
 func init() {
+	flag.StringVar(
+		&fLmmConfigFile,
+		"lmm_config_file",
+		"",
+		"lmm configuration file")
 	flag.IntVar(
 		&fBufferSizePerMachine,
 		"buffer_size_per_machine",

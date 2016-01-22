@@ -2,7 +2,6 @@ package lmm
 
 import (
 	"encoding/json"
-	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -60,12 +59,12 @@ func newWriter(topic string, tenantId, apiKey string, addresses []string) (
 	return
 }
 
-func (w *Writer) write(records []*store.Record) (err error) {
+func (w *Writer) write(records []Record) (err error) {
 	serializer := newRecordSerializer(w.tenantId, w.apiKey)
 	msgs := make([]*proto.Message, len(records))
 	for i := range records {
 		var payload []byte
-		payload, err = serializer.Serialize(recordType{records[i]})
+		payload, err = serializer.Serialize(&records[i])
 		if err != nil {
 			return
 		}
@@ -73,43 +72,6 @@ func (w *Writer) write(records []*store.Record) (err error) {
 	}
 	_, err = w.producer.Distribute(w.topic, msgs...)
 	return
-}
-
-type iRecordType interface {
-	Kind() types.Type
-	Unit() units.Unit
-	Timestamp() float64
-	Value() interface{}
-	Path() string
-	HostName() string
-}
-
-type recordType struct {
-	*store.Record
-}
-
-func (r recordType) Kind() types.Type {
-	return r.Info.Kind()
-}
-
-func (r recordType) Unit() units.Unit {
-	return r.Info.Unit()
-}
-
-func (r recordType) Path() string {
-	return r.Info.Path()
-}
-
-func (r recordType) HostName() string {
-	return r.ApplicationId.HostName()
-}
-
-func (r recordType) Timestamp() float64 {
-	return r.TimeStamp
-}
-
-func (r recordType) Value() interface{} {
-	return r.Value
 }
 
 // recordSerializerType serializes a record to bytes for LMM.
@@ -128,42 +90,40 @@ func newRecordSerializer(tenantId, apiKey string) *recordSerializerType {
 		formatString: "2006-01-02T15:04:05.000Z"}
 }
 
-func (s *recordSerializerType) Serialize(r iRecordType) ([]byte, error) {
-	kind := r.Kind()
-
-	if !isTypeSupported(kind) {
+func (s *recordSerializerType) Serialize(r *Record) ([]byte, error) {
+	if !isTypeSupported(r.Kind) {
 		panic("Cannot record given kind.")
 	}
 	s.record[kTimestamp] = messages.FloatToTime(
-		r.Timestamp()).Format(s.formatString)
-	switch kind {
+		r.Timestamp).Format(s.formatString)
+	switch r.Kind {
 	case types.Bool:
-		if r.Value().(bool) {
+		if r.Value.(bool) {
 			s.record[kValue] = "1"
 		} else {
 			s.record[kValue] = "0"
 		}
 	case types.Int:
-		s.record[kValue] = strconv.FormatInt(r.Value().(int64), 10)
+		s.record[kValue] = strconv.FormatInt(r.Value.(int64), 10)
 	case types.Uint:
-		s.record[kValue] = strconv.FormatUint(r.Value().(uint64), 10)
+		s.record[kValue] = strconv.FormatUint(r.Value.(uint64), 10)
 	case types.Float:
 		s.record[kValue] = strconv.FormatFloat(
-			r.Value().(float64), 'f', -1, 64)
+			r.Value.(float64), 'f', -1, 64)
 	case types.GoTime:
 		s.record[kValue] = strconv.FormatFloat(
-			messages.TimeToFloat(r.Value().(time.Time)),
+			messages.TimeToFloat(r.Value.(time.Time)),
 			'f', -1, 64)
 	case types.GoDuration:
 		s.record[kValue] = strconv.FormatFloat(
 			messages.DurationToFloat(
-				r.Value().(time.Duration))*units.FromSeconds(r.Unit()),
+				r.Value.(time.Duration))*units.FromSeconds(r.Unit),
 			'f', -1, 64)
 	default:
 		panic("Unsupported type")
 
 	}
-	s.record[kName] = r.Path()
-	s.record[kHost] = r.HostName()
+	s.record[kName] = r.Path
+	s.record[kHost] = r.HostName
 	return json.Marshal(s.record)
 }

@@ -53,12 +53,12 @@ func TestLmmConfig(t *testing.T) {
 func TestSerializeInt(t *testing.T) {
 	ser := newRecordSerializer("myTenantId", "myApiKey")
 	bytes, err := ser.Serialize(
-		makeRecord(
-			types.Int,
-			1400000000.0,
-			int64(-59),
-			"/my/path",
-			"ash1"))
+		&Record{
+			Kind:      types.Int,
+			Timestamp: 1400000000.0,
+			Value:     int64(-59),
+			Path:      "/my/path",
+			HostName:  "ash1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,12 +77,12 @@ func TestSerializeInt(t *testing.T) {
 func TestSerializeBool(t *testing.T) {
 	ser := newRecordSerializer("myTenantId", "myApiKey")
 	bytes, err := ser.Serialize(
-		makeRecord(
-			types.Bool,
-			1400000000.125,
-			false,
-			"/my/path/bool",
-			"ash2"))
+		&Record{
+			Kind:      types.Bool,
+			Timestamp: 1400000000.125,
+			Value:     false,
+			Path:      "/my/path/bool",
+			HostName:  "ash2"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,12 +98,12 @@ func TestSerializeBool(t *testing.T) {
 		"ash2")
 
 	bytes, err = ser.Serialize(
-		makeRecord(
-			types.Bool,
-			1400000000.375,
-			true,
-			"/my/path/bools",
-			"ash3"))
+		&Record{
+			Kind:      types.Bool,
+			Timestamp: 1400000000.375,
+			Value:     true,
+			Path:      "/my/path/bools",
+			HostName:  "ash3"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,13 +172,13 @@ func quickVerifyWithUnit(
 	expected string) {
 	ser := newRecordSerializer("myTenant", "myApi")
 	bytes, err := ser.Serialize(
-		makeRecordWithUnit(
-			kind,
-			unit,
-			1400000000.875,
-			value,
-			"/my/path/someValue",
-			"someHost"))
+		&Record{
+			Kind:      kind,
+			Unit:      unit,
+			Timestamp: 1400000000.875,
+			Value:     value,
+			Path:      "/my/path/someValue",
+			HostName:  "someHost"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,45 +220,3 @@ func verifySerialization(
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
 }
-
-func makeRecord(
-	kind types.Type,
-	ts float64,
-	value interface{},
-	path string,
-	hostName string) iRecordType {
-	return makeRecordWithUnit(
-		kind, units.None, ts, value, path, hostName)
-}
-
-func makeRecordWithUnit(
-	kind types.Type,
-	unit units.Unit,
-	ts float64,
-	value interface{},
-	path string,
-	hostName string) iRecordType {
-	return &recordForTestingType{
-		kind:     kind,
-		unit:     unit,
-		ts:       ts,
-		value:    value,
-		path:     path,
-		hostname: hostName}
-}
-
-type recordForTestingType struct {
-	kind     types.Type
-	unit     units.Unit
-	ts       float64
-	value    interface{}
-	path     string
-	hostname string
-}
-
-func (r *recordForTestingType) Kind() types.Type   { return r.kind }
-func (r *recordForTestingType) Unit() units.Unit   { return r.unit }
-func (r *recordForTestingType) Timestamp() float64 { return r.ts }
-func (r *recordForTestingType) Value() interface{} { return r.value }
-func (r *recordForTestingType) Path() string       { return r.path }
-func (r *recordForTestingType) HostName() string   { return r.hostname }

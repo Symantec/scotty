@@ -231,7 +231,7 @@ func endpointNameAndPort(
 
 // lmmWriterType implementations write to LMM
 type lmmWriterType interface {
-	Write(records []*store.Record) error
+	Write(records []lmm.Record) error
 }
 
 // metrics for lmmHandlerType instances
@@ -254,8 +254,7 @@ type lmmHandlerType struct {
 	writer                  lmmWriterType
 	lastValues              map[*collector.Endpoint]map[*store.MetricInfo]interface{}
 	lastValuesThisEndpoint  map[*store.MetricInfo]interface{}
-	toBeWritten             []store.Record
-	toBeWrittenPtrs         []*store.Record
+	toBeWritten             []lmm.Record
 	timeSpentWritingDist    *tricorder.CumulativeDistribution
 	timeSpentCollectingDist *tricorder.CumulativeDistribution
 	totalTimeSpentDist      *tricorder.CumulativeDistribution
@@ -279,6 +278,10 @@ func newLmmHandler(w lmmWriterType) *lmmHandlerType {
 	}
 }
 
+func appName(port int) string {
+	return gApplicationList.ByPort(port).Name()
+}
+
 // Do not call this directly!
 func (l *lmmHandlerType) Append(r *store.Record) {
 	kind := r.Info.Kind()
@@ -289,7 +292,15 @@ func (l *lmmHandlerType) Append(r *store.Record) {
 		return
 	}
 	l.lastValuesThisEndpoint[r.Info] = r.Value
-	l.toBeWritten = append(l.toBeWritten, *r)
+	l.toBeWritten = append(
+		l.toBeWritten, lmm.Record{
+			HostName:  r.ApplicationId.HostName(),
+			AppName:   appName(r.ApplicationId.Port()),
+			Path:      r.Info.Path(),
+			Kind:      r.Info.Kind(),
+			Unit:      r.Info.Unit(),
+			Value:     r.Value,
+			Timestamp: r.TimeStamp})
 }
 
 func (l *lmmHandlerType) StartVisit() {
@@ -333,23 +344,8 @@ func (l *lmmHandlerType) flush() {
 	if len(l.toBeWritten) == 0 {
 		return
 	}
-	// Make toWrittenPtrs slice be big enough to hold all the pointers
-	// We do it this way so that we only allocate a new ptr slice if
-	// the capacity of the records to be written slice increases
-	if cap(l.toBeWrittenPtrs) < cap(l.toBeWritten) {
-		l.toBeWrittenPtrs = make(
-			[]*store.Record, len(l.toBeWritten), cap(l.toBeWritten))
-	} else {
-		l.toBeWrittenPtrs = l.toBeWrittenPtrs[0:len(l.toBeWritten)]
-	}
-
-	// record the pointers
-	for i := range l.toBeWritten {
-		l.toBeWrittenPtrs[i] = &l.toBeWritten[i]
-	}
-
 	startTime := time.Now()
-	err := l.ttWriter.Write(l.toBeWrittenPtrs)
+	err := l.ttWriter.Write(l.toBeWritten)
 	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
 
 	if err != nil {
@@ -713,7 +709,7 @@ type timeTakenLmmWriter struct {
 	TimeTaken time.Duration
 }
 
-func (t *timeTakenLmmWriter) Write(records []*store.Record) error {
+func (t *timeTakenLmmWriter) Write(records []lmm.Record) error {
 	start := time.Now()
 	result := t.Writer.Write(records)
 	t.TimeTaken += time.Now().Sub(start)
@@ -725,7 +721,7 @@ func (t *timeTakenLmmWriter) Write(records []*store.Record) error {
 type stallLmmWriter struct {
 }
 
-func (s stallLmmWriter) Write(records []*store.Record) error {
+func (s stallLmmWriter) Write(records []lmm.Record) error {
 	time.Sleep(50 * time.Millisecond)
 	if rand.Float64() < 0.01 {
 		return aWriteError

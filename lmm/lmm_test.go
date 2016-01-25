@@ -58,7 +58,8 @@ func TestSerializeInt(t *testing.T) {
 			Timestamp: 1400000000.0,
 			Value:     int64(-59),
 			Path:      "/my/path",
-			HostName:  "ash1"})
+			HostName:  "ash1",
+			AppName:   "horse"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,8 @@ func TestSerializeInt(t *testing.T) {
 		"2014-05-13T09:53:20.000Z",
 		"-59",
 		"/my/path",
-		"ash1")
+		"ash1",
+		"horse")
 }
 
 func TestSerializeBool(t *testing.T) {
@@ -82,7 +84,8 @@ func TestSerializeBool(t *testing.T) {
 			Timestamp: 1400000000.125,
 			Value:     false,
 			Path:      "/my/path/bool",
-			HostName:  "ash2"})
+			HostName:  "ash2",
+			AppName:   "Health"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +98,8 @@ func TestSerializeBool(t *testing.T) {
 		"2014-05-13T09:53:20.125Z",
 		"0",
 		"/my/path/bool",
-		"ash2")
+		"ash2",
+		"Health")
 
 	bytes, err = ser.Serialize(
 		&Record{
@@ -103,7 +107,8 @@ func TestSerializeBool(t *testing.T) {
 			Timestamp: 1400000000.375,
 			Value:     true,
 			Path:      "/my/path/bools",
-			HostName:  "ash3"})
+			HostName:  "ash3",
+			AppName:   "cat"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +121,8 @@ func TestSerializeBool(t *testing.T) {
 		"2014-05-13T09:53:20.375Z",
 		"1",
 		"/my/path/bools",
-		"ash3")
+		"ash3",
+		"cat")
 }
 
 func TestSerializeUint(t *testing.T) {
@@ -178,7 +184,8 @@ func quickVerifyWithUnit(
 			Timestamp: 1400000000.875,
 			Value:     value,
 			Path:      "/my/path/someValue",
-			HostName:  "someHost"})
+			HostName:  "someHost",
+			AppName:   "someApp"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +198,8 @@ func quickVerifyWithUnit(
 		"2014-05-13T09:53:20.875Z",
 		expected,
 		"/my/path/someValue",
-		"someHost")
+		"someHost",
+		"someApp")
 
 }
 
@@ -203,7 +211,8 @@ func verifySerialization(
 	timeStamp string,
 	value string,
 	path string,
-	hostName string) {
+	hostName string,
+	appName string) {
 	var result map[string]string
 	if err := json.Unmarshal(ser, &result); err != nil {
 		t.Fatalf("Error unmarshalling byte array: %v", err)
@@ -215,7 +224,8 @@ func verifySerialization(
 		kTimestamp: timeStamp,
 		kValue:     value,
 		kName:      path,
-		kHost:      hostName}
+		kHost:      hostName,
+		kAppName:   appName}
 	if !reflect.DeepEqual(expected, result) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}

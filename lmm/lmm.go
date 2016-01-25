@@ -17,6 +17,7 @@ const (
 	kValue     = "value"
 	kName      = "name"
 	kHost      = "host"
+	kAppName   = "appname"
 	kTenantId  = "tenant_id"
 	kApiKey    = "apikey"
 )
@@ -125,5 +126,6 @@ func (s *recordSerializerType) Serialize(r *Record) ([]byte, error) {
 	}
 	s.record[kName] = r.Path
 	s.record[kHost] = r.HostName
+	s.record[kAppName] = r.AppName
 	return json.Marshal(s.record)
 }

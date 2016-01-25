@@ -1,0 +1,7 @@
+type Writer struct {
+	broker   *kafka.Broker
+	producer kafka.DistributingProducer
+	tenantId string
+	apiKey   string
+	topic    string
+}

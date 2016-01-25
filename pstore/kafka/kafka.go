@@ -1,7 +1,8 @@
-package lmm
+package kafka
 
 import (
 	"encoding/json"
+	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -33,34 +34,42 @@ var (
 	}
 )
 
-func isTypeSupported(t types.Type) bool {
-	return supportedTypes[t]
+type writer struct {
+	broker   *kafka.Broker
+	producer kafka.DistributingProducer
+	tenantId string
+	apiKey   string
+	topic    string
 }
 
-func newWriter(topic string, tenantId, apiKey string, addresses []string) (
-	result *Writer, err error) {
-	var writer Writer
-	writer.topic = topic
-	writer.tenantId = tenantId
-	writer.apiKey = apiKey
-	writer.broker, err = kafka.Dial(addresses, kafka.NewBrokerConf("test"))
+func newWriter(c *Config) (
+	result pstore.Writer, err error) {
+	var awriter writer
+	awriter.topic = c.Topic
+	awriter.tenantId = c.TenantId
+	awriter.apiKey = c.ApiKey
+	awriter.broker, err = kafka.Dial(c.Endpoints, kafka.NewBrokerConf(c.ClientId))
 	if err != nil {
 		return
 	}
 	var count int32
-	count, err = writer.broker.PartitionCount(topic)
+	count, err = awriter.broker.PartitionCount(c.Topic)
 	if err != nil {
 		return
 	}
 	conf := kafka.NewProducerConf()
 	conf.RequiredAcks = proto.RequiredAcksLocal
-	producer := writer.broker.Producer(conf)
-	writer.producer = kafka.NewRoundRobinProducer(producer, count)
-	result = &writer
+	producer := awriter.broker.Producer(conf)
+	awriter.producer = kafka.NewRoundRobinProducer(producer, count)
+	result = &awriter
 	return
 }
 
-func (w *Writer) write(records []Record) (err error) {
+func (w *writer) IsTypeSupported(t types.Type) bool {
+	return supportedTypes[t]
+}
+
+func (w *writer) Write(records []pstore.Record) (err error) {
 	serializer := newRecordSerializer(w.tenantId, w.apiKey)
 	msgs := make([]*proto.Message, len(records))
 	for i := range records {
@@ -91,8 +100,8 @@ func newRecordSerializer(tenantId, apiKey string) *recordSerializerType {
 		formatString: "2006-01-02T15:04:05.000Z"}
 }
 
-func (s *recordSerializerType) Serialize(r *Record) ([]byte, error) {
-	if !isTypeSupported(r.Kind) {
+func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
+	if !supportedTypes[r.Kind] {
 		panic("Cannot record given kind.")
 	}
 	s.record[kTimestamp] = messages.FloatToTime(

@@ -1,8 +1,9 @@
-package lmm
+package kafka
 
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
@@ -15,6 +16,7 @@ func TestLmmConfigError(t *testing.T) {
 apiKey: someApiKey
 tenantId: someTenantId
 topic: someTopic
+clinetId: someClientId
 	`
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
@@ -33,6 +35,7 @@ endpoints:
 topic: someTopic
 apiKey: someApiKey
 tenantId: someTenantId
+clientId: someClientId
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
@@ -42,6 +45,7 @@ tenantId: someTenantId
 	expected := Config{
 		ApiKey:   "someApiKey",
 		TenantId: "someTenantId",
+		ClientId: "someClientId",
 		Topic:    "someTopic",
 		Endpoints: []string{
 			"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
@@ -54,7 +58,7 @@ tenantId: someTenantId
 func TestSerializeInt(t *testing.T) {
 	ser := newRecordSerializer("myTenantId", "myApiKey")
 	bytes, err := ser.Serialize(
-		&Record{
+		&pstore.Record{
 			Kind:      types.Int,
 			Timestamp: 1400000000.0,
 			Value:     int64(-59),
@@ -80,7 +84,7 @@ func TestSerializeInt(t *testing.T) {
 func TestSerializeBool(t *testing.T) {
 	ser := newRecordSerializer("myTenantId", "myApiKey")
 	bytes, err := ser.Serialize(
-		&Record{
+		&pstore.Record{
 			Kind:      types.Bool,
 			Timestamp: 1400000000.125,
 			Value:     false,
@@ -103,7 +107,7 @@ func TestSerializeBool(t *testing.T) {
 		"Health")
 
 	bytes, err = ser.Serialize(
-		&Record{
+		&pstore.Record{
 			Kind:      types.Bool,
 			Timestamp: 1400000000.375,
 			Value:     true,
@@ -179,7 +183,7 @@ func quickVerifyWithUnit(
 	expected string) {
 	ser := newRecordSerializer("myTenant", "myApi")
 	bytes, err := ser.Serialize(
-		&Record{
+		&pstore.Record{
 			Kind:      kind,
 			Unit:      unit,
 			Timestamp: 1400000000.875,

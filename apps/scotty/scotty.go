@@ -12,8 +12,9 @@ import (
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/datastructs"
-	"github.com/Symantec/scotty/lmm"
 	"github.com/Symantec/scotty/messages"
+	"github.com/Symantec/scotty/pstore"
+	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
@@ -229,11 +230,6 @@ func endpointNameAndPort(
 		endpointPorts[i%length]
 }
 
-// lmmWriterType implementations write to LMM
-type lmmWriterType interface {
-	Write(records []lmm.Record) error
-}
-
 // metrics for lmmHandlerType instances
 type lmmHandlerData struct {
 	MetricsWritten   int64
@@ -251,10 +247,10 @@ type lmmHandlerData struct {
 // includes at least fLmmBatchSize metrics.
 // lmmHandlerType is NOT threadsafe.
 type lmmHandlerType struct {
-	writer                  lmmWriterType
+	writer                  pstore.Writer
 	lastValues              map[*collector.Endpoint]map[*store.MetricInfo]interface{}
 	lastValuesThisEndpoint  map[*store.MetricInfo]interface{}
-	toBeWritten             []lmm.Record
+	toBeWritten             []pstore.Record
 	timeSpentWritingDist    *tricorder.CumulativeDistribution
 	timeSpentCollectingDist *tricorder.CumulativeDistribution
 	totalTimeSpentDist      *tricorder.CumulativeDistribution
@@ -266,7 +262,7 @@ type lmmHandlerType struct {
 	stats lmmHandlerData
 }
 
-func newLmmHandler(w lmmWriterType) *lmmHandlerType {
+func newLmmHandler(w pstore.Writer) *lmmHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	return &lmmHandlerType{
 		writer:                  w,
@@ -285,7 +281,7 @@ func appName(port int) string {
 // Do not call this directly!
 func (l *lmmHandlerType) Append(r *store.Record) {
 	kind := r.Info.Kind()
-	if !lmm.IsTypeSupported(kind) {
+	if !l.ttWriter.IsTypeSupported(kind) {
 		return
 	}
 	if l.lastValuesThisEndpoint[r.Info] == r.Value {
@@ -293,7 +289,7 @@ func (l *lmmHandlerType) Append(r *store.Record) {
 	}
 	l.lastValuesThisEndpoint[r.Info] = r.Value
 	l.toBeWritten = append(
-		l.toBeWritten, lmm.Record{
+		l.toBeWritten, pstore.Record{
 			HostName:  r.ApplicationId.HostName(),
 			AppName:   appName(r.ApplicationId.Port()),
 			Path:      r.Info.Path(),
@@ -705,11 +701,11 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type timeTakenLmmWriter struct {
-	Writer    lmmWriterType
+	pstore.Writer
 	TimeTaken time.Duration
 }
 
-func (t *timeTakenLmmWriter) Write(records []lmm.Record) error {
+func (t *timeTakenLmmWriter) Write(records []pstore.Record) error {
 	start := time.Now()
 	result := t.Writer.Write(records)
 	t.TimeTaken += time.Now().Sub(start)
@@ -721,7 +717,11 @@ func (t *timeTakenLmmWriter) Write(records []lmm.Record) error {
 type stallLmmWriter struct {
 }
 
-func (s stallLmmWriter) Write(records []lmm.Record) error {
+func (s stallLmmWriter) IsTypeSupported(kind types.Type) bool {
+	return true
+}
+
+func (s stallLmmWriter) Write(records []pstore.Record) error {
 	time.Sleep(50 * time.Millisecond)
 	if rand.Float64() < 0.01 {
 		return aWriteError
@@ -729,7 +729,7 @@ func (s stallLmmWriter) Write(records []lmm.Record) error {
 	return nil
 }
 
-func newWriter() (result lmmWriterType, err error) {
+func newWriter() (result pstore.Writer, err error) {
 	if fLmmConfigFile == "" {
 		return stallLmmWriter{}, nil
 	}
@@ -738,15 +738,11 @@ func newWriter() (result lmmWriterType, err error) {
 		return
 	}
 	defer f.Close()
-	var config lmm.Config
+	var config kafka.Config
 	if err = config.Read(f); err != nil {
 		return
 	}
-	return lmm.NewWriter(
-		config.Topic,
-		config.TenantId,
-		config.ApiKey,
-		config.Endpoints)
+	return kafka.NewWriter(&config)
 }
 
 func updateEndpoints(machines *mdb.Mdb) {

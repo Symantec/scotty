@@ -7,15 +7,15 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
-	//	"sync"
-	"testing"
-	//	"time"
 	"reflect"
+	"testing"
 )
 
 var (
 	kEndpoint0 = scotty.NewEndpoint("host1", 1001)
 	kEndpoint1 = scotty.NewEndpoint("host2", 1002)
+	kEndpoint2 = scotty.NewEndpoint("host3", 1001)
+	kEndpoint3 = scotty.NewEndpoint("host4", 1002)
 	kError     = errors.New("An error")
 )
 
@@ -94,6 +94,67 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	total = 0
 	aStore.LatestByEndpoint(kEndpoint1, &total)
 	assertValueEquals(t, 14, int(total))
+}
+
+func TestReclaimPages(t *testing.T) {
+	builder := store.NewBuilder(1, 8)
+	builder.RegisterEndpoint(kEndpoint0)
+	builder.RegisterEndpoint(kEndpoint1)
+	builder.RegisterEndpoint(kEndpoint2)
+	aStore := builder.Build()
+
+	firstMetric := messages.Metric{
+		Path:        "/foo/bar",
+		Description: "A description",
+		Unit:        units.None,
+		Kind:        types.Int,
+		Bits:        64}
+	secondMetric := messages.Metric{
+		Path:        "/foo/baz",
+		Description: "A description",
+		Unit:        units.None,
+		Kind:        types.Int,
+		Bits:        64}
+
+	if out := aStore.AvailablePages(); out != 8 {
+		t.Errorf("Expected 8 pages, got %d", out)
+	}
+
+	// Adding these metrics uses all available pages.
+	firstMetric.Value = 1
+	add(t, aStore, kEndpoint0, 100.0, &firstMetric, true)
+	firstMetric.Value = 2
+	add(t, aStore, kEndpoint0, 110.0, &firstMetric, true)
+	firstMetric.Value = 3
+	add(t, aStore, kEndpoint0, 120.0, &firstMetric, true)
+	firstMetric.Value = 4
+	add(t, aStore, kEndpoint0, 130.0, &firstMetric, true)
+	firstMetric.Value = 1
+	add(t, aStore, kEndpoint1, 100.0, &firstMetric, true)
+	firstMetric.Value = 2
+	add(t, aStore, kEndpoint1, 110.0, &firstMetric, true)
+	secondMetric.Value = 1
+	add(t, aStore, kEndpoint1, 100.0, &secondMetric, true)
+	firstMetric.Value = 1
+	add(t, aStore, kEndpoint2, 100.0, &firstMetric, true)
+
+	// All 8 pages used, but the first two of the four pages that
+	// kEndpoint0, firstMetric is using can be recycled.
+	if out := aStore.AvailablePages(); out != 2 {
+		t.Errorf("Expected 2 pages, got %d", out)
+	}
+
+	// Now update aStore to have brand new end points.
+	builder = aStore.NewBuilder()
+	builder.RegisterEndpoint(kEndpoint2)
+	builder.RegisterEndpoint(kEndpoint3)
+	aStore = builder.Build()
+
+	// We could recliam all pages except the one that
+	// kEndpoint2, firstMetric is using.
+	if out := aStore.AvailablePages(); out != 7 {
+		t.Errorf("Expected 7 of 8 pages available, got %d", out)
+	}
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {

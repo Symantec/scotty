@@ -1,57 +1,35 @@
 package lmm
 
 import (
-	"bufio"
+	"bytes"
 	"errors"
-	"fmt"
+	"gopkg.in/yaml.v2"
 	"io"
-	"strings"
 )
 
 type Config struct {
-	Endpoints []string
-	Topic     string
-	TenantId  string
-	ApiKey    string
+	Endpoints []string `yaml:"endpoints"`
+	Topic     string   `yaml:"topic"`
+	TenantId  string   `yaml:"tenantId"`
+	ApiKey    string   `yaml:"apiKey"`
 }
 
 func (c *Config) Read(r io.Reader) error {
-	scanner := bufio.NewScanner(r)
-	requiredKeys := map[string]bool{
-		"endpoint": true,
-		"topic":    true,
-		"tenantId": true,
-		"apiKey":   true,
-	}
-	c.Endpoints = nil
-	for scanner.Scan() {
-		keyAndValue := strings.SplitN(
-			strings.TrimSpace(scanner.Text()), "\t", 2)
-		if len(keyAndValue) < 2 {
-			continue
-		}
-		delete(requiredKeys, keyAndValue[0])
-		switch keyAndValue[0] {
-		case "endpoint":
-			c.Endpoints = append(c.Endpoints, keyAndValue[1])
-		case "topic":
-			c.Topic = keyAndValue[1]
-		case "tenantId":
-			c.TenantId = keyAndValue[1]
-		case "apiKey":
-			c.ApiKey = keyAndValue[1]
-		default:
-			return errors.New(
-				fmt.Sprintf("Key %s is invalid", keyAndValue[0]))
-		}
-	}
-	err := scanner.Err()
-	if err != nil {
+	var content bytes.Buffer
+	if _, err := content.ReadFrom(r); err != nil {
 		return err
 	}
-	if len(requiredKeys) > 0 {
+	*c = Config{}
+	if err := yaml.Unmarshal(content.Bytes(), c); err != nil {
+		return err
+	}
+	if !c.hasRequiredFields() {
 		return errors.New(
 			"endpoint, topic, tenantId, and apiKey keys required")
 	}
 	return nil
+}
+
+func (c *Config) hasRequiredFields() bool {
+	return len(c.Endpoints) > 0 && c.Topic != "" && c.TenantId != "" && c.ApiKey != ""
 }

@@ -12,8 +12,9 @@ import (
 
 func TestLmmConfigError(t *testing.T) {
 	configFile := `
-	apiKey	someApiKey
-	tenantId	someTenantId
+apiKey: someApiKey
+tenantId: someTenantId
+topic: someTopic
 	`
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
@@ -24,15 +25,15 @@ func TestLmmConfigError(t *testing.T) {
 
 func TestLmmConfig(t *testing.T) {
 	configFile := `
-	endpoint	10.0.0.1:9092
-	endpoint	10.0.1.3:9092
-	endpoint	10.0.1.6:9092
-
-	topic	someTopic
-	apiKey	someApiKey
-	tenantId	someTenantId
-	`
-
+# A comment
+endpoints:
+    - 10.0.0.1:9092
+    - 10.0.1.3:9092
+    - 10.0.1.6:9092
+topic: someTopic
+apiKey: someApiKey
+tenantId: someTenantId
+`
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
 	if err := config.Read(buffer); err != nil {

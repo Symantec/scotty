@@ -1,3 +1,4 @@
+// Package messages provides types for JSON and go rpc.
 package messages
 
 import (

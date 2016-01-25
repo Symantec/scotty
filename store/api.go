@@ -1,3 +1,4 @@
+// Package store handles storing metric values in memory.
 package store
 
 import (

@@ -1,3 +1,4 @@
+// Package datastructs provides miscellaneous data structures for scotty.
 package datastructs
 
 import (
@@ -76,6 +77,7 @@ type ApplicationStatus struct {
 	changedMetrics_Count int64
 }
 
+// AverageChangedMetrics returns how many metrics change value.
 func (a *ApplicationStatus) AverageChangedMetrics() float64 {
 	if a.changedMetrics_Count == 0 {
 		return 0.0
@@ -84,7 +86,7 @@ func (a *ApplicationStatus) AverageChangedMetrics() float64 {
 }
 
 // Staleness returns the staleness for this application.
-// A negative value means no successful read happened.
+// A zero value means no successful read happened.
 func (a *ApplicationStatus) Staleness() time.Duration {
 	if a.LastReadTime.IsZero() {
 		return 0
@@ -107,51 +109,69 @@ func NewApplicationStatuses() *ApplicationStatuses {
 	}
 }
 
+// Update updates the status of a single application / endpoint.
 func (a *ApplicationStatuses) Update(
 	e *scotty.Endpoint, newState *scotty.State) {
 	a.update(e, newState)
 }
 
+// LogChangedMetricCount logs how many metrics changed for a given
+// application / endpoint.
 func (a *ApplicationStatuses) LogChangedMetricCount(
 	e *scotty.Endpoint, metricCount int) {
 	a.logChangedMetricCount(e, metricCount)
 }
 
+// GetAll the statuses for all the applications in hostsAndPorts.
+// Clients are free to reorder the returned slice.
 func (a *ApplicationStatuses) GetAll(
 	hostsAndPorts HostsAndPorts) (result []*ApplicationStatus) {
 	return a.getAll(hostsAndPorts)
 }
 
+// Application represents a particular application in the fleet.
+// Application instances are immutable.
 type Application struct {
 	name string
 	port int
 }
 
+// Name returns the name of application
 func (a *Application) Name() string {
 	return a.name
 }
 
+// Port returns the port number of the application
 func (a *Application) Port() int {
 	return a.port
 }
 
+// ApplicationList represents all the applications in the fleet.
+// ApplicationList instances are immutable.
 type ApplicationList struct {
 	byPort map[int]*Application
 	byName map[string]*Application
 }
 
+// All lists all the applications in no particular order.
+// Clients may reorder returned slice.
 func (a *ApplicationList) All() []*Application {
 	return a.all()
 }
 
+// ByPort returns the application running on a particular port or nil
+// if no application is using port.
 func (a *ApplicationList) ByPort(port int) *Application {
 	return a.byPort[port]
 }
 
+// ByPort returns the application with a particular name or nil if no such
+// application exists.
 func (a *ApplicationList) ByName(name string) *Application {
 	return a.byName[name]
 }
 
+// ApplicationListBuilder builds an ApplicationList instance.
 type ApplicationListBuilder struct {
 	listPtr **ApplicationList
 }
@@ -160,10 +180,12 @@ func NewApplicationListBuilder() *ApplicationListBuilder {
 	return newApplicationListBuilder()
 }
 
+// Add adds an application.
 func (a *ApplicationListBuilder) Add(port int, applicationName string) {
 	a.add(port, applicationName)
 }
 
+// Build builds the ApplicationList instance and destroys this builder.
 func (a *ApplicationListBuilder) Build() *ApplicationList {
 	return a.build()
 }

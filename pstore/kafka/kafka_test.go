@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestLmmConfigError(t *testing.T) {
+func TestKafkaConfigError(t *testing.T) {
 	configFile := `
 apiKey: someApiKey
 tenantId: someTenantId
@@ -25,7 +25,7 @@ clinetId: someClientId
 	}
 }
 
-func TestLmmConfig(t *testing.T) {
+func TestKafkaConfig(t *testing.T) {
 	configFile := `
 # A comment
 endpoints:

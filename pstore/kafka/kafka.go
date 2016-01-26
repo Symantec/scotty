@@ -84,7 +84,7 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 	return
 }
 
-// recordSerializerType serializes a record to bytes for LMM.
+// recordSerializerType serializes a record to bytes for kafka.
 // Warning, instances of this type are not thread safe.
 type recordSerializerType struct {
 	record       map[string]string

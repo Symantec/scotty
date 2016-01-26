@@ -39,18 +39,18 @@ const (
 )
 
 var (
-	fBytesPerPage        int
-	fPageCount           int
-	fHostFile            string
-	fAppFile             string
-	fMdbFile             string
-	fPollCount           int
-	fConnectionCount     int
-	fCollectionFrequency time.Duration
-	fLmmUpdateFrequency  time.Duration
-	fLmmBatchSize        int
-	fLmmConfigFile       string
-	fCluster             string
+	fBytesPerPage          int
+	fPageCount             int
+	fHostFile              string
+	fAppFile               string
+	fMdbFile               string
+	fPollCount             int
+	fConnectionCount       int
+	fCollectionFrequency   time.Duration
+	fPStoreUpdateFrequency time.Duration
+	fPStoreBatchSize       int
+	fKafkaConfigFile       string
+	fCluster               string
 )
 
 var (
@@ -230,8 +230,8 @@ func endpointNameAndPort(
 		endpointPorts[i%length]
 }
 
-// metrics for lmmHandlerType instances
-type lmmHandlerData struct {
+// metrics for pstoreHandlerType instances
+type pstoreHandlerData struct {
 	MetricsWritten   int64
 	WriteAttempts    int64
 	SuccessfulWrites int64
@@ -239,14 +239,15 @@ type lmmHandlerData struct {
 	EndpointsVisited int64
 }
 
-// lmmHandlerType implements store.Visitor.
-// Its Visit method writes the latest value for each metric in the store to LMM.
-// It stores the last value for each endpoint and metric it wrote to LMM so
+// pstoreHandlerType implements store.Visitor.
+// Its Visit method writes the latest value for each metric in the store to
+// persistent storage. It stores the last value for each endpoint and
+// metric it wrote to persistent storage so
 // that it can avoid writing the same value twice.
-// an lmmHandlerType instance buffers writes so that each write to LMM
-// includes at least fLmmBatchSize metrics.
-// lmmHandlerType is NOT threadsafe.
-type lmmHandlerType struct {
+// an pstoreHandlerType instance buffers writes so that each write to
+// persistent storage includes at least fPStoreBatchSize metrics.
+// pstoreHandlerType is NOT threadsafe.
+type pstoreHandlerType struct {
 	writer                  pstore.Writer
 	lastValues              map[*collector.Endpoint]map[*store.MetricInfo]interface{}
 	lastValuesThisEndpoint  map[*store.MetricInfo]interface{}
@@ -255,16 +256,16 @@ type lmmHandlerType struct {
 	timeSpentCollectingDist *tricorder.CumulativeDistribution
 	totalTimeSpentDist      *tricorder.CumulativeDistribution
 	perBatchWriteDist       *tricorder.CumulativeDistribution
-	ttWriter                *timeTakenLmmWriter
+	ttWriter                *timeTakenWriter
 	startTime               time.Time
 	// Protects all fields below
 	lock  sync.Mutex
-	stats lmmHandlerData
+	stats pstoreHandlerData
 }
 
-func newLmmHandler(w pstore.Writer) *lmmHandlerType {
+func newPStoreHandler(w pstore.Writer) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
-	return &lmmHandlerType{
+	return &pstoreHandlerType{
 		writer:                  w,
 		lastValues:              make(map[*collector.Endpoint]map[*store.MetricInfo]interface{}),
 		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
@@ -279,17 +280,17 @@ func appName(port int) string {
 }
 
 // Do not call this directly!
-func (l *lmmHandlerType) Append(r *store.Record) {
+func (p *pstoreHandlerType) Append(r *store.Record) {
 	kind := r.Info.Kind()
-	if !l.ttWriter.IsTypeSupported(kind) {
+	if !p.ttWriter.IsTypeSupported(kind) {
 		return
 	}
-	if l.lastValuesThisEndpoint[r.Info] == r.Value {
+	if p.lastValuesThisEndpoint[r.Info] == r.Value {
 		return
 	}
-	l.lastValuesThisEndpoint[r.Info] = r.Value
-	l.toBeWritten = append(
-		l.toBeWritten, pstore.Record{
+	p.lastValuesThisEndpoint[r.Info] = r.Value
+	p.toBeWritten = append(
+		p.toBeWritten, pstore.Record{
 			HostName:  r.ApplicationId.HostName(),
 			AppName:   appName(r.ApplicationId.Port()),
 			Path:      r.Info.Path(),
@@ -299,103 +300,104 @@ func (l *lmmHandlerType) Append(r *store.Record) {
 			Timestamp: r.TimeStamp})
 }
 
-func (l *lmmHandlerType) StartVisit() {
-	l.ttWriter = &timeTakenLmmWriter{Writer: l.writer}
-	l.startTime = time.Now()
+func (p *pstoreHandlerType) StartVisit() {
+	p.ttWriter = &timeTakenWriter{Writer: p.writer}
+	p.startTime = time.Now()
 }
 
-func (l *lmmHandlerType) EndVisit() {
-	l.flush()
-	totalTimeSpent := time.Now().Sub(l.startTime)
-	l.timeSpentWritingDist.Add(l.ttWriter.TimeTaken)
-	l.totalTimeSpentDist.Add(totalTimeSpent)
-	l.timeSpentCollectingDist.Add(totalTimeSpent - l.ttWriter.TimeTaken)
+func (p *pstoreHandlerType) EndVisit() {
+	p.flush()
+	totalTimeSpent := time.Now().Sub(p.startTime)
+	p.timeSpentWritingDist.Add(p.ttWriter.TimeTaken)
+	p.totalTimeSpentDist.Add(totalTimeSpent)
+	p.timeSpentCollectingDist.Add(totalTimeSpent - p.ttWriter.TimeTaken)
 }
 
-func (l *lmmHandlerType) Visit(
+func (p *pstoreHandlerType) Visit(
 	theStore *store.Store, endpointId *collector.Endpoint) error {
 
 	// Get the last known values for this endpoint creating the map
 	// if necessary.
-	l.lastValuesThisEndpoint = l.lastValues[endpointId]
-	if l.lastValuesThisEndpoint == nil {
-		l.lastValuesThisEndpoint = make(
+	p.lastValuesThisEndpoint = p.lastValues[endpointId]
+	if p.lastValuesThisEndpoint == nil {
+		p.lastValuesThisEndpoint = make(
 			map[*store.MetricInfo]interface{})
-		l.lastValues[endpointId] = l.lastValuesThisEndpoint
+		p.lastValues[endpointId] = p.lastValuesThisEndpoint
 	}
 
-	// Get the latest values to write to lmm, but get only the
+	// Get the latest values to write, but get only the
 	// values that changed.
 	theStore.LatestByEndpoint(endpointId, l)
 
-	// If we have enough values to write, write them out to LMM.
-	if len(l.toBeWritten) >= fLmmBatchSize {
-		l.flush()
+	// If we have enough values to write,
+	// write them out to persistent storage.
+	if len(p.toBeWritten) >= fPStoreBatchSize {
+		p.flush()
 	}
-	l.logVisit()
+	p.logVisit()
 	return nil
 }
 
-func (l *lmmHandlerType) flush() {
-	if len(l.toBeWritten) == 0 {
+func (p *pstoreHandlerType) flush() {
+	if len(p.toBeWritten) == 0 {
 		return
 	}
 	startTime := time.Now()
-	err := l.ttWriter.Write(l.toBeWritten)
-	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
+	err := p.ttWriter.Write(p.toBeWritten)
+	p.perBatchWriteDist.Add(time.Now().Sub(startTime))
 
 	if err != nil {
-		l.logWriteError(err)
+		p.logWriteError(err)
 	} else {
-		l.logWrite(len(l.toBeWritten))
+		p.logWrite(len(p.toBeWritten))
 	}
-	l.perBatchWriteDist.Add(time.Now().Sub(startTime))
+	p.perBatchWriteDist.Add(time.Now().Sub(startTime))
 
 	// Make toBeWritten be empty while saving on memory allocation
-	l.toBeWritten = l.toBeWritten[:0]
+	p.toBeWritten = p.toBeWritten[:0]
 }
 
-func (l *lmmHandlerType) RegisterMetrics() {
+func (p *pstoreHandlerType) RegisterMetrics() {
 	tricorder.RegisterMetric(
 		"writer/writeTimePerBatch",
-		l.perBatchWriteDist,
+		p.perBatchWriteDist,
 		units.Millisecond,
 		"Time spent writing each batch")
 	tricorder.RegisterMetric(
 		"writer/timeSpentCollecting",
-		l.timeSpentCollectingDist,
+		p.timeSpentCollectingDist,
 		units.Second,
-		"Time spent collecting metrics to write to Lmm per sweep")
+		"Time spent collecting metrics to write to persistent storage per sweep")
 	tricorder.RegisterMetric(
 		"writer/timeSpentWriting",
-		l.timeSpentWritingDist,
+		p.timeSpentWritingDist,
 		units.Second,
-		"Time spent writing metrics to Lmm per sweep")
+		"Time spent writing metrics to persistent storage per sweep")
 	tricorder.RegisterMetric(
 		"writer/totalTimeSpent",
-		l.totalTimeSpentDist,
+		p.totalTimeSpentDist,
 		units.Second,
 		"total time spent per sweep")
-	var data lmmHandlerData
-	region := tricorder.RegisterRegion(func() { l.collectData(&data) })
+	var data pstoreHandlerData
+	region := tricorder.RegisterRegion(func() { p.collectData(&data) })
 	tricorder.RegisterMetricInRegion(
 		"writer/metricsWritten",
 		&data.MetricsWritten,
 		region,
 		units.None,
-		"Number of metrics written to LMM")
+		"Number of metrics written to persistent storage")
 	tricorder.RegisterMetricInRegion(
 		"writer/writeAttempts",
 		&data.WriteAttempts,
 		region,
 		units.None,
-		"Number of attempts to write to LMM")
+		"Number of attempts to write to persistent storage")
 	tricorder.RegisterMetricInRegion(
 		"writer/successfulWrites",
 		&data.SuccessfulWrites,
 		region,
 		units.None,
-		"Number of successful writes to LMM")
+		"Number of successful writes to persistent storage")
 	tricorder.RegisterMetricInRegion(
 		"writer/successfulWriteRatio",
 		func() float64 {
@@ -434,34 +436,34 @@ func (l *lmmHandlerType) RegisterMetrics() {
 		"Average metrics written per batch.")
 }
 
-func (l *lmmHandlerType) logWrite(numWritten int) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	l.stats.MetricsWritten += int64(numWritten)
-	l.stats.WriteAttempts++
-	l.stats.SuccessfulWrites++
+func (p *pstoreHandlerType) logWrite(numWritten int) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stats.MetricsWritten += int64(numWritten)
+	p.stats.WriteAttempts++
+	p.stats.SuccessfulWrites++
 }
 
-func (l *lmmHandlerType) logWriteError(err error) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	l.stats.WriteAttempts++
-	l.stats.LastWriteError = err.Error()
+func (p *pstoreHandlerType) logWriteError(err error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stats.WriteAttempts++
+	p.stats.LastWriteError = err.Error()
 }
 
-func (l *lmmHandlerType) logVisit() {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	l.stats.EndpointsVisited++
+func (p *pstoreHandlerType) logVisit() {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stats.EndpointsVisited++
 }
 
 // collectData collects metrics about this instance.
-// Although lmmHandlerType instances are not threadsafe, the collectData
+// Although pstoreHandlerType instances are not threadsafe, the collectData
 // method is threadsafe.
-func (l *lmmHandlerType) collectData(data *lmmHandlerData) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	*data = l.stats
+func (p *pstoreHandlerType) collectData(data *pstoreHandlerData) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	*data = p.stats
 }
 
 // logger implements the scotty.Logger interface
@@ -700,28 +702,28 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
-type timeTakenLmmWriter struct {
+type timeTakenWriter struct {
 	pstore.Writer
 	TimeTaken time.Duration
 }
 
-func (t *timeTakenLmmWriter) Write(records []pstore.Record) error {
+func (t *timeTakenWriter) Write(records []pstore.Record) error {
 	start := time.Now()
 	result := t.Writer.Write(records)
 	t.TimeTaken += time.Now().Sub(start)
 	return result
 }
 
-// A fake lmmWriter implementation. This fake simply stalls 50ms with each
+// A fake pstore.Writer implementation. This fake simply stalls 50ms with each
 // write.
-type stallLmmWriter struct {
+type stallWriter struct {
 }
 
-func (s stallLmmWriter) IsTypeSupported(kind types.Type) bool {
+func (s stallWriter) IsTypeSupported(kind types.Type) bool {
 	return true
 }
 
-func (s stallLmmWriter) Write(records []pstore.Record) error {
+func (s stallWriter) Write(records []pstore.Record) error {
 	time.Sleep(50 * time.Millisecond)
 	if rand.Float64() < 0.01 {
 		return aWriteError
@@ -730,10 +732,10 @@ func (s stallLmmWriter) Write(records []pstore.Record) error {
 }
 
 func newWriter() (result pstore.Writer, err error) {
-	if fLmmConfigFile == "" {
-		return stallLmmWriter{}, nil
+	if fPStoreConfigFile == "" {
+		return stallWriter{}, nil
 	}
-	f, err := os.Open(fLmmConfigFile)
+	f, err := os.Open(fPStoreConfigFile)
 	if err != nil {
 		return
 	}
@@ -787,7 +789,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	lmmHandler := newLmmHandler(writer)
+	pstoreHandler := newPStoreHandler(writer)
 	if !realEndpoints {
 		f, err := os.Open(fHostFile)
 		if err != nil {
@@ -840,7 +842,7 @@ func main() {
 		units.Millisecond,
 		"Sweep duration")
 	gStatusCounts.RegisterMetrics()
-	lmmHandler.RegisterMetrics()
+	pstoreHandler.RegisterMetrics()
 	programStartTime := time.Now()
 	tricorder.RegisterMetric(
 		"collector/elapsedTime",
@@ -898,20 +900,21 @@ func main() {
 		}
 	}()
 
-	// LMM writing goroutine. Write to LMM every minute.
-	// Notice that this single goroutine handles all the LMM writing
-	// as multiple goroutines must not access the lmmHandler instance.
-	// accessing lmmHandler metrics is the one exception to this rule.
+	// persistent storage writing goroutine. Write every 30s by default.
+	// Notice that this single goroutine handles all the persistent
+	// storage writing as multiple goroutines must not access the
+	// pstoreHandler instance. accessing pstoreHandler metrics is the
+	// one exception to this rule.
 	go func() {
 		for {
 			metricStore, _ := gHostsPortsAndStore.Get()
 			writeTime := time.Now()
-			lmmHandler.StartVisit()
-			metricStore.VisitAllEndpoints(lmmHandler)
-			lmmHandler.EndVisit()
+			pstoreHandler.StartVisit()
+			metricStore.VisitAllEndpoints(pstoreHandler)
+			pstoreHandler.EndVisit()
 			writeDuration := time.Now().Sub(writeTime)
-			if writeDuration < fLmmUpdateFrequency {
-				time.Sleep(fLmmUpdateFrequency - writeDuration)
+			if writeDuration < fPStoreUpdateFrequency {
+				time.Sleep(fPStoreUpdateFrequency - writeDuration)
 			}
 		}
 	}()
@@ -940,10 +943,10 @@ func main() {
 
 func init() {
 	flag.StringVar(
-		&fLmmConfigFile,
-		"lmm_config_file",
+		&fKafkaConfigFile,
+		"kafka_config_file",
 		"",
-		"lmm configuration file")
+		"kafka configuration file")
 	flag.IntVar(
 		&fPageCount,
 		"page_count",
@@ -985,15 +988,15 @@ func init() {
 		30*time.Second,
 		"Amount of time between metric collections")
 	flag.DurationVar(
-		&fLmmUpdateFrequency,
-		"lmm_update_frequency",
+		&fPStoreUpdateFrequency,
+		"pstore_update_frequency",
 		30*time.Second,
-		"Amount of time between writing newest metrics to lmm")
+		"Amount of time between writing newest metrics to persistent storage")
 	flag.IntVar(
-		&fLmmBatchSize,
-		"lmm_batch_size",
+		&fPStoreBatchSize,
+		"pstore_batch_size",
 		1000,
-		"Batch to write at least this many records to Lmm")
+		"Batch to write at least this many records to persistent storage")
 	flag.StringVar(
 		&fCluster,
 		"cluster",

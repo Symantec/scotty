@@ -965,7 +965,7 @@ func init() {
 	flag.StringVar(
 		&fAppFile,
 		"app_file",
-		"apps.txt",
+		"apps.yaml",
 		"File containing mapping of ports to apps")
 	flag.StringVar(
 		&fMdbFile,

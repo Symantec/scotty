@@ -1,14 +1,13 @@
 package datastructs
 
 import (
-	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/store"
+	"gopkg.in/yaml.v2"
 	"io"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -139,33 +138,32 @@ func (a *ApplicationListBuilder) add(port int, applicationName string) {
 	(*a.listPtr).byName[applicationName] = app
 }
 
-func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {
-	return a.readConfig(r)
-}
-
 func (a *ApplicationListBuilder) build() *ApplicationList {
 	result := *a.listPtr
 	*a.listPtr = nil
 	return result
 }
 
+type nameAndPortType struct {
+	Name string
+	Port int
+}
+
 func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if len(line) == 0 {
-			continue
-		}
-		splits := strings.SplitN(line, "\t", 2)
-		if len(splits) < 2 {
-			return errors.New(
-				"Config file lines must be portNum<tab>name")
-		}
-		port, err := strconv.Atoi(splits[0])
-		if err != nil {
-			return err
-		}
-		a.Add(port, splits[1])
+	var content bytes.Buffer
+	if _, err := content.ReadFrom(r); err != nil {
+		return err
 	}
-	return scanner.Err()
+	var nameAndPorts []nameAndPortType
+	if err := yaml.Unmarshal(content.Bytes(), &nameAndPorts); err != nil {
+		return err
+	}
+	for _, nameAndPort := range nameAndPorts {
+		if nameAndPort.Name == "" || nameAndPort.Port == 0 {
+			return errors.New(
+				"Both name and port required for each application")
+		}
+		a.Add(nameAndPort.Port, nameAndPort.Name)
+	}
+	return nil
 }

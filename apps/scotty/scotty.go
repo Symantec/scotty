@@ -39,18 +39,50 @@ const (
 )
 
 var (
-	fBytesPerPage          int
-	fPageCount             int
-	fHostFile              string
-	fAppFile               string
-	fMdbFile               string
-	fPollCount             int
-	fConnectionCount       int
-	fCollectionFrequency   time.Duration
-	fPStoreUpdateFrequency time.Duration
-	fPStoreBatchSize       int
-	fKafkaConfigFile       string
-	fCluster               string
+	fBytesPerPage = flag.Int(
+		"bytes_per_page",
+		1024,
+		"Space for new metrics for each endpoint in records")
+	fPageCount = flag.Int(
+		"page_count",
+		30*1000*1000,
+		"Buffer size per endpoint in records")
+	fHostFile = flag.String(
+		"host_file",
+		"",
+		"File containing all the nodes")
+	fAppFile = flag.String(
+		"app_file",
+		"apps.yaml",
+		"File containing mapping of ports to apps")
+	fMdbFile = flag.String(
+		"mdb_file",
+		"/var/lib/Dominator/mdb",
+		"Name of file from which to read mdb data.")
+	fPollCount = flag.Int(
+		"poll_count",
+		collector.ConcurrentPolls(),
+		"Maximum number of concurrent polls")
+	fConnectionCount = flag.Int(
+		"connection_count",
+		collector.ConcurrentConnects(),
+		"Maximum number of concurrent connections")
+	fCollectionFrequency = flag.Duration(
+		"collection_frequency",
+		30*time.Second,
+		"Amount of time between metric collections")
+	fPStoreUpdateFrequency = flag.Duration(
+		"pstore_update_frequency",
+		30*time.Second,
+		"Amount of time between writing newest metrics to persistent storage")
+	fPStoreBatchSize = flag.Int(
+		"pstore_batch_size",
+		1000,
+		"Batch to write at least this many records to persistent storage")
+	fKafkaConfigFile = flag.String(
+		"kafka_config_file",
+		"",
+		"kafka configuration file")
 )
 
 var (
@@ -331,7 +363,7 @@ func (p *pstoreHandlerType) Visit(
 
 	// If we have enough values to write,
 	// write them out to persistent storage.
-	if len(p.toBeWritten) >= fPStoreBatchSize {
+	if len(p.toBeWritten) >= *fPStoreBatchSize {
 		p.flush()
 	}
 	p.logVisit()
@@ -732,10 +764,10 @@ func (s stallWriter) Write(records []pstore.Record) error {
 }
 
 func newWriter() (result pstore.Writer, err error) {
-	if fKafkaConfigFile == "" {
+	if *fKafkaConfigFile == "" {
 		return stallWriter{}, nil
 	}
-	f, err := os.Open(fKafkaConfigFile)
+	f, err := os.Open(*fKafkaConfigFile)
 	if err != nil {
 		return
 	}
@@ -765,7 +797,7 @@ func addEndpoints(
 }
 
 func initApplicationList() {
-	f, err := os.Open(fAppFile)
+	f, err := os.Open(*fAppFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -781,17 +813,17 @@ func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
 	var mdbChannel <-chan *mdb.Mdb
-	collector.SetConcurrentPolls(fPollCount)
-	collector.SetConcurrentConnects(fConnectionCount)
+	collector.SetConcurrentPolls(*fPollCount)
+	collector.SetConcurrentConnects(*fConnectionCount)
 	firstEndpoints := make(datastructs.HostsAndPorts)
-	realEndpoints := (fHostFile == "")
+	realEndpoints := (*fHostFile == "")
 	writer, err := newWriter()
 	if err != nil {
 		log.Fatal(err)
 	}
 	pstoreHandler := newPStoreHandler(writer)
 	if !realEndpoints {
-		f, err := os.Open(fHostFile)
+		f, err := os.Open(*fHostFile)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -822,7 +854,7 @@ func main() {
 		gApplicationList = builder.Build()
 	} else {
 		initApplicationList()
-		mdbChannel = mdbd.StartMdbDaemon(fMdbFile, log.New(os.Stderr, "", log.LstdFlags))
+		mdbChannel = mdbd.StartMdbDaemon(*fMdbFile, log.New(os.Stderr, "", log.LstdFlags))
 		addEndpoints(<-mdbChannel, nil, firstEndpoints)
 	}
 	tricorder.RegisterMetric(
@@ -867,10 +899,10 @@ func main() {
 		log.Fatal(err)
 	}
 	if totalMemoryToUse > 0 {
-		fPageCount = int(totalMemoryToUse / uint64(fBytesPerPage))
+		*fPageCount = int(totalMemoryToUse / uint64(*fBytesPerPage))
 	}
 	gHostsPortsAndStore.Init(
-		fBytesPerPage/24, fPageCount, firstEndpoints)
+		(*fBytesPerPage)/24, *fPageCount, firstEndpoints)
 	fmt.Println("Initialization complete.")
 	firstStore, _ := gHostsPortsAndStore.Get()
 	firstStore.RegisterMetrics()
@@ -894,8 +926,8 @@ func main() {
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
-			if sweepDuration < fCollectionFrequency {
-				time.Sleep(fCollectionFrequency - sweepDuration)
+			if sweepDuration < *fCollectionFrequency {
+				time.Sleep((*fCollectionFrequency) - sweepDuration)
 			}
 		}
 	}()
@@ -913,8 +945,8 @@ func main() {
 			metricStore.VisitAllEndpoints(pstoreHandler)
 			pstoreHandler.EndVisit()
 			writeDuration := time.Now().Sub(writeTime)
-			if writeDuration < fPStoreUpdateFrequency {
-				time.Sleep(fPStoreUpdateFrequency - writeDuration)
+			if writeDuration < *fPStoreUpdateFrequency {
+				time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
 			}
 		}
 	}()
@@ -939,67 +971,4 @@ func main() {
 	if err := http.ListenAndServe(":8187", nil); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func init() {
-	flag.StringVar(
-		&fKafkaConfigFile,
-		"kafka_config_file",
-		"",
-		"kafka configuration file")
-	flag.IntVar(
-		&fPageCount,
-		"page_count",
-		30*1000*1000,
-		"Buffer size per endpoint in records")
-	flag.IntVar(
-		&fBytesPerPage,
-		"bytes_per_page",
-		1024,
-		"Space for new metrics for each endpoint in records")
-	flag.StringVar(
-		&fHostFile,
-		"host_file",
-		"",
-		"File containing all the nodes")
-	flag.StringVar(
-		&fAppFile,
-		"app_file",
-		"apps.yaml",
-		"File containing mapping of ports to apps")
-	flag.StringVar(
-		&fMdbFile,
-		"mdb_file",
-		"/var/lib/Dominator/mdb",
-		"Name of file from which to read mdb data.")
-	flag.IntVar(
-		&fPollCount,
-		"poll_count",
-		collector.ConcurrentPolls(),
-		"Maximum number of concurrent polls")
-	flag.IntVar(
-		&fConnectionCount,
-		"connection_count",
-		collector.ConcurrentConnects(),
-		"Maximum number of concurrent connections")
-	flag.DurationVar(
-		&fCollectionFrequency,
-		"collection_frequency",
-		30*time.Second,
-		"Amount of time between metric collections")
-	flag.DurationVar(
-		&fPStoreUpdateFrequency,
-		"pstore_update_frequency",
-		30*time.Second,
-		"Amount of time between writing newest metrics to persistent storage")
-	flag.IntVar(
-		&fPStoreBatchSize,
-		"pstore_batch_size",
-		1000,
-		"Batch to write at least this many records to persistent storage")
-	flag.StringVar(
-		&fCluster,
-		"cluster",
-		"ash1",
-		"The cluster name")
 }

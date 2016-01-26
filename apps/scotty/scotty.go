@@ -327,7 +327,7 @@ func (p *pstoreHandlerType) Visit(
 
 	// Get the latest values to write, but get only the
 	// values that changed.
-	theStore.LatestByEndpoint(endpointId, l)
+	theStore.LatestByEndpoint(endpointId, p)
 
 	// If we have enough values to write,
 	// write them out to persistent storage.
@@ -732,10 +732,10 @@ func (s stallWriter) Write(records []pstore.Record) error {
 }
 
 func newWriter() (result pstore.Writer, err error) {
-	if fPStoreConfigFile == "" {
+	if fKafkaConfigFile == "" {
 		return stallWriter{}, nil
 	}
-	f, err := os.Open(fPStoreConfigFile)
+	f, err := os.Open(fKafkaConfigFile)
 	if err != nil {
 		return
 	}

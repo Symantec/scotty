@@ -4,6 +4,7 @@ package datastructs
 import (
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/store"
+	"io"
 	"sync"
 	"time"
 )
@@ -183,6 +184,11 @@ func NewApplicationListBuilder() *ApplicationListBuilder {
 // Add adds an application.
 func (a *ApplicationListBuilder) Add(port int, applicationName string) {
 	a.add(port, applicationName)
+}
+
+// Read application names and ports from a config file into this builder.
+func (a *ApplicationListBuilder) ReadConfig(r io.Reader) error {
+	return a.readConfig(r)
 }
 
 // Build builds the ApplicationList instance and destroys this builder.

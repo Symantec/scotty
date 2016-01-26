@@ -8,10 +8,12 @@ import (
 
 const (
 	kConfigFile = `
-6910	Health Metrics
-2222	An application
-
-6970	Dominator
+- port: 6910
+  name: Health Metrics
+- port: 6970
+  name: Dominator
+- port: 2222
+  name: An application
 `
 	kSomeBadPort = 9876
 	kSomeBadName = "A bad name"

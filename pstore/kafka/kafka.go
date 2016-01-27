@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -32,7 +33,35 @@ var (
 		types.GoTime:     true,
 		types.GoDuration: true,
 	}
+	kFakeWriter = &fakeWriter{tenantId: "aTenantId", apiKey: "anApiKey"}
 )
+
+type fakeWriter struct {
+	tenantId string
+	apiKey   string
+}
+
+func newFakeWriter() pstore.Writer {
+	return kFakeWriter
+}
+
+func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
+	return supportedTypes[t]
+}
+
+func (f *fakeWriter) Write(records []pstore.Record) (err error) {
+	serializer := newRecordSerializer(f.tenantId, f.apiKey)
+	for i := range records {
+		var payload []byte
+		payload, err = serializer.Serialize(&records[i])
+		if err != nil {
+			return
+		}
+		fmt.Println(string(payload))
+		fmt.Println()
+	}
+	return
+}
 
 type writer struct {
 	broker   *kafka.Broker

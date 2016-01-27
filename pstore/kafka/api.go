@@ -11,6 +11,12 @@ func NewWriter(config *Config) (pstore.Writer, error) {
 	return newWriter(config)
 }
 
+// NewFakeWriter creates a new writer that dumps the JSON to stdout.
+// The tenantId and apiKey are fake for security.
+func NewFakeWriter() pstore.Writer {
+	return newFakeWriter()
+}
+
 // Config represents the configuration of kafka.
 type Config struct {
 	// The KAFKA endpoints in "hostname:port" format

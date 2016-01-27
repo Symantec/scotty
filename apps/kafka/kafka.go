@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"flag"
-	"fmt"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
@@ -114,22 +113,9 @@ func readCommands(commands *[]metricCommand) {
 	}
 }
 
-type dumbWriter struct {
-}
-
-func (d dumbWriter) IsTypeSupported(t types.Type) bool { return true }
-
-func (d dumbWriter) Write(values []pstore.Record) error {
-	for i := range values {
-		fmt.Println(values[i])
-	}
-	fmt.Println()
-	return nil
-}
-
 func createKafkaWriter() (result pstore.Writer) {
 	if *fKafkaConfigFile == "" {
-		return dumbWriter{}
+		return kafka.NewFakeWriter()
 	}
 	f, err := os.Open(*fKafkaConfigFile)
 	if err != nil {

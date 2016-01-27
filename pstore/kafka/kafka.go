@@ -35,13 +35,63 @@ var (
 	kFakeWriter = &fakeWriter{tenantId: "aTenantId", apiKey: "anApiKey"}
 )
 
+type pathAndMillisType struct {
+	Path   string
+	Millis int64
+}
+
+func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
+	return pathAndMillisType{
+		Path:   record.Path,
+		Millis: int64(record.Timestamp * 1000.0)}
+}
+
+type uniqueMetricsWriter struct {
+	pstore.Writer
+}
+
+// fixDuplicates is a workaround for a Grafana bug.
+// In Grafana, two metric values cannot have the same name and timestamp even
+// if they are for different endpoints. Otherwise, race conditions cause
+// one of the metric values to stomp out the other yielding an incomplete
+// data set.
+// fixDuplicates returns a slice like records except that if two records
+// have the same metric name and timestamp, fixDuplicates adds 1ms to one
+// of the timestamps to avoid race conditions in Grafana.
+// If records requires no modifications, fixDuplicates returns it unchanged.
+// Otherwise, fixDuplicates returns a copy of the records slice with the
+// needed modifications leaving the original records slice unchanged.
+func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
+	result = records
+	copied := false
+	pathAndTimeExists := make(map[pathAndMillisType]bool)
+	for i := range records {
+		pathAndMillis := newPathAndMillisType(&result[i])
+		for pathAndTimeExists[pathAndMillis] {
+			if !copied {
+				result = make([]pstore.Record, len(records))
+				copy(result, records)
+				copied = true
+			}
+			result[i].Timestamp += 0.001
+			pathAndMillis = newPathAndMillisType(&result[i])
+		}
+		pathAndTimeExists[pathAndMillis] = true
+	}
+	return
+}
+
+func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
+	return u.Writer.Write(fixDuplicates(records))
+}
+
 type fakeWriter struct {
 	tenantId string
 	apiKey   string
 }
 
 func newFakeWriter() pstore.Writer {
-	return kFakeWriter
+	return uniqueMetricsWriter{kFakeWriter}
 }
 
 func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
@@ -90,7 +140,11 @@ func newWriter(c *Config) (
 	conf.RequiredAcks = proto.RequiredAcksLocal
 	producer := awriter.broker.Producer(conf)
 	awriter.producer = kafka.NewRoundRobinProducer(producer, count)
-	result = &awriter
+	if c.AllowDuplicates {
+		result = &awriter
+	} else {
+		result = uniqueMetricsWriter{&awriter}
+	}
 	return
 }
 

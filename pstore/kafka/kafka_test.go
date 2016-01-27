@@ -36,6 +36,7 @@ topic: someTopic
 apiKey: someApiKey
 tenantId: someTenantId
 clientId: someClientId
+allowDuplicates: true
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
@@ -43,10 +44,11 @@ clientId: someClientId
 		t.Fatal(err)
 	}
 	expected := Config{
-		ApiKey:   "someApiKey",
-		TenantId: "someTenantId",
-		ClientId: "someClientId",
-		Topic:    "someTopic",
+		ApiKey:          "someApiKey",
+		TenantId:        "someTenantId",
+		ClientId:        "someClientId",
+		Topic:           "someTopic",
+		AllowDuplicates: true,
 		Endpoints: []string{
 			"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
 	}

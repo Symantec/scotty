@@ -9,7 +9,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
-	"strconv"
 	"time"
 )
 
@@ -60,6 +59,7 @@ func (f *fakeWriter) Write(records []pstore.Record) (err error) {
 		fmt.Println(string(payload))
 		fmt.Println()
 	}
+	fmt.Println()
 	return
 }
 
@@ -116,13 +116,13 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 // recordSerializerType serializes a record to bytes for kafka.
 // Warning, instances of this type are not thread safe.
 type recordSerializerType struct {
-	record       map[string]string
+	record       map[string]interface{}
 	formatString string
 }
 
 func newRecordSerializer(tenantId, apiKey string) *recordSerializerType {
 	return &recordSerializerType{
-		record: map[string]string{
+		record: map[string]interface{}{
 			kVersion:  "1",
 			kTenantId: tenantId,
 			kApiKey:   apiKey},
@@ -138,26 +138,22 @@ func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
 	switch r.Kind {
 	case types.Bool:
 		if r.Value.(bool) {
-			s.record[kValue] = "1"
+			s.record[kValue] = 1.0
 		} else {
-			s.record[kValue] = "0"
+			s.record[kValue] = 0.0
 		}
 	case types.Int:
-		s.record[kValue] = strconv.FormatInt(r.Value.(int64), 10)
+		s.record[kValue] = float64(r.Value.(int64))
 	case types.Uint:
-		s.record[kValue] = strconv.FormatUint(r.Value.(uint64), 10)
+		s.record[kValue] = float64(r.Value.(uint64))
 	case types.Float:
-		s.record[kValue] = strconv.FormatFloat(
-			r.Value.(float64), 'f', -1, 64)
+		s.record[kValue] = r.Value
 	case types.GoTime:
-		s.record[kValue] = strconv.FormatFloat(
-			messages.TimeToFloat(r.Value.(time.Time)),
-			'f', -1, 64)
+		s.record[kValue] = messages.TimeToFloat(r.Value.(time.Time))
 	case types.GoDuration:
-		s.record[kValue] = strconv.FormatFloat(
-			messages.DurationToFloat(
-				r.Value.(time.Duration))*units.FromSeconds(r.Unit),
-			'f', -1, 64)
+		s.record[kValue] = messages.DurationToFloat(
+			r.Value.(time.Duration)) * units.FromSeconds(
+			r.Unit)
 	default:
 		panic("Unsupported type")
 

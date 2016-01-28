@@ -325,7 +325,7 @@ func (p *pstoreHandlerType) Append(r *store.Record) {
 		p.toBeWritten, pstore.Record{
 			HostName:  r.ApplicationId.HostName(),
 			AppName:   appName(r.ApplicationId.Port()),
-			Path:      r.Info.Path(),
+			Path:      strings.Replace(r.Info.Path(), "/", "_", -1),
 			Kind:      r.Info.Kind(),
 			Unit:      r.Info.Unit(),
 			Value:     r.Value,

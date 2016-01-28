@@ -93,6 +93,7 @@ var (
 	gConnectionErrors              = newConnectionErrorsType()
 	gApplicationStats              = datastructs.NewApplicationStatuses()
 	gApplicationList               *datastructs.ApplicationList
+	gNoBlockPStore                 *pstore.NoBlockPStore
 )
 
 type statusCountSnapshotType struct {
@@ -535,6 +536,16 @@ func (l *loggerType) LogResponse(
 		metrics,
 		func(ametric *trimessages.Metric) bool {
 			return ametric.Kind != types.Dist
+		},
+		func(added *store.Record) {
+			gNoBlockPStore.Write(&pstore.Record{
+				HostName:  added.ApplicationId.HostName(),
+				AppName:   appName(added.ApplicationId.Port()),
+				Path:      strings.Replace(added.Info.Path(), "/", "_", -1),
+				Kind:      added.Info.Kind(),
+				Unit:      added.Info.Unit(),
+				Value:     added.Value,
+				Timestamp: added.TimeStamp})
 		})
 	gApplicationStats.LogChangedMetricCount(e, added)
 	gChangedMetricsPerEndpointDist.Add(float64(added))
@@ -821,7 +832,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pstoreHandler := newPStoreHandler(writer)
+	// TODO: Create command line params.
+	gNoBlockPStore = pstore.NewNoBlockPStore(
+		writer, *fPStoreBatchSize, 1000000, time.Second)
+	gNoBlockPStore.RegisterMetrics()
+	// pstoreHandler := newPStoreHandler(writer)
 	if !realEndpoints {
 		f, err := os.Open(*fHostFile)
 		if err != nil {
@@ -874,7 +889,7 @@ func main() {
 		units.Millisecond,
 		"Sweep duration")
 	gStatusCounts.RegisterMetrics()
-	pstoreHandler.RegisterMetrics()
+	// pstoreHandler.RegisterMetrics()
 	programStartTime := time.Now()
 	tricorder.RegisterMetric(
 		"collector/elapsedTime",
@@ -928,25 +943,6 @@ func main() {
 			sweepDurationDist.Add(sweepDuration)
 			if sweepDuration < *fCollectionFrequency {
 				time.Sleep((*fCollectionFrequency) - sweepDuration)
-			}
-		}
-	}()
-
-	// persistent storage writing goroutine. Write every 30s by default.
-	// Notice that this single goroutine handles all the persistent
-	// storage writing as multiple goroutines must not access the
-	// pstoreHandler instance. accessing pstoreHandler metrics is the
-	// one exception to this rule.
-	go func() {
-		for {
-			metricStore, _ := gHostsPortsAndStore.Get()
-			writeTime := time.Now()
-			pstoreHandler.StartVisit()
-			metricStore.VisitAllEndpoints(pstoreHandler)
-			pstoreHandler.EndVisit()
-			writeDuration := time.Now().Sub(writeTime)
-			if writeDuration < *fPStoreUpdateFrequency {
-				time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
 			}
 		}
 	}()

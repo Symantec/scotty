@@ -363,12 +363,19 @@ func (c *timeSeriesCollectionType) AddTimeSeries(
 func (c *timeSeriesCollectionType) Add(
 	timestamp float64,
 	m *trimessages.Metric,
+	r *Record,
 	supplier *pageSupplierType) bool {
 	// We must take care not to call supplier.Get() while we are holding
 	// a lock. Because supplier.Get() may have to obtain a lock to reap
 	// a page, calling it while holding a lock will make deadlock
 	// possible.
 	id, timeSeries := c.Lookup(m)
+	if r != nil {
+		r.ApplicationId = c.applicationId
+		r.Info = id
+		r.TimeStamp = timestamp
+		r.Value = m.Value
+	}
 	if timeSeries == nil {
 		newPage := supplier.Get()
 		timeSeries := newTimeSeriesType(
@@ -555,22 +562,28 @@ func (s *Store) newBuilder() *Builder {
 
 func (s *Store) add(
 	endpointId *scotty.Endpoint,
-	timestamp float64, m *trimessages.Metric) bool {
-	return s.byApplication[endpointId].Add(timestamp, m, s.supplier)
+	timestamp float64, m *trimessages.Metric,
+	r *Record) bool {
+	return s.byApplication[endpointId].Add(timestamp, m, r, s.supplier)
 }
 
 func (s *Store) addBatch(
 	endpointId *scotty.Endpoint,
 	timestamp float64,
 	metricList trimessages.MetricList,
-	filter func(*trimessages.Metric) bool) int {
+	filter func(*trimessages.Metric) bool,
+	callback func(r *Record)) int {
 	result := 0
+	var r Record
 	for _, metric := range metricList {
 		if filter != nil && !filter(metric) {
 			continue
 		}
-		if s.add(endpointId, timestamp, metric) {
+		if s.add(endpointId, timestamp, metric, &r) {
 			result++
+			if callback != nil {
+				callback(&r)
+			}
 		}
 	}
 	gMetricValueCount.Add(int64(result))
@@ -615,64 +628,65 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 	return
 }
 
-func (s *Store) registerMetrics() {
+func (s *Store) registerMetrics() (err error) {
 	// Let Garbage collector reclaim s.
 	supplier := s.supplier
 	totalPageCount := s.totalPageCount
 	maxValuesPerPage := s.maxValuesPerPage
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/pagesPerMetric",
 		gPagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/lastTimeStampEvicted",
 		&gLastTimeEvicted,
 		units.None,
 		"Latest timestamp evicted from data store."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/availablePages",
 		func() int {
 			return supplier.Len()
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/totalPages",
 		&totalPageCount,
 		units.None,
 		"Total number of pages."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/maxValuesPerPage",
 		&maxValuesPerPage,
 		units.None,
 		"Maximum number ofvalues that can fit in a page."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
 			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/metricValueCount",
 		gMetricValueCount.Get,
 		units.None,
 		"Number of stored metrics values and timestamps"); err != nil {
-		panic(err)
+		return
 	}
+	return
 }
 
 func reclaimPages(

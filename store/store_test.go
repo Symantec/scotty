@@ -157,6 +157,88 @@ func TestReclaimPages(t *testing.T) {
 	}
 }
 
+func TestAddBatch(t *testing.T) {
+	builder := store.NewBuilder(1, 12)
+	builder.RegisterEndpoint(kEndpoint0)
+	aStore := builder.Build()
+
+	aMetric := messages.Metric{
+		Description: "A description",
+		Unit:        units.None,
+		Kind:        types.Int,
+		Bits:        64}
+
+	// Add 6 unique values to each endpoint.
+	aMetric.Path = "/foo/bar"
+	aMetric.Value = 1
+	add(t, aStore, kEndpoint0, 100.0, &aMetric, true)
+	aMetric.Path = "/foo/baz"
+	aMetric.Value = 2
+	add(t, aStore, kEndpoint0, 100.0, &aMetric, true)
+	metrics := []*messages.Metric{
+		// Not added a duplicate value
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int,
+			Bits:        64,
+			Value:       1,
+		},
+		// Added
+		{
+			Path:        "/foo/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int,
+			Bits:        64,
+			Value:       3,
+		},
+		// Added
+		{
+			Path:        "/foo/alice",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int,
+			Bits:        64,
+			Value:       5,
+		},
+		// Not added, wrong type
+		{
+			Path:        "/foo/wrongType",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Uint,
+			Bits:        64,
+			Value:       5,
+		},
+	}
+	var result []*store.Record
+	aStore.AddBatch(
+		kEndpoint0,
+		105.0,
+		metrics,
+		func(m *messages.Metric) bool {
+			return m.Kind == types.Int
+		},
+		func(r *store.Record) {
+			recordCopy := *r
+			result = append(result, &recordCopy)
+		})
+
+	assertValueEquals(t, 2, len(result))
+
+	assertValueEquals(t, kEndpoint0, result[0].ApplicationId)
+	assertValueEquals(t, "/foo/baz", result[0].Info.Path())
+	assertValueEquals(t, 105.0, result[0].TimeStamp)
+	assertValueEquals(t, 3, result[0].Value)
+
+	assertValueEquals(t, kEndpoint0, result[1].ApplicationId)
+	assertValueEquals(t, "/foo/alice", result[1].Info.Path())
+	assertValueEquals(t, 105.0, result[1].TimeStamp)
+	assertValueEquals(t, 5, result[1].Value)
+}
+
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	builder := store.NewBuilder(1, 12)
 	builder.RegisterEndpoint(kEndpoint0)

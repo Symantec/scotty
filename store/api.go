@@ -129,12 +129,14 @@ func (s *Store) NewBuilder() *Builder {
 func (s *Store) Add(
 	endpointId *scotty.Endpoint,
 	timestamp float64, m *trimessages.Metric) bool {
-	return s.add(endpointId, timestamp, m)
+	return s.add(endpointId, timestamp, m, nil)
 }
 
 // AddBatch works like Add but adds several metric values at once.
-// If filter is non-nill, AddBatch ignores any metrics in metricList for
+// If filter is non-nil, AddBatch ignores any metrics in metricList for
 // which filter returns false.
+// If caller supplies a non-nil callback function, AddBatch calls it for
+// each metric successfully added.
 // AddBatch returns the total number of metric values added.
 // No two goroutines may call AddBatch() on a Store instance concurrently
 // with the same endpointId. However multiple goroutines may call
@@ -143,8 +145,9 @@ func (s *Store) AddBatch(
 	endpointId *scotty.Endpoint,
 	timestamp float64,
 	metricList trimessages.MetricList,
-	filter func(*trimessages.Metric) bool) int {
-	return s.addBatch(endpointId, timestamp, metricList, filter)
+	filter func(*trimessages.Metric) bool,
+	callback func(r *Record)) int {
+	return s.addBatch(endpointId, timestamp, metricList, filter, callback)
 }
 
 // ByNameAndEndpoint returns records for a metric by path and endpoint and
@@ -216,9 +219,9 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 
 // RegisterMetrics registers metrics associated with this Store instance
 // Calling this covers any new store created by calling NewBuilder() on
-// this instance.
-func (s *Store) RegisterMetrics() {
-	s.registerMetrics()
+// this instance. It is an error to call RegisterMetrics more than once.
+func (s *Store) RegisterMetrics() error {
+	return s.registerMetrics()
 }
 
 // AvailablePages returns the number of pages available for collecting

@@ -2,13 +2,13 @@ package kafka
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
-	"strconv"
 	"time"
 )
 
@@ -32,7 +32,86 @@ var (
 		types.GoTime:     true,
 		types.GoDuration: true,
 	}
+	kFakeWriter = &fakeWriter{tenantId: "aTenantId", apiKey: "anApiKey"}
 )
+
+type pathAndMillisType struct {
+	Path   string
+	Millis int64
+}
+
+func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
+	return pathAndMillisType{
+		Path:   record.Path,
+		Millis: int64(record.Timestamp * 1000.0)}
+}
+
+type uniqueMetricsWriter struct {
+	pstore.Writer
+}
+
+// fixDuplicates is a workaround for a Grafana bug.
+// In Grafana, two metric values cannot have the same name and timestamp even
+// if they are for different endpoints. Otherwise, race conditions cause
+// one of the metric values to stomp out the other yielding an incomplete
+// data set.
+// fixDuplicates returns a slice like records except that if two records
+// have the same metric name and timestamp, fixDuplicates adds 1ms to one
+// of the timestamps to avoid race conditions in Grafana.
+// If records requires no modifications, fixDuplicates returns it unchanged.
+// Otherwise, fixDuplicates returns a copy of the records slice with the
+// needed modifications leaving the original records slice unchanged.
+func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
+	result = records
+	copied := false
+	pathAndTimeExists := make(map[pathAndMillisType]bool)
+	for i := range records {
+		pathAndMillis := newPathAndMillisType(&result[i])
+		for pathAndTimeExists[pathAndMillis] {
+			if !copied {
+				result = make([]pstore.Record, len(records))
+				copy(result, records)
+				copied = true
+			}
+			result[i].Timestamp += 0.001
+			pathAndMillis = newPathAndMillisType(&result[i])
+		}
+		pathAndTimeExists[pathAndMillis] = true
+	}
+	return
+}
+
+func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
+	return u.Writer.Write(fixDuplicates(records))
+}
+
+type fakeWriter struct {
+	tenantId string
+	apiKey   string
+}
+
+func newFakeWriter() pstore.Writer {
+	return uniqueMetricsWriter{kFakeWriter}
+}
+
+func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
+	return supportedTypes[t]
+}
+
+func (f *fakeWriter) Write(records []pstore.Record) (err error) {
+	serializer := newRecordSerializer(f.tenantId, f.apiKey)
+	for i := range records {
+		var payload []byte
+		payload, err = serializer.Serialize(&records[i])
+		if err != nil {
+			return
+		}
+		fmt.Println(string(payload))
+		fmt.Println()
+	}
+	fmt.Println()
+	return
+}
 
 type writer struct {
 	broker   *kafka.Broker
@@ -61,7 +140,11 @@ func newWriter(c *Config) (
 	conf.RequiredAcks = proto.RequiredAcksLocal
 	producer := awriter.broker.Producer(conf)
 	awriter.producer = kafka.NewRoundRobinProducer(producer, count)
-	result = &awriter
+	if c.AllowDuplicates {
+		result = &awriter
+	} else {
+		result = uniqueMetricsWriter{&awriter}
+	}
 	return
 }
 
@@ -87,13 +170,13 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 // recordSerializerType serializes a record to bytes for kafka.
 // Warning, instances of this type are not thread safe.
 type recordSerializerType struct {
-	record       map[string]string
+	record       map[string]interface{}
 	formatString string
 }
 
 func newRecordSerializer(tenantId, apiKey string) *recordSerializerType {
 	return &recordSerializerType{
-		record: map[string]string{
+		record: map[string]interface{}{
 			kVersion:  "1",
 			kTenantId: tenantId,
 			kApiKey:   apiKey},
@@ -109,26 +192,22 @@ func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
 	switch r.Kind {
 	case types.Bool:
 		if r.Value.(bool) {
-			s.record[kValue] = "1"
+			s.record[kValue] = 1.0
 		} else {
-			s.record[kValue] = "0"
+			s.record[kValue] = 0.0
 		}
 	case types.Int:
-		s.record[kValue] = strconv.FormatInt(r.Value.(int64), 10)
+		s.record[kValue] = float64(r.Value.(int64))
 	case types.Uint:
-		s.record[kValue] = strconv.FormatUint(r.Value.(uint64), 10)
+		s.record[kValue] = float64(r.Value.(uint64))
 	case types.Float:
-		s.record[kValue] = strconv.FormatFloat(
-			r.Value.(float64), 'f', -1, 64)
+		s.record[kValue] = r.Value
 	case types.GoTime:
-		s.record[kValue] = strconv.FormatFloat(
-			messages.TimeToFloat(r.Value.(time.Time)),
-			'f', -1, 64)
+		s.record[kValue] = messages.TimeToFloat(r.Value.(time.Time))
 	case types.GoDuration:
-		s.record[kValue] = strconv.FormatFloat(
-			messages.DurationToFloat(
-				r.Value.(time.Duration))*units.FromSeconds(r.Unit),
-			'f', -1, 64)
+		s.record[kValue] = messages.DurationToFloat(
+			r.Value.(time.Duration)) * units.FromSeconds(
+			r.Unit)
 	default:
 		panic("Unsupported type")
 

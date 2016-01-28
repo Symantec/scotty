@@ -36,6 +36,7 @@ topic: someTopic
 apiKey: someApiKey
 tenantId: someTenantId
 clientId: someClientId
+allowDuplicates: true
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var config Config
@@ -43,10 +44,11 @@ clientId: someClientId
 		t.Fatal(err)
 	}
 	expected := Config{
-		ApiKey:   "someApiKey",
-		TenantId: "someTenantId",
-		ClientId: "someClientId",
-		Topic:    "someTopic",
+		ApiKey:          "someApiKey",
+		TenantId:        "someTenantId",
+		ClientId:        "someClientId",
+		Topic:           "someTopic",
+		AllowDuplicates: true,
 		Endpoints: []string{
 			"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
 	}
@@ -75,7 +77,7 @@ func TestSerializeInt(t *testing.T) {
 		"myTenantId",
 		"myApiKey",
 		"2014-05-13T09:53:20.000Z",
-		"-59",
+		-59,
 		"/my/path",
 		"ash1",
 		"horse")
@@ -101,7 +103,7 @@ func TestSerializeBool(t *testing.T) {
 		"myTenantId",
 		"myApiKey",
 		"2014-05-13T09:53:20.125Z",
-		"0",
+		0,
 		"/my/path/bool",
 		"ash2",
 		"Health")
@@ -124,18 +126,18 @@ func TestSerializeBool(t *testing.T) {
 		"myTenantId",
 		"myApiKey",
 		"2014-05-13T09:53:20.375Z",
-		"1",
+		1,
 		"/my/path/bools",
 		"ash3",
 		"cat")
 }
 
 func TestSerializeUint(t *testing.T) {
-	quickVerify(t, types.Uint, uint64(13579), "13579")
+	quickVerify(t, types.Uint, uint64(13579), 13579)
 }
 
 func TestSerializeFloat(t *testing.T) {
-	quickVerify(t, types.Float, float64(-79.236), "-79.236")
+	quickVerify(t, types.Float, -79.236, -79.236)
 }
 
 func TestSerializeTime(t *testing.T) {
@@ -143,7 +145,7 @@ func TestSerializeTime(t *testing.T) {
 		t,
 		types.GoTime,
 		time.Date(2015, 12, 17, 16, 40, 23, 0, time.UTC),
-		"1450370423")
+		1450370423)
 }
 
 func TestSerializeDuration(t *testing.T) {
@@ -151,26 +153,26 @@ func TestSerializeDuration(t *testing.T) {
 		t,
 		types.GoDuration,
 		-time.Minute-120*time.Millisecond,
-		"-60.12")
+		-60.12)
 	quickVerifyWithUnit(
 		t,
 		types.GoDuration,
 		units.Second,
 		-time.Minute-120*time.Millisecond,
-		"-60.12")
+		-60.12)
 	quickVerifyWithUnit(
 		t,
 		types.GoDuration,
 		units.Millisecond,
 		-time.Minute-120*time.Millisecond,
-		"-60120")
+		-60120)
 }
 
 func quickVerify(
 	t *testing.T,
 	kind types.Type,
 	value interface{},
-	expected string) {
+	expected float64) {
 	quickVerifyWithUnit(
 		t, kind, units.None, value, expected)
 }
@@ -180,7 +182,7 @@ func quickVerifyWithUnit(
 	kind types.Type,
 	unit units.Unit,
 	value interface{},
-	expected string) {
+	expected float64) {
 	ser := newRecordSerializer("myTenant", "myApi")
 	bytes, err := ser.Serialize(
 		&pstore.Record{
@@ -214,15 +216,15 @@ func verifySerialization(
 	version string,
 	tenantId, apiKey string,
 	timeStamp string,
-	value string,
+	value float64,
 	path string,
 	hostName string,
 	appName string) {
-	var result map[string]string
+	var result map[string]interface{}
 	if err := json.Unmarshal(ser, &result); err != nil {
 		t.Fatalf("Error unmarshalling byte array: %v", err)
 	}
-	expected := map[string]string{
+	expected := map[string]interface{}{
 		kVersion:   version,
 		kTenantId:  tenantId,
 		kApiKey:    apiKey,

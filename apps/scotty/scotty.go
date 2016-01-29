@@ -430,7 +430,9 @@ func createNoBlockPStore() *pstore.NoBlockPStore {
 		*fPStoreBatchSize,
 		*fPStoreChannelCapacity,
 		time.Second)
-	result.RegisterMetrics()
+	if err := result.RegisterMetrics(); err != nil {
+		panic(err)
+	}
 	return result
 }
 
@@ -493,7 +495,9 @@ func initHostsPortsAndStore(
 		(*fBytesPerPage)/24, computePageCount(), firstEndpoints)
 	fmt.Println("Initialization complete.")
 	firstStore, _ := result.Get()
-	firstStore.RegisterMetrics()
+	if err := firstStore.RegisterMetrics(); err != nil {
+		panic(err)
+	}
 	// Endpoint refresher goroutine
 	go func() {
 		for {

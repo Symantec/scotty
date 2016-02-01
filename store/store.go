@@ -615,64 +615,65 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 	return
 }
 
-func (s *Store) registerMetrics() {
+func (s *Store) registerMetrics() (err error) {
 	// Let Garbage collector reclaim s.
 	supplier := s.supplier
 	totalPageCount := s.totalPageCount
 	maxValuesPerPage := s.maxValuesPerPage
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/pagesPerMetric",
 		gPagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/lastTimeStampEvicted",
 		&gLastTimeEvicted,
 		units.None,
 		"Latest timestamp evicted from data store."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/availablePages",
 		func() int {
 			return supplier.Len()
 		},
 		units.None,
 		"Number of pages available to hold new metrics."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/totalPages",
 		&totalPageCount,
 		units.None,
 		"Total number of pages."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/maxValuesPerPage",
 		&maxValuesPerPage,
 		units.None,
 		"Maximum number ofvalues that can fit in a page."); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
 			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {
-		panic(err)
+		return
 	}
-	if err := tricorder.RegisterMetric(
+	if err = tricorder.RegisterMetric(
 		"/store/metricValueCount",
 		gMetricValueCount.Get,
 		units.None,
 		"Number of stored metrics values and timestamps"); err != nil {
-		panic(err)
+		return
 	}
+	return
 }
 
 func reclaimPages(

@@ -217,8 +217,8 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 // RegisterMetrics registers metrics associated with this Store instance
 // Calling this covers any new store created by calling NewBuilder() on
 // this instance.
-func (s *Store) RegisterMetrics() {
-	s.registerMetrics()
+func (s *Store) RegisterMetrics() error {
+	return s.registerMetrics()
 }
 
 // AvailablePages returns the number of pages available for collecting

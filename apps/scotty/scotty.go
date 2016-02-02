@@ -35,6 +35,10 @@ import (
 )
 
 var (
+	fPort = flag.Int(
+		"port",
+		6980,
+		"Port number for scotty.")
 	fBytesPerPage = flag.Int(
 		"bytes_per_page",
 		1024,
@@ -883,7 +887,7 @@ func main() {
 			ConnectionErrors: connectionErrors,
 		}},
 	)
-	if err := http.ListenAndServe(":8187", nil); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *fPort), nil); err != nil {
 		log.Fatal(err)
 	}
 }

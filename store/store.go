@@ -144,9 +144,72 @@ func (p pageType) FindGreater(ts float64) int {
 		func(idx int) bool { return p[idx].TimeStamp > ts })
 }
 
+// Keeps track of next metric to write to LMM
+type tsValuePtrType struct {
+	pagePosit *list.Element
+	offset    int
+}
+
+// Advances this instance n values
+func (p *tsValuePtrType) Advance(x int) {
+	p.offset += x
+}
+
+// Tell this instance that first page is going away. Must be called before
+// first is removed
+func (p *tsValuePtrType) PopFirstPage(first *list.Element) {
+	if first == p.pagePosit {
+		page := p.pagePosit.Value.(*pageType)
+		p.offset -= len(*page)
+		p.pagePosit = p.pagePosit.Next()
+	}
+}
+
+func copyValues(page pageType) (result pageType) {
+	result = make(pageType, len(page))
+	copy(result, page)
+	return
+}
+
+// Fetch some timestamp value pairs starting at where this instance points to.
+// In case the value this instance points to was reclaimed, returns timestamp
+// value pairs starting with the earliest available timestamp.
+// In that case, it returns how many intermediate values must be skipped to
+// get to the earliest value. In case, this instance points past the
+// latest value, returns (nil, 0)
+func (p *tsValuePtrType) Values() (values []tsValueType, skipped int) {
+	if p.pagePosit == nil {
+		return
+	}
+	p.normalize()
+	page := p.pagePosit.Value.(*pageType)
+	if p.offset >= len(*page) {
+		return
+	}
+	if p.offset < 0 {
+		return copyValues(*page), -p.offset
+	}
+	values = copyValues((*page)[p.offset:])
+	return
+}
+
+func (p *tsValuePtrType) normalize() {
+	page := p.pagePosit.Value.(*pageType)
+	for p.offset >= len(*page) {
+		next := p.pagePosit.Next()
+		if next == nil {
+			break
+		}
+		p.offset -= len(*page)
+		p.pagePosit = next
+		page = p.pagePosit.Value.(*pageType)
+	}
+}
+
 type timeSeriesType struct {
 	id    *MetricInfo
 	lock  sync.Mutex
+	ptr   tsValuePtrType
 	pages list.List
 
 	// True if time series is closed. No new values may be added
@@ -156,14 +219,23 @@ type timeSeriesType struct {
 
 func newTimeSeriesType(
 	id *MetricInfo,
-	page *pageType,
-	timestamp float64,
-	value interface{}) *timeSeriesType {
-	page.Add(timestamp, value)
+	page *pageType) *timeSeriesType {
 	result := &timeSeriesType{id: id}
-	result.pages.Init().PushBack(page)
+	result.ptr.pagePosit = result.pages.Init().PushBack(page)
 	gPagesPerMetricDist.Add(1.0)
 	return result
+}
+
+func (t *timeSeriesType) AdvancePosition(advances int) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	t.ptr.Advance(advances)
+}
+
+func (t *timeSeriesType) FetchFromPosition() (values []tsValueType, skipped int) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.ptr.Values()
 }
 
 func (t *timeSeriesType) PageCount() int {
@@ -186,6 +258,7 @@ func (t *timeSeriesType) Reap() *pageType {
 	if front == nil {
 		return nil
 	}
+	t.ptr.PopFirstPage(t.pages.Front())
 	result := t.pages.Remove(t.pages.Front()).(*pageType)
 	// Don't update last time evicted for closed time series.
 	// Also closed time series give up all their pages even
@@ -235,6 +308,11 @@ func (t *timeSeriesType) Add(
 	defer t.lock.Unlock()
 	if t.closed {
 		return
+	}
+	// Oops, we are trying to add values to a timeSeries that has been
+	// drained of all its pages.
+	if t.ptr.pagePosit == nil {
+		panic("Trying to add to a time series that should have been closed")
 	}
 	needToAdd, needPage := t.needToAdd(timestamp, value)
 	if !needToAdd || (needPage && page == nil) || (!needPage && page != nil) {
@@ -318,6 +396,18 @@ func (c *timeSeriesCollectionType) Lookup(m *trimessages.Metric) (
 	return
 }
 
+func (c *timeSeriesCollectionType) Iterators() (result []*Iterator) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	result = make([]*Iterator, len(c.timeSeries))
+	idx := 0
+	for _, ts := range c.timeSeries {
+		result[idx] = newIterator(ts)
+		idx++
+	}
+	return
+}
+
 func (c *timeSeriesCollectionType) TsByName(name string) (
 	result []*timeSeriesType) {
 	c.lock.Lock()
@@ -371,8 +461,10 @@ func (c *timeSeriesCollectionType) Add(
 	id, timeSeries := c.Lookup(m)
 	if timeSeries == nil {
 		newPage := supplier.Get()
+		newPage.Add(timestamp, m.Value)
 		timeSeries := newTimeSeriesType(
-			id, newPage, timestamp, m.Value)
+			id,
+			newPage)
 		if !c.AddTimeSeries(id, timeSeries) {
 			supplier.AddFront(newPage)
 			return false
@@ -559,6 +651,31 @@ func (s *Store) add(
 	return s.byApplication[endpointId].Add(timestamp, m, s.supplier)
 }
 
+func newIterator(ts *timeSeriesType) *Iterator {
+	result := &Iterator{timeSeries: ts}
+	result.values, result.skipped = result.timeSeries.FetchFromPosition()
+	return result
+}
+
+func (i *Iterator) next() (timestamp float64, value interface{}, skipped int) {
+	if len(i.values) > 0 {
+		timestamp = i.values[0].TimeStamp
+		value = i.values[0].Value
+		skipped = i.skipped
+		i.values = i.values[1:]
+		i.advances += (i.skipped + 1)
+		i.skipped = 0
+	}
+	return
+}
+
+func (i *Iterator) commit() {
+	if i.advances > 0 {
+		i.timeSeries.AdvancePosition(i.advances)
+		i.advances = 0
+	}
+}
+
 func (s *Store) addBatch(
 	endpointId *scotty.Endpoint,
 	timestamp float64,
@@ -575,6 +692,10 @@ func (s *Store) addBatch(
 	}
 	gMetricValueCount.Add(int64(result))
 	return result
+}
+
+func (s *Store) iterators(endpointId *scotty.Endpoint) []*Iterator {
+	return s.byApplication[endpointId].Iterators()
 }
 
 func (s *Store) byNameAndEndpoint(

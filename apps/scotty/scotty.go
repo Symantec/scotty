@@ -140,6 +140,7 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 // metrics for pstoreHandlerType instances
 type pstoreHandlerData struct {
 	MetricsWritten   int64
+	MetricsSkipped   int64
 	WriteAttempts    int64
 	SuccessfulWrites int64
 	LastWriteError   string
@@ -157,13 +158,15 @@ type pstoreHandlerData struct {
 type pstoreHandlerType struct {
 	writer                  pstore.Writer
 	appList                 *datastructs.ApplicationList
-	lastValues              map[*collector.Endpoint]map[*store.MetricInfo]interface{}
-	lastValuesThisEndpoint  map[*store.MetricInfo]interface{}
+	iteratorsBeingWritten   []*store.Iterator
 	toBeWritten             []pstore.Record
+	batchSize               int
+	skipped                 int
+	idx                     int
 	timeSpentWritingDist    *tricorder.CumulativeDistribution
 	timeSpentCollectingDist *tricorder.CumulativeDistribution
 	totalTimeSpentDist      *tricorder.CumulativeDistribution
-	perBatchWriteDist       *tricorder.CumulativeDistribution
+	perMetricWriteDist      *tricorder.CumulativeDistribution
 	ttWriter                *timeTakenWriter
 	startTime               time.Time
 	// Protects all fields below
@@ -173,38 +176,20 @@ type pstoreHandlerType struct {
 
 func newPStoreHandler(
 	w pstore.Writer,
-	appList *datastructs.ApplicationList) *pstoreHandlerType {
+	appList *datastructs.ApplicationList,
+	batchSize int) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	return &pstoreHandlerType{
 		writer:                  w,
 		appList:                 appList,
-		lastValues:              make(map[*collector.Endpoint]map[*store.MetricInfo]interface{}),
+		iteratorsBeingWritten:   make([]*store.Iterator, batchSize),
+		toBeWritten:             make([]pstore.Record, batchSize),
+		batchSize:               batchSize,
 		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
 		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
 		totalTimeSpentDist:      bucketer.NewCumulativeDistribution(),
-		perBatchWriteDist:       bucketer.NewCumulativeDistribution(),
+		perMetricWriteDist:      bucketer.NewCumulativeDistribution(),
 	}
-}
-
-// Do not call this directly!
-func (p *pstoreHandlerType) Append(r *store.Record) {
-	kind := r.Info.Kind()
-	if !p.ttWriter.IsTypeSupported(kind) {
-		return
-	}
-	if p.lastValuesThisEndpoint[r.Info] == r.Value {
-		return
-	}
-	p.lastValuesThisEndpoint[r.Info] = r.Value
-	p.toBeWritten = append(
-		p.toBeWritten, pstore.Record{
-			HostName:  r.ApplicationId.HostName(),
-			AppName:   p.appList.ByPort(r.ApplicationId.Port()).Name(),
-			Path:      strings.Replace(r.Info.Path(), "/", "_", -1),
-			Kind:      r.Info.Kind(),
-			Unit:      r.Info.Unit(),
-			Value:     r.Value,
-			Timestamp: r.TimeStamp})
 }
 
 func (p *pstoreHandlerType) StartVisit() {
@@ -222,54 +207,66 @@ func (p *pstoreHandlerType) EndVisit() {
 
 func (p *pstoreHandlerType) Visit(
 	theStore *store.Store, endpointId *collector.Endpoint) error {
+	iterators := theStore.Iterators(endpointId)
 
-	// Get the last known values for this endpoint creating the map
-	// if necessary.
-	p.lastValuesThisEndpoint = p.lastValues[endpointId]
-	if p.lastValuesThisEndpoint == nil {
-		p.lastValuesThisEndpoint = make(
-			map[*store.MetricInfo]interface{})
-		p.lastValues[endpointId] = p.lastValuesThisEndpoint
-	}
-
-	// Get the latest values to write, but get only the
-	// values that changed.
-	theStore.LatestByEndpoint(endpointId, p)
-
-	// If we have enough values to write,
-	// write them out to persistent storage.
-	if len(p.toBeWritten) >= *fPStoreBatchSize {
-		p.flush()
+	for i := range iterators {
+		info := iterators[i].Info()
+		// Skip over metrics that our store won't accept
+		if !p.writer.IsTypeSupported(info.Kind()) {
+			continue
+		}
+		ts, value, skipped := iterators[i].Next()
+		for ; value != nil; ts, value, skipped = iterators[i].Next() {
+			if p.isFull() {
+				p.flush()
+			}
+			p.iteratorsBeingWritten[p.idx] = iterators[i]
+			p.toBeWritten[p.idx] = pstore.Record{
+				HostName:  endpointId.HostName(),
+				AppName:   p.appList.ByPort(endpointId.Port()).Name(),
+				Path:      strings.Replace(info.Path(), "/", "_", -1),
+				Kind:      info.Kind(),
+				Unit:      info.Unit(),
+				Value:     value,
+				Timestamp: ts}
+			p.skipped += skipped
+			p.idx++
+		}
 	}
 	p.logVisit()
 	return nil
 }
 
+func (p *pstoreHandlerType) isFull() bool {
+	return p.idx == p.batchSize
+}
+
 func (p *pstoreHandlerType) flush() {
-	if len(p.toBeWritten) == 0 {
+	if p.idx == 0 {
 		return
 	}
 	startTime := time.Now()
-	err := p.ttWriter.Write(p.toBeWritten)
-	p.perBatchWriteDist.Add(time.Now().Sub(startTime))
+	err := p.ttWriter.Write(p.toBeWritten[:p.idx])
+	p.perMetricWriteDist.Add(time.Now().Sub(startTime) / time.Duration(p.idx))
 
 	if err != nil {
 		p.logWriteError(err)
 	} else {
-		p.logWrite(len(p.toBeWritten))
+		p.logWrite(p.idx, p.skipped)
+		for i := 0; i < p.idx; i++ {
+			p.iteratorsBeingWritten[i].Commit()
+		}
 	}
-	p.perBatchWriteDist.Add(time.Now().Sub(startTime))
-
-	// Make toBeWritten be empty while saving on memory allocation
-	p.toBeWritten = p.toBeWritten[:0]
+	p.skipped = 0
+	p.idx = 0
 }
 
 func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	if err = tricorder.RegisterMetric(
-		"writer/writeTimePerBatch",
-		p.perBatchWriteDist,
+		"writer/writeTimePerMetric",
+		p.perMetricWriteDist,
 		units.Millisecond,
-		"Time spent writing each batch"); err != nil {
+		"Time spent writing each metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
@@ -301,6 +298,14 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		region,
 		units.None,
 		"Number of metrics written to persistent storage"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"writer/metricsSkipped",
+		&data.MetricsSkipped,
+		region,
+		units.None,
+		"Number of metrics skipped"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInRegion(
@@ -368,10 +373,11 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	return
 }
 
-func (p *pstoreHandlerType) logWrite(numWritten int) {
+func (p *pstoreHandlerType) logWrite(numWritten, numSkipped int) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.stats.MetricsWritten += int64(numWritten)
+	p.stats.MetricsSkipped += int64(numSkipped)
 	p.stats.WriteAttempts++
 	p.stats.SuccessfulWrites++
 }
@@ -823,7 +829,7 @@ func startPStoreLoop(
 	if err != nil {
 		log.Fatal(err)
 	}
-	pstoreHandler := newPStoreHandler(writer, appList)
+	pstoreHandler := newPStoreHandler(writer, appList, *fPStoreBatchSize)
 	if err := pstoreHandler.RegisterMetrics(); err != nil {
 		log.Fatal(err)
 	}

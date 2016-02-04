@@ -23,10 +23,11 @@ var (
 
 var (
 	// application wide metrics
-	gPagesPerMetricDist = tricorder.NewGeometricBucketer(
-		1.0, 1e6).NewNonCumulativeDistribution()
-	gLastTimeEvicted  *time.Time
-	gMetricValueCount = &countType{}
+	gBucketer                 = tricorder.NewGeometricBucketer(1.0, 1e6)
+	gPagesPerMetricDist       = gBucketer.NewNonCumulativeDistribution()
+	gLeftToWritePerMetricDist = gBucketer.NewNonCumulativeDistribution()
+	gLastTimeEvicted          *time.Time
+	gMetricValueCount         = &countType{}
 )
 
 type countType struct {
@@ -207,10 +208,11 @@ func (p *tsValuePtrType) normalize() {
 }
 
 type timeSeriesType struct {
-	id    *MetricInfo
-	lock  sync.Mutex
-	ptr   tsValuePtrType
-	pages list.List
+	id          *MetricInfo
+	lock        sync.Mutex
+	ptr         tsValuePtrType
+	leftToWrite int
+	pages       list.List
 
 	// True if time series is closed. No new values may be added
 	// to a closed time series, but closed time series may give up pages.
@@ -222,6 +224,8 @@ func newTimeSeriesType(
 	page *pageType) *timeSeriesType {
 	result := &timeSeriesType{id: id}
 	result.ptr.pagePosit = result.pages.Init().PushBack(page)
+	result.leftToWrite = len(*page)
+	gLeftToWritePerMetricDist.Add(float64(result.leftToWrite))
 	gPagesPerMetricDist.Add(1.0)
 	return result
 }
@@ -230,6 +234,9 @@ func (t *timeSeriesType) AdvancePosition(advances int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	t.ptr.Advance(advances)
+	gLeftToWritePerMetricDist.Update(
+		float64(t.leftToWrite), float64(t.leftToWrite-advances))
+	t.leftToWrite -= advances
 }
 
 func (t *timeSeriesType) FetchFromPosition() (values []tsValueType, skipped int) {
@@ -274,6 +281,7 @@ func (t *timeSeriesType) Reap() *pageType {
 	gMetricValueCount.Add(int64(-len(*result)))
 	if oldLen == 1.0 {
 		gPagesPerMetricDist.Remove(oldLen)
+		gLeftToWritePerMetricDist.Remove(float64(t.leftToWrite))
 	} else {
 		gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
 	}
@@ -332,6 +340,8 @@ func (t *timeSeriesType) Add(
 	}
 	latestPage.Add(timestamp, value)
 	isAddSucceeded = true
+	gLeftToWritePerMetricDist.Update(float64(t.leftToWrite), float64(t.leftToWrite+1))
+	t.leftToWrite++
 	return
 }
 
@@ -746,6 +756,13 @@ func (s *Store) registerMetrics() (err error) {
 		gPagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetric(
+		"/store/leftToWritePerMetric",
+		gLeftToWritePerMetricDist,
+		units.None,
+		"Number of pages to write to persistent store per metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(

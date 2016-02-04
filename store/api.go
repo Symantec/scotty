@@ -103,6 +103,34 @@ func (b *Builder) Build() *Store {
 	return b.build()
 }
 
+// Iterator iterates over values in one time series.
+type Iterator struct {
+	timeSeries *timeSeriesType
+	values     []tsValueType
+	advances   int
+	skipped    int
+}
+
+// Info returns the metric info of the time series.
+func (i *Iterator) Info() *MetricInfo {
+	return i.timeSeries.id
+}
+
+// Next returns the next timestamp and value in the series.
+// skipped indicates how many intermediate values had to be skipped because
+// of memory being reclaimed. Next returns (0, nil, 0) to indicates it has
+// no more values to emit. Next returning (0, nil, 0) does not necessarily
+// mean that it has reached the latest value in the store.
+func (i *Iterator) Next() (timestamp float64, value interface{}, skipped int) {
+	return i.next()
+}
+
+// Commit indicates that we are done using this iterator and that the next
+// Iterator for this time series should start where this one left off.
+func (i *Iterator) Commit() {
+	i.commit()
+}
+
 // Store is an in memory store of metrics.
 // Client must register all the endpoints with the Store
 // instance before storing any metrics.
@@ -196,6 +224,12 @@ func (s *Store) ByEndpoint(
 	start, end float64,
 	result Appender) {
 	s.byEndpoint(endpointId, start, end, result)
+}
+
+// Iterators returns all the Iterators for all the time series for the
+// given endpoint.
+func (s *Store) Iterators(endpointId *scotty.Endpoint) []*Iterator {
+	return s.iterators(endpointId)
 }
 
 // LatestByEndpoint returns the latest records for each metric for a

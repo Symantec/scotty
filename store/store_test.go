@@ -96,6 +96,189 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	assertValueEquals(t, 14, int(total))
 }
 
+func TestIterator(t *testing.T) {
+	builder := store.NewBuilder(2, 3)
+	builder.RegisterEndpoint(kEndpoint0)
+	aStore := builder.Build()
+
+	firstMetric := messages.Metric{
+		Path:        "/foo/bar",
+		Description: "A description",
+		Unit:        units.None,
+		Kind:        types.Int,
+		Bits:        64}
+	secondMetric := messages.Metric{
+		Path:        "/foo/baz",
+		Description: "A description",
+		Unit:        units.None,
+		Kind:        types.Int,
+		Bits:        64}
+
+	// Adding 7 values evicts first 2 values
+	firstMetric.Value = 1
+	add(t, aStore, kEndpoint0, 100.0, &firstMetric, true)
+	firstMetric.Value = 2
+	add(t, aStore, kEndpoint0, 110.0, &firstMetric, true)
+	firstMetric.Value = 3
+	add(t, aStore, kEndpoint0, 120.0, &firstMetric, true)
+	firstMetric.Value = 4
+	add(t, aStore, kEndpoint0, 130.0, &firstMetric, true)
+	firstMetric.Value = 5
+	add(t, aStore, kEndpoint0, 140.0, &firstMetric, true)
+	firstMetric.Value = 6
+	add(t, aStore, kEndpoint0, 150.0, &firstMetric, true)
+	firstMetric.Value = 7
+	add(t, aStore, kEndpoint0, 160.0, &firstMetric, true)
+
+	iterators := aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+	assertValueEquals(t, "/foo/bar", iterators[0].Info().Path())
+
+	ts, value, skipped := iterators[0].Next()
+	assertValueEquals(t, 120.0, ts)
+	assertValueEquals(t, 3, value)
+	assertValueEquals(t, 2, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 130.0, ts)
+	assertValueEquals(t, 4, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Since we didn't commit, iterator starts over
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 120.0, ts)
+	assertValueEquals(t, 3, value)
+	assertValueEquals(t, 2, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 130.0, ts)
+	assertValueEquals(t, 4, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Next iterator will start where this one left off
+	iterators[0].Commit()
+
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 140.0, ts)
+	assertValueEquals(t, 5, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 150.0, ts)
+	assertValueEquals(t, 6, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Commit should be idempotent
+	iterators[0].Commit()
+	iterators[0].Commit()
+
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 160.0, ts)
+	assertValueEquals(t, 7, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// No commit, so we replay the same values
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 160.0, ts)
+	assertValueEquals(t, 7, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	iterators[0].Commit()
+	iterators[0].Commit()
+
+	// No more values to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Now add a new value
+	firstMetric.Value = 8
+	add(t, aStore, kEndpoint0, 170.0, &firstMetric, true)
+
+	// Now there is one more value to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 170.0, ts)
+	assertValueEquals(t, 8, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	iterators[0].Commit()
+
+	// No more values to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Now add a new value
+	firstMetric.Value = 9
+	add(t, aStore, kEndpoint0, 180.0, &firstMetric, true)
+
+	// Now there is one more value to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 180.0, ts)
+	assertValueEquals(t, 9, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	iterators[0].Commit()
+
+	// No more values to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	// Add a different metric
+	secondMetric.Value = 1
+	add(t, aStore, kEndpoint0, 100.0, &secondMetric, true)
+
+	// We should have two iterators now
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 2, len(iterators))
+}
+
 func TestReclaimPages(t *testing.T) {
 	builder := store.NewBuilder(1, 8)
 	builder.RegisterEndpoint(kEndpoint0)

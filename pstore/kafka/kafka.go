@@ -18,9 +18,16 @@ const (
 	kValue     = "value"
 	kName      = "name"
 	kHost      = "host"
-	kAppName   = "appname"
 	kTenantId  = "tenant_id"
 	kApiKey    = "apikey"
+)
+
+const (
+	kTimeFormat = "2006-01-02T15:04:05.000Z"
+)
+
+const (
+	kVersionNum = "1"
 )
 
 var (
@@ -32,7 +39,13 @@ var (
 		types.GoTime:     true,
 		types.GoDuration: true,
 	}
-	kFakeWriter = &fakeWriter{tenantId: "aTenantId", apiKey: "anApiKey"}
+)
+
+var (
+	kFakeWriter = &fakeWriter{
+		recordSerializerType{
+			TenantId: "aTenantId",
+			ApiKey:   "anApiKey"}}
 )
 
 type pathAndMillisType struct {
@@ -43,7 +56,7 @@ type pathAndMillisType struct {
 func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
 	return pathAndMillisType{
 		Path:   record.Path,
-		Millis: int64(record.Timestamp * 1000.0)}
+		Millis: int64(messages.TimeToFloat(record.Timestamp) * 1000.0)}
 }
 
 type uniqueMetricsWriter struct {
@@ -73,7 +86,7 @@ func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
 				copy(result, records)
 				copied = true
 			}
-			result[i].Timestamp += 0.001
+			result[i].Timestamp = result[i].Timestamp.Add(time.Millisecond)
 			pathAndMillis = newPathAndMillisType(&result[i])
 		}
 		pathAndTimeExists[pathAndMillis] = true
@@ -86,8 +99,7 @@ func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
 }
 
 type fakeWriter struct {
-	tenantId string
-	apiKey   string
+	serializer recordSerializerType
 }
 
 func newFakeWriter() pstore.Writer {
@@ -99,10 +111,9 @@ func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
 }
 
 func (f *fakeWriter) Write(records []pstore.Record) (err error) {
-	serializer := newRecordSerializer(f.tenantId, f.apiKey)
 	for i := range records {
 		var payload []byte
-		payload, err = serializer.Serialize(&records[i])
+		payload, err = f.serializer.Serialize(&records[i])
 		if err != nil {
 			return
 		}
@@ -114,19 +125,18 @@ func (f *fakeWriter) Write(records []pstore.Record) (err error) {
 }
 
 type writer struct {
-	broker   *kafka.Broker
-	producer kafka.DistributingProducer
-	tenantId string
-	apiKey   string
-	topic    string
+	broker     *kafka.Broker
+	producer   kafka.DistributingProducer
+	topic      string
+	serializer recordSerializerType
 }
 
 func newWriter(c *Config) (
 	result pstore.Writer, err error) {
 	var awriter writer
 	awriter.topic = c.Topic
-	awriter.tenantId = c.TenantId
-	awriter.apiKey = c.ApiKey
+	awriter.serializer.TenantId = c.TenantId
+	awriter.serializer.ApiKey = c.ApiKey
 	awriter.broker, err = kafka.Dial(c.Endpoints, kafka.NewBrokerConf(c.ClientId))
 	if err != nil {
 		return
@@ -153,11 +163,10 @@ func (w *writer) IsTypeSupported(t types.Type) bool {
 }
 
 func (w *writer) Write(records []pstore.Record) (err error) {
-	serializer := newRecordSerializer(w.tenantId, w.apiKey)
 	msgs := make([]*proto.Message, len(records))
 	for i := range records {
 		var payload []byte
-		payload, err = serializer.Serialize(&records[i])
+		payload, err = w.serializer.Serialize(&records[i])
 		if err != nil {
 			return
 		}
@@ -168,52 +177,47 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 }
 
 // recordSerializerType serializes a record to bytes for kafka.
-// Warning, instances of this type are not thread safe.
 type recordSerializerType struct {
-	record       map[string]interface{}
-	formatString string
-}
-
-func newRecordSerializer(tenantId, apiKey string) *recordSerializerType {
-	return &recordSerializerType{
-		record: map[string]interface{}{
-			kVersion:  "1",
-			kTenantId: tenantId,
-			kApiKey:   apiKey},
-		formatString: "2006-01-02T15:04:05.000Z"}
+	TenantId string
+	ApiKey   string
 }
 
 func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
 	if !supportedTypes[r.Kind] {
 		panic("Cannot record given kind.")
 	}
-	s.record[kTimestamp] = messages.FloatToTime(
-		r.Timestamp).Format(s.formatString)
+	record := map[string]interface{}{
+		kVersion:   kVersionNum,
+		kTenantId:  s.TenantId,
+		kApiKey:    s.ApiKey,
+		kTimestamp: r.Timestamp.Format(kTimeFormat),
+		kName:      r.Path,
+		kHost:      r.HostName}
 	switch r.Kind {
 	case types.Bool:
 		if r.Value.(bool) {
-			s.record[kValue] = 1.0
+			record[kValue] = 1.0
 		} else {
-			s.record[kValue] = 0.0
+			record[kValue] = 0.0
 		}
 	case types.Int:
-		s.record[kValue] = float64(r.Value.(int64))
+		record[kValue] = float64(r.Value.(int64))
 	case types.Uint:
-		s.record[kValue] = float64(r.Value.(uint64))
+		record[kValue] = float64(r.Value.(uint64))
 	case types.Float:
-		s.record[kValue] = r.Value
+		record[kValue] = r.Value
 	case types.GoTime:
-		s.record[kValue] = messages.TimeToFloat(r.Value.(time.Time))
+		record[kValue] = messages.TimeToFloat(r.Value.(time.Time))
 	case types.GoDuration:
-		s.record[kValue] = messages.DurationToFloat(
+		record[kValue] = messages.DurationToFloat(
 			r.Value.(time.Duration)) * units.FromSeconds(
 			r.Unit)
 	default:
 		panic("Unsupported type")
 
 	}
-	s.record[kName] = r.Path
-	s.record[kHost] = r.HostName
-	s.record[kAppName] = r.AppName
-	return json.Marshal(s.record)
+	for k, v := range r.Tags {
+		record[k] = v
+	}
+	return json.Marshal(record)
 }

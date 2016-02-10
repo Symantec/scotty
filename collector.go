@@ -3,6 +3,7 @@ package scotty
 import (
 	"fmt"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"net/rpc"
 	"runtime"
 	"strings"
@@ -159,9 +160,26 @@ func (e *Endpoint) connect() (conn *rpc.Client, err error) {
 		fmt.Sprintf("%s:%d", hostname, e.port))
 }
 
+// TODO: Delete once all apps link with new tricorder
+func fixupKind(k types.Type) types.Type {
+	switch k {
+	case "int":
+		return types.Int64
+	case "uint":
+		return types.Uint64
+	case "float":
+		return types.Float64
+	default:
+		return k
+	}
+}
+
 func (e *Endpoint) _poll(conn *rpc.Client) (
 	metrics messages.MetricList, err error) {
 	err = conn.Call("MetricsServer.ListMetrics", "", &metrics)
+	for i := range metrics {
+		metrics[i].Kind = fixupKind(metrics[i].Kind)
+	}
 	return
 }
 

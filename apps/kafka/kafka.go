@@ -57,15 +57,57 @@ func initRecord(value *metricValue, timestamp time.Time, r *pstore.Record) {
 		} else {
 			r.Value = false
 		}
-	case types.Int:
+	case types.Int8:
+		var intVal int64
+		if intVal, err = strconv.ParseInt(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = int8(intVal)
+	case types.Int16:
+		var intVal int64
+		if intVal, err = strconv.ParseInt(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = int16(intVal)
+	case types.Int32:
+		var intVal int64
+		if intVal, err = strconv.ParseInt(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = int32(intVal)
+	case types.Int64:
 		if r.Value, err = strconv.ParseInt(value.Value, 10, 64); err != nil {
 			panic(err)
 		}
-	case types.Uint:
+	case types.Uint8:
+		var uintVal uint64
+		if uintVal, err = strconv.ParseUint(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = uint8(uintVal)
+	case types.Uint16:
+		var uintVal uint64
+		if uintVal, err = strconv.ParseUint(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = uint16(uintVal)
+	case types.Uint32:
+		var uintVal uint64
+		if uintVal, err = strconv.ParseUint(value.Value, 10, 64); err != nil {
+			panic(err)
+		}
+		r.Value = uint32(uintVal)
+	case types.Uint64:
 		if r.Value, err = strconv.ParseUint(value.Value, 10, 64); err != nil {
 			panic(err)
 		}
-	case types.Float:
+	case types.Float32:
+		var floatVal float64
+		if floatVal, err = strconv.ParseFloat(value.Value, 64); err != nil {
+			panic(err)
+		}
+		r.Value = float32(floatVal)
+	case types.Float64:
 		if r.Value, err = strconv.ParseFloat(value.Value, 64); err != nil {
 			panic(err)
 		}

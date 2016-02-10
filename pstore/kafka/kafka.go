@@ -33,9 +33,16 @@ const (
 var (
 	supportedTypes = map[types.Type]bool{
 		types.Bool:       true,
-		types.Int:        true,
-		types.Uint:       true,
-		types.Float:      true,
+		types.Int8:       true,
+		types.Int16:      true,
+		types.Int32:      true,
+		types.Int64:      true,
+		types.Uint8:      true,
+		types.Uint16:     true,
+		types.Uint32:     true,
+		types.Uint64:     true,
+		types.Float32:    true,
+		types.Float64:    true,
 		types.GoTime:     true,
 		types.GoDuration: true,
 	}
@@ -206,11 +213,25 @@ func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
 		} else {
 			record[kValue] = 0.0
 		}
-	case types.Int:
+	case types.Int8:
+		record[kValue] = float64(r.Value.(int8))
+	case types.Int16:
+		record[kValue] = float64(r.Value.(int16))
+	case types.Int32:
+		record[kValue] = float64(r.Value.(int32))
+	case types.Int64:
 		record[kValue] = float64(r.Value.(int64))
-	case types.Uint:
+	case types.Uint8:
+		record[kValue] = float64(r.Value.(uint8))
+	case types.Uint16:
+		record[kValue] = float64(r.Value.(uint16))
+	case types.Uint32:
+		record[kValue] = float64(r.Value.(uint32))
+	case types.Uint64:
 		record[kValue] = float64(r.Value.(uint64))
-	case types.Float:
+	case types.Float32:
+		record[kValue] = float64(r.Value.(float32))
+	case types.Float64:
 		record[kValue] = r.Value
 	case types.GoTime:
 		record[kValue] = messages.TimeToFloat(r.Value.(time.Time))

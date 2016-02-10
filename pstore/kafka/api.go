@@ -29,9 +29,6 @@ type Config struct {
 	TenantId string `yaml:"tenantId"`
 	// User credential
 	ApiKey string `yaml:"apiKey"`
-	// If true, allow metrics with the same name and timestamp
-	// in the same batch.
-	AllowDuplicates bool `yaml:"allowDuplicates"`
 }
 
 // Read initializes this instance from r, which represents a YAML file.

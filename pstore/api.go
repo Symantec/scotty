@@ -4,24 +4,34 @@ package pstore
 import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"time"
 )
+
+// Commonly used keys in TagGroup instances
+const (
+	TagAppName = "appname"
+)
+
+// TagGroup represents arbitrary key-value pairs describing a metric.
+// Clients are to treat TagGroup instances as immutable.
+type TagGroup map[string]string
 
 // Record represents one value of one metric in persistent storage.
 type Record struct {
 	// Originating machine
 	HostName string
-	// Originating application
-	AppName string
 	// Path of metric
 	Path string
+	// Arbitrary key-value pairs describing this metric
+	Tags TagGroup
 	// Kind of metric
 	Kind types.Type
 	// Unit of metric
 	Unit units.Unit
 	// Value of metric
 	Value interface{}
-	// Timestamp as seconds after Jan 1, 1970 GMT.
-	Timestamp float64
+	// The timestamp of the metric value.
+	Timestamp time.Time
 }
 
 type Writer interface {

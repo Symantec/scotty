@@ -223,12 +223,12 @@ func (p *pstoreHandlerType) Visit(
 			p.iteratorsBeingWritten[p.idx] = iterators[i]
 			p.toBeWritten[p.idx] = pstore.Record{
 				HostName:  endpointId.HostName(),
-				AppName:   p.appList.ByPort(endpointId.Port()).Name(),
+				Tags:      pstore.TagGroup{pstore.TagAppName: p.appList.ByPort(endpointId.Port()).Name()},
 				Path:      strings.Replace(info.Path(), "/", "_", -1),
 				Kind:      info.Kind(),
 				Unit:      info.Unit(),
 				Value:     value,
-				Timestamp: ts}
+				Timestamp: trimessages.FloatToTime(ts)}
 			p.skipped += skipped
 			p.idx++
 		}

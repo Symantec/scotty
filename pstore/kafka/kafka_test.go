@@ -58,15 +58,15 @@ allowDuplicates: true
 }
 
 func TestSerializeInt(t *testing.T) {
-	ser := newRecordSerializer("myTenantId", "myApiKey")
+	ser := recordSerializerType{TenantId: "myTenantId", ApiKey: "myApiKey"}
 	bytes, err := ser.Serialize(
 		&pstore.Record{
 			Kind:      types.Int,
-			Timestamp: 1400000000.0,
+			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 0, time.UTC),
 			Value:     int64(-59),
 			Path:      "/my/path",
 			HostName:  "ash1",
-			AppName:   "horse"})
+			Tags:      pstore.TagGroup{pstore.TagAppName: "horse"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,15 +84,15 @@ func TestSerializeInt(t *testing.T) {
 }
 
 func TestSerializeBool(t *testing.T) {
-	ser := newRecordSerializer("myTenantId", "myApiKey")
+	ser := recordSerializerType{TenantId: "myTenantId", ApiKey: "myApiKey"}
 	bytes, err := ser.Serialize(
 		&pstore.Record{
 			Kind:      types.Bool,
-			Timestamp: 1400000000.125,
+			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 125000000, time.UTC),
 			Value:     false,
 			Path:      "/my/path/bool",
 			HostName:  "ash2",
-			AppName:   "Health"})
+			Tags:      pstore.TagGroup{pstore.TagAppName: "Health"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,11 +111,11 @@ func TestSerializeBool(t *testing.T) {
 	bytes, err = ser.Serialize(
 		&pstore.Record{
 			Kind:      types.Bool,
-			Timestamp: 1400000000.375,
+			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 375000000, time.UTC),
 			Value:     true,
 			Path:      "/my/path/bools",
 			HostName:  "ash3",
-			AppName:   "cat"})
+			Tags:      pstore.TagGroup{pstore.TagAppName: "cat"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,16 +183,17 @@ func quickVerifyWithUnit(
 	unit units.Unit,
 	value interface{},
 	expected float64) {
-	ser := newRecordSerializer("myTenant", "myApi")
+	ser := recordSerializerType{
+		TenantId: "myTenant", ApiKey: "myApi"}
 	bytes, err := ser.Serialize(
 		&pstore.Record{
 			Kind:      kind,
 			Unit:      unit,
-			Timestamp: 1400000000.875,
+			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 875000000, time.UTC),
 			Value:     value,
 			Path:      "/my/path/someValue",
 			HostName:  "someHost",
-			AppName:   "someApp"})
+			Tags:      pstore.TagGroup{pstore.TagAppName: "someApp"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,14 +226,14 @@ func verifySerialization(
 		t.Fatalf("Error unmarshalling byte array: %v", err)
 	}
 	expected := map[string]interface{}{
-		kVersion:   version,
-		kTenantId:  tenantId,
-		kApiKey:    apiKey,
-		kTimestamp: timeStamp,
-		kValue:     value,
-		kName:      path,
-		kHost:      hostName,
-		kAppName:   appName}
+		kVersion:          version,
+		kTenantId:         tenantId,
+		kApiKey:           apiKey,
+		kTimestamp:        timeStamp,
+		kValue:            value,
+		kName:             path,
+		kHost:             hostName,
+		pstore.TagAppName: appName}
 	if !reflect.DeepEqual(expected, result) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/kafka"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"gopkg.in/yaml.v2"
@@ -46,7 +45,7 @@ type metricCommand struct {
 
 func initRecord(value *metricValue, timestamp time.Time, r *pstore.Record) {
 	r.HostName = value.Id.HostName
-	r.AppName = value.Id.AppName
+	r.Tags = pstore.TagGroup{pstore.TagAppName: value.Id.AppName}
 	r.Path = value.Id.Path
 	r.Kind = value.Id.Kind
 	r.Unit = value.Id.Unit
@@ -84,7 +83,7 @@ func initRecord(value *metricValue, timestamp time.Time, r *pstore.Record) {
 		panic("Unrecognized type")
 
 	}
-	r.Timestamp = messages.TimeToFloat(timestamp)
+	r.Timestamp = timestamp
 }
 
 func playCommands(

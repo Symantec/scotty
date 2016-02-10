@@ -35,17 +35,23 @@ var (
 	kFakeWriter = &fakeWriter{tenantId: "aTenantId", apiKey: "anApiKey"}
 )
 
+// TODO: Remove once we know the grafana bug involving duplicate timestamps
+// is fixed.
 type pathAndMillisType struct {
 	Path   string
 	Millis int64
 }
 
+// TODO: Remove once we know the grafana bug involving duplicate timestamps
+// is fixed.
 func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
 	return pathAndMillisType{
 		Path:   record.Path,
 		Millis: int64(record.Timestamp * 1000.0)}
 }
 
+// TODO: Remove once we know the grafana bug involving duplicate timestamps
+// is fixed.
 type uniqueMetricsWriter struct {
 	pstore.Writer
 }
@@ -62,6 +68,8 @@ type uniqueMetricsWriter struct {
 // Otherwise, fixDuplicates returns a copy of the records slice with the
 // needed modifications leaving the original records slice unchanged.
 func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
+	// TODO: Remove once we know the grafana bug involving duplicate timestamps
+	// is fixed.
 	result = records
 	copied := false
 	pathAndTimeExists := make(map[pathAndMillisType]bool)
@@ -81,6 +89,8 @@ func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
 	return
 }
 
+// TODO: Remove once we know the grafana bug involving duplicate timestamps
+// is fixed.
 func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
 	return u.Writer.Write(fixDuplicates(records))
 }
@@ -91,7 +101,7 @@ type fakeWriter struct {
 }
 
 func newFakeWriter() pstore.Writer {
-	return uniqueMetricsWriter{kFakeWriter}
+	return kFakeWriter
 }
 
 func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
@@ -140,11 +150,7 @@ func newWriter(c *Config) (
 	conf.RequiredAcks = proto.RequiredAcksLocal
 	producer := awriter.broker.Producer(conf)
 	awriter.producer = kafka.NewRoundRobinProducer(producer, count)
-	if c.AllowDuplicates {
-		result = &awriter
-	} else {
-		result = uniqueMetricsWriter{&awriter}
-	}
+	result = &awriter
 	return
 }
 

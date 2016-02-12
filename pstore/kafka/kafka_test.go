@@ -60,7 +60,7 @@ func TestSerializeInt(t *testing.T) {
 	ser := recordSerializerType{TenantId: "myTenantId", ApiKey: "myApiKey"}
 	bytes, err := ser.Serialize(
 		&pstore.Record{
-			Kind:      types.Int,
+			Kind:      types.Int64,
 			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 0, time.UTC),
 			Value:     int64(-59),
 			Path:      "/my/path",
@@ -132,11 +132,11 @@ func TestSerializeBool(t *testing.T) {
 }
 
 func TestSerializeUint(t *testing.T) {
-	quickVerify(t, types.Uint, uint64(13579), 13579)
+	quickVerify(t, types.Uint64, uint64(13579), 13579)
 }
 
 func TestSerializeFloat(t *testing.T) {
-	quickVerify(t, types.Float, -79.236, -79.236)
+	quickVerify(t, types.Float64, -79.236, -79.236)
 }
 
 func TestSerializeTime(t *testing.T) {

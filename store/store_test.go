@@ -57,7 +57,7 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 		Path:        "/foo/bar",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 
 	aMetric.Value = 1
@@ -105,13 +105,13 @@ func TestIterator(t *testing.T) {
 		Path:        "/foo/bar",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 	secondMetric := messages.Metric{
 		Path:        "/foo/baz",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 
 	// Adding 7 values evicts first 2 values
@@ -290,13 +290,13 @@ func TestReclaimPages(t *testing.T) {
 		Path:        "/foo/bar",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 	secondMetric := messages.Metric{
 		Path:        "/foo/baz",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 
 	if out := aStore.AvailablePages(); out != 8 {
@@ -367,7 +367,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		Path:        "/foo/bar",
 		Description: "A description",
 		Unit:        units.None,
-		Kind:        types.Int,
+		Kind:        types.Int64,
 		Bits:        64}
 
 	// Add 6 unique values to each endpoint.

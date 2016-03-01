@@ -166,7 +166,7 @@ func newWriter(c *Config) (
 	conf := kafka.NewProducerConf()
 	conf.RequiredAcks = proto.RequiredAcksLocal
 	producer := awriter.broker.Producer(conf)
-	awriter.producer = kafka.NewRoundRobinProducer(producer, count)
+	awriter.producer = newChannelProducer(producer, count)
 	result = &awriter
 	return
 }

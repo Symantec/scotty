@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/dom/mdbd"
+	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/Dominator/lib/mdb"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
+	"github.com/Symantec/scotty/apps/scotty/splash"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/pstore"
@@ -79,6 +81,8 @@ var (
 		"kafka_config_file",
 		"",
 		"kafka configuration file")
+	fLogBufLines = flag.Uint(
+		"logbufLines", 1024, "Number of lines to store in the log buffer")
 )
 
 type byHostName messages.ErrorList
@@ -740,9 +744,9 @@ func addEndpoints(
 
 func initHostsPortsAndStore(
 	appList *datastructs.ApplicationList,
+	logger *log.Logger,
 	result *datastructs.HostsPortsAndStore) {
-	mdbChannel := mdbd.StartMdbDaemon(
-		*fMdbFile, log.New(os.Stderr, "", log.LstdFlags))
+	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
 	firstEndpoints := make(datastructs.HostsAndPorts)
 	addEndpoints(<-mdbChannel, appList.All(), nil, firstEndpoints)
 	fmt.Println("Initialization started.")
@@ -824,11 +828,12 @@ func startCollector(
 
 func startPStoreLoop(
 	hostsPortsAndStore *datastructs.HostsPortsAndStore,
-	appList *datastructs.ApplicationList) {
+	appList *datastructs.ApplicationList,
+	logger *log.Logger) {
 	go func() {
 		writer, err := newWriter()
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			return
 		}
 		pstoreHandler := newPStoreHandler(writer, appList, *fPStoreBatchSize)
@@ -858,11 +863,13 @@ func startPStoreLoop(
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
+	circularBuffer := logbuf.New(*fLogBufLines)
+	logger := log.New(circularBuffer, "", log.LstdFlags)
 	applicationList := createApplicationList()
 	applicationStats := datastructs.NewApplicationStatuses()
 	connectionErrors := newConnectionErrorsType()
 	var hostsPortsAndStore datastructs.HostsPortsAndStore
-	initHostsPortsAndStore(applicationList, &hostsPortsAndStore)
+	initHostsPortsAndStore(applicationList, logger, &hostsPortsAndStore)
 	startCollector(
 		&hostsPortsAndStore,
 		applicationList,
@@ -870,8 +877,16 @@ func main() {
 		connectionErrors)
 	startPStoreLoop(
 		&hostsPortsAndStore,
-		applicationList)
+		applicationList,
+		logger)
 
+	http.Handle(
+		"/",
+		gzipHandler{&splash.Handler{
+			AS:  applicationStats,
+			HPS: &hostsPortsAndStore,
+			Log: circularBuffer,
+		}})
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
@@ -879,7 +894,6 @@ func main() {
 			HPS: &hostsPortsAndStore,
 			AL:  applicationList,
 		}})
-
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(

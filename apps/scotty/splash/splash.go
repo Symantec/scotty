@@ -1,0 +1,85 @@
+package splash
+
+import (
+	"bufio"
+	"fmt"
+	"github.com/Symantec/scotty/datastructs"
+	"html/template"
+	"io"
+	"net/http"
+	"regexp"
+	"strings"
+)
+
+const (
+	htmlTemplateStr = ` \
+	Total apps: {{.TotalApps}}<br>
+	Total failed apps: {{.TotalFailedApps}}<br>
+	<a href="/showAllApps">Applications</a><br>
+	<a href="/metrics">Metrics</a><br>
+	  `
+)
+
+var (
+	leadingWhitespace = regexp.MustCompile(`\n\s*\\ `)
+	htmlTemplate      = template.Must(
+		template.New("splash").Parse(
+			strings.Replace(
+				leadingWhitespace.ReplaceAllString(
+					strings.Replace(
+						htmlTemplateStr,
+						"\n\t",
+						"\n",
+						-1),
+					"\n"),
+				" \\\n",
+				"",
+				-1)))
+)
+
+type view struct {
+	TotalApps       int
+	TotalFailedApps int
+}
+
+func newView(
+	apps []*datastructs.ApplicationStatus) *view {
+	result := &view{}
+	for _, app := range apps {
+		if app.Down {
+			result.TotalFailedApps++
+		}
+		result.TotalApps++
+	}
+	return result
+}
+
+type HtmlWriter interface {
+	WriteHtml(writer io.Writer)
+}
+
+type Handler struct {
+	HPS *datastructs.HostsPortsAndStore
+	AS  *datastructs.ApplicationStatuses
+	Log HtmlWriter
+}
+
+func (h *Handler) ServeHTTP(
+	w http.ResponseWriter, r *http.Request) {
+	writer := bufio.NewWriter(w)
+	defer writer.Flush()
+	w.Header().Set("Content-Type", "text/html")
+	_, hostsAndPorts := h.HPS.Get()
+	result := h.AS.GetAll(hostsAndPorts)
+	fmt.Fprintln(writer, "<html>")
+	fmt.Fprintln(writer, "<body>")
+	v := newView(result)
+	if err := htmlTemplate.Execute(writer, v); err != nil {
+		fmt.Fprintln(writer, "Error in template: %v\n", err)
+		fmt.Fprintln(writer, "</body>")
+		fmt.Fprintln(writer, "</html>")
+	}
+	h.Log.WriteHtml(writer)
+	fmt.Fprintln(writer, "</body>")
+	fmt.Fprintln(writer, "</html>")
+}

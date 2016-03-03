@@ -825,21 +825,22 @@ func startCollector(
 func startPStoreLoop(
 	hostsPortsAndStore *datastructs.HostsPortsAndStore,
 	appList *datastructs.ApplicationList) {
-	writer, err := newWriter()
-	if err != nil {
-		log.Fatal(err)
-	}
-	pstoreHandler := newPStoreHandler(writer, appList, *fPStoreBatchSize)
-	if err := pstoreHandler.RegisterMetrics(); err != nil {
-		log.Fatal(err)
-	}
-
-	// persistent storage writing goroutine. Write every 30s by default.
-	// Notice that this single goroutine handles all the persistent
-	// storage writing as multiple goroutines must not access the
-	// pstoreHandler instance. accessing pstoreHandler metrics is the
-	// one exception to this rule.
 	go func() {
+		writer, err := newWriter()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		pstoreHandler := newPStoreHandler(writer, appList, *fPStoreBatchSize)
+		if err := pstoreHandler.RegisterMetrics(); err != nil {
+			log.Fatal(err)
+		}
+
+		// persistent storage writing goroutine. Write every 30s by default.
+		// Notice that this single goroutine handles all the persistent
+		// storage writing as multiple goroutines must not access the
+		// pstoreHandler instance. accessing pstoreHandler metrics is the
+		// one exception to this rule.
 		for {
 			metricStore, _ := hostsPortsAndStore.Get()
 			writeTime := time.Now()

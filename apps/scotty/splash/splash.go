@@ -3,6 +3,7 @@ package splash
 import (
 	"bufio"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/html"
 	"github.com/Symantec/scotty/datastructs"
 	"html/template"
 	"io"
@@ -13,10 +14,9 @@ import (
 
 const (
 	htmlTemplateStr = ` \
+	<a href="/showAllApps">Applications</a><br>
 	Total apps: {{.TotalApps}}<br>
 	Total failed apps: {{.TotalFailedApps}}<br>
-	<a href="/showAllApps">Applications</a><br>
-	<a href="/metrics">Metrics</a><br>
 	  `
 )
 
@@ -72,7 +72,13 @@ func (h *Handler) ServeHTTP(
 	_, hostsAndPorts := h.HPS.Get()
 	result := h.AS.GetAll(hostsAndPorts)
 	fmt.Fprintln(writer, "<html>")
+	fmt.Fprintln(writer, "<title>Scotty status page</title>")
 	fmt.Fprintln(writer, "<body>")
+	fmt.Fprintln(writer, "<center>")
+	fmt.Fprintln(writer, "<h1><b>Scotty</b> status page</h1>")
+	fmt.Fprintln(writer, "</center>")
+	html.WriteHeader(writer)
+	fmt.Fprintln(writer, "<br>")
 	v := newView(result)
 	if err := htmlTemplate.Execute(writer, v); err != nil {
 		fmt.Fprintln(writer, "Error in template: %v\n", err)

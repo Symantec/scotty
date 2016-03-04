@@ -214,8 +214,10 @@ func (p *pstoreHandlerType) EndVisit() {
 }
 
 func (p *pstoreHandlerType) Visit(
-	theStore *store.Store, endpointId *collector.Endpoint) error {
+	theStore *store.Store, endpointId interface{}) error {
 	iterators := theStore.Iterators(endpointId)
+	hostName := endpointId.(*collector.Endpoint).HostName()
+	port := endpointId.(*collector.Endpoint).Port()
 
 	for i := range iterators {
 		info := iterators[i].Info()
@@ -230,8 +232,8 @@ func (p *pstoreHandlerType) Visit(
 			}
 			p.iteratorsBeingWritten[p.idx] = iterators[i]
 			p.toBeWritten[p.idx] = pstore.Record{
-				HostName:  endpointId.HostName(),
-				Tags:      pstore.TagGroup{pstore.TagAppName: p.appList.ByPort(endpointId.Port()).Name()},
+				HostName:  hostName,
+				Tags:      pstore.TagGroup{pstore.TagAppName: p.appList.ByPort(port).Name()},
 				Path:      strings.Replace(info.Path(), "/", "_", -1),
 				Kind:      info.Kind(),
 				Unit:      info.Unit(),

@@ -26,7 +26,7 @@ func (s *sumMetricsType) Append(r *store.Record) {
 }
 
 func (s *sumMetricsType) Visit(
-	astore *store.Store, e *scotty.Endpoint) error {
+	astore *store.Store, e interface{}) error {
 	astore.ByEndpoint(e, 0, 1000.0, s)
 	return nil
 }
@@ -34,7 +34,7 @@ func (s *sumMetricsType) Visit(
 type errVisitor int
 
 func (e *errVisitor) Visit(
-	astore *store.Store, ee *scotty.Endpoint) error {
+	astore *store.Store, ee interface{}) error {
 	return kError
 }
 

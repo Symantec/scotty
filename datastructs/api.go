@@ -9,8 +9,12 @@ import (
 	"time"
 )
 
-// HostsAndPorts is a map between "hostname:port" and corresponding Id
-type HostsAndPorts map[string]*scotty.Endpoint
+type HostAndPort struct {
+	Host string
+	Port int
+}
+
+type HostsAndPorts map[HostAndPort]*scotty.Endpoint
 
 // Copy returns a copy of this instance.
 func (h HostsAndPorts) Copy() HostsAndPorts {
@@ -47,15 +51,17 @@ func (h *HostsPortsAndStore) Get() (
 // Initialize this instance for the first time
 func (h *HostsPortsAndStore) Init(
 	valueCountPerPage, pageCount int, hostsAndPorts HostsAndPorts) {
-	h.update(
-		hostsAndPorts,
-		store.NewBuilder(valueCountPerPage, pageCount))
+	s := store.NewStore(valueCountPerPage, pageCount)
+	hostsAndPorts.updateStore(s)
+	h.update(hostsAndPorts, s)
 }
 
 // Update this instance with new hosts and ports.
 func (h *HostsPortsAndStore) Update(hostsAndPorts HostsAndPorts) {
 	oldStore, _ := h.Get()
-	h.update(hostsAndPorts, oldStore.NewBuilder())
+	newStore := oldStore.ShallowCopy()
+	hostsAndPorts.updateStore(newStore)
+	h.update(hostsAndPorts, newStore)
 }
 
 // ApplicationStatus represents the status of a single application.

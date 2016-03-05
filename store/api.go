@@ -73,35 +73,6 @@ type Visitor interface {
 	Visit(store *Store, endpoint interface{}) error
 }
 
-type Builder struct {
-	store     **Store
-	prevStore *Store
-}
-
-// NewBuilder creates a new store builder.
-func NewBuilder(
-	valueCountPerPage, pageCount int) *Builder {
-	store := &Store{
-		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
-		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
-		totalPageCount:   pageCount,
-		maxValuesPerPage: valueCountPerPage,
-	}
-
-	return &Builder{store: &store}
-}
-
-// RegisterEndpoint registers a endpoint with the store being built.
-// RegisterEndpoint panics if endpoint is already registered.
-func (b *Builder) RegisterEndpoint(endpointId interface{}) {
-	b.registerEndpoint(endpointId)
-}
-
-// Build returns the built store and destroys this builder.
-func (b *Builder) Build() *Store {
-	return b.build()
-}
-
 // Iterator iterates over values in one time series.
 type Iterator struct {
 	timeSeries *timeSeriesType
@@ -140,10 +111,21 @@ type Store struct {
 	maxValuesPerPage int
 }
 
-// NewBuilder returns a Builder for creating a new store when the
-// active endpoints change.
-func (s *Store) NewBuilder() *Builder {
-	return s.newBuilder()
+func NewStore(valueCountPerPage, pageCount int) *Store {
+	return &Store{
+		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
+		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
+		totalPageCount:   pageCount,
+		maxValuesPerPage: valueCountPerPage,
+	}
+}
+
+func (s *Store) ShallowCopy() *Store {
+	return s.shallowCopy()
+}
+
+func (s *Store) RegisterEndpoint(endpointId interface{}) {
+	s.registerEndpoint(endpointId)
 }
 
 // Add adds a metric value to this store. Add only stores a metric value

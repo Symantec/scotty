@@ -448,10 +448,7 @@ func (l *loggerType) LogResponse(
 	added := l.Store.AddBatch(
 		e,
 		ts,
-		metrics,
-		func(ametric *trimessages.Metric) bool {
-			return ametric.Kind != types.Dist
-		})
+		metrics)
 	l.AppStats.LogChangedMetricCount(e, added)
 	l.ChangedMetricsDist.Add(float64(added))
 }

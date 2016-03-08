@@ -4,16 +4,12 @@ import (
 	"container/list"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
 	"sort"
 	"strings"
 	"sync"
-	"time"
-)
-
-const (
-	kReapingThreshold = 2
 )
 
 var (
@@ -21,14 +17,11 @@ var (
 )
 
 var (
-	// application wide metrics
-	gBucketer                 = tricorder.NewGeometricBucketer(1.0, 1e6)
-	gPagesPerMetricDist       = gBucketer.NewNonCumulativeDistribution()
-	gLeftToWritePerMetricDist = gBucketer.NewNonCumulativeDistribution()
-	gLastTimeEvicted          *time.Time
-	gMetricValueCount         = &countType{}
+	// 1 up to 1,000,000 bucketer
+	gBucketer = tricorder.NewGeometricBucketer(1.0, 1e6)
 )
 
+// TODO: Maybe make this part of tricorder?
 type countType struct {
 	lock  sync.Mutex
 	value int64
@@ -84,14 +77,10 @@ type tsValueType struct {
 
 type pageType []tsValueType
 
-func (p *pageType) Add(timestamp float64, value interface{}) {
+func (p *pageType) Add(val tsValueType) {
 	length := len(*p)
 	*p = (*p)[0 : length+1]
-	(*p)[length] = tsValueType{TimeStamp: timestamp, Value: value}
-}
-
-func (p *pageType) Reap() *pageType {
-	return p
+	(*p)[length] = val
 }
 
 func (p *pageType) Clear() {
@@ -112,11 +101,11 @@ func (p pageType) Fetch(
 	id *MetricInfo,
 	start, end float64,
 	result Appender) (keepGoing bool) {
-	lastIdx := p.FindGreaterOrEqual(end)
+	lastIdx := p.findGreaterOrEqual(end)
 	if lastIdx == 0 {
 		return true
 	}
-	firstIdx := p.FindGreater(start) - 1
+	firstIdx := p.findGreater(start) - 1
 	if firstIdx < 0 {
 		keepGoing = true
 		firstIdx = 0
@@ -132,22 +121,47 @@ func (p pageType) Fetch(
 	return
 }
 
-func (p pageType) FindGreaterOrEqual(ts float64) int {
+func (p pageType) findGreaterOrEqual(ts float64) int {
 	return sort.Search(
 		len(p),
 		func(idx int) bool { return p[idx].TimeStamp >= ts })
 }
 
-func (p pageType) FindGreater(ts float64) int {
+func (p pageType) findGreater(ts float64) int {
 	return sort.Search(
 		len(p),
 		func(idx int) bool { return p[idx].TimeStamp > ts })
 }
 
-// Keeps track of next metric to write to LMM
+// TODO: implement btree.Item
+type pageMetaDataType struct {
+	seqNo uint64
+	owner *timeSeriesType
+}
+
+type pageWithMetaDataType struct {
+	// page queue lock protects this.
+	pageMetaDataType
+	// Lock of current page owner protects this.
+	pageType
+}
+
+// Keeps track of next metric value to write to LMM
+// Mutex of eclosing timeSeriesType protects.
 type tsValuePtrType struct {
+	// page with next value.
+	// (pagePosit->next == nil && offset == len(*pagePosit)) ||
+	// (pagePosit == nil && offset <= 0) means next value is not in a
+	// page but is stored in the 'lastValue' field of the time series
+	// instance.
+	// (pagePosit->next == nil && offset > len(*pagePosit)) ||
+	// (pagePosit == nil && offset > 0) means no next value.
 	pagePosit *list.Element
-	offset    int
+	// Offset in page. < 0 means pages have to be skipped and first
+	// available value is first value in *pagePosit.
+	offset int
+	// Points to lastValue field of enclosing time series.
+	lastValue []tsValueType
 }
 
 // Advances this instance n values
@@ -159,9 +173,16 @@ func (p *tsValuePtrType) Advance(x int) {
 // first is removed
 func (p *tsValuePtrType) PopFirstPage(first *list.Element) {
 	if first == p.pagePosit {
-		page := p.pagePosit.Value.(*pageType)
-		p.offset -= len(*page)
+		page := p.pagePosit.Value.(*pageWithMetaDataType)
+		p.offset -= len(page.pageType)
 		p.pagePosit = p.pagePosit.Next()
+	}
+}
+
+// Tell this instance that we are adding a new last page.
+func (p *tsValuePtrType) AddLastPage(last *list.Element) {
+	if p.pagePosit == nil {
+		p.pagePosit = last
 	}
 }
 
@@ -175,207 +196,270 @@ func copyValues(page pageType) (result pageType) {
 // In case the value this instance points to was reclaimed, returns timestamp
 // value pairs starting with the earliest available timestamp.
 // In that case, it returns how many intermediate values must be skipped to
-// get to the earliest value. In case, this instance points past the
+// get to the earliest value. In case this instance points past the
 // latest value, returns (nil, 0)
 func (p *tsValuePtrType) Values() (values []tsValueType, skipped int) {
 	if p.pagePosit == nil {
+		if p.offset <= 0 {
+			return copyValues(p.lastValue), -p.offset
+		}
 		return
 	}
 	p.normalize()
-	page := p.pagePosit.Value.(*pageType)
-	if p.offset >= len(*page) {
+	page := p.pagePosit.Value.(*pageWithMetaDataType)
+	if p.offset > len(page.pageType) {
 		return
 	}
-	if p.offset < 0 {
-		return copyValues(*page), -p.offset
+	if p.offset == len(page.pageType) {
+		return copyValues(p.lastValue), 0
 	}
-	values = copyValues((*page)[p.offset:])
-	return
+	if p.offset < 0 {
+		return copyValues(page.pageType), -p.offset
+	}
+	return copyValues(page.pageType[p.offset:]), 0
 }
 
+// Pre-conditions: p.pagePosit != nil
+// Post-conditions: p.pagePosit != nil. Either p.offset < len(*p.pagePosit)
+// or p.pagePosit->Next == nil.
 func (p *tsValuePtrType) normalize() {
-	page := p.pagePosit.Value.(*pageType)
-	for p.offset >= len(*page) {
+	page := p.pagePosit.Value.(*pageWithMetaDataType)
+	for p.offset >= len(page.pageType) {
 		next := p.pagePosit.Next()
 		if next == nil {
 			break
 		}
-		p.offset -= len(*page)
+		p.offset -= len(page.pageType)
 		p.pagePosit = next
-		page = p.pagePosit.Value.(*pageType)
+		page = p.pagePosit.Value.(*pageWithMetaDataType)
 	}
 }
 
 type timeSeriesType struct {
-	id          *MetricInfo
-	lock        sync.Mutex
-	ptr         tsValuePtrType
-	leftToWrite int
-	pages       list.List
+	id            *MetricInfo
+	metrics       *storeMetricsType
+	lock          sync.Mutex
+	ptr           tsValuePtrType
+	lastValue     [1]tsValueType
+	leftToWrite   int
+	pages         list.List
+	nextPageToUse *pageWithMetaDataType
 }
 
 func newTimeSeriesType(
 	id *MetricInfo,
-	page *pageType) *timeSeriesType {
-	result := &timeSeriesType{id: id}
-	result.ptr.pagePosit = result.pages.Init().PushBack(page)
-	result.leftToWrite = len(*page)
-	gLeftToWritePerMetricDist.Add(float64(result.leftToWrite))
-	gPagesPerMetricDist.Add(1.0)
+	ts float64, value interface{},
+	metrics *storeMetricsType) *timeSeriesType {
+	result := &timeSeriesType{id: id, metrics: metrics}
+	result.ptr.lastValue = result.lastValue[:]
+	result.lastValue[0].TimeStamp = ts
+	result.lastValue[0].Value = value
+	result.leftToWrite = 1
+	result.pages.Init()
+	result.metrics.LeftToWritePerMetricDist.Add(
+		float64(result.leftToWrite))
+	result.metrics.PagesPerMetricDist.Add(0.0)
 	return result
 }
 
-func (t *timeSeriesType) AdvancePosition(advances int) {
+// AdvancePosition advances the position of the pstore iterator n values.
+func (t *timeSeriesType) AdvancePosition(n int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	t.ptr.Advance(advances)
-	gLeftToWritePerMetricDist.Update(
-		float64(t.leftToWrite), float64(t.leftToWrite-advances))
-	t.leftToWrite -= advances
+	t.ptr.Advance(n)
+	oldLeftToWrite := t.leftToWrite
+	t.leftToWrite -= n
+	t.metrics.LeftToWritePerMetricDist.Update(float64(
+		oldLeftToWrite), float64(t.leftToWrite))
 }
 
+// FetchFromPosition fetches values starting at position of the pstore iterator.
+// Returns values in order of timestamp. If values were skipped because they
+// were too old and reclaimed, returns how many values were skipped.
 func (t *timeSeriesType) FetchFromPosition() (values []tsValueType, skipped int) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	return t.ptr.Values()
 }
 
-func (t *timeSeriesType) PageCount() int {
+// AcceptPage grants given page to this time series. The page queue calls
+// this to bestow a page to a time series. This method must not be called
+// directly.
+func (t *timeSeriesType) AcceptPage(page *pageWithMetaDataType) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	return t.pages.Len()
+	if t.nextPageToUse != nil {
+		panic("Oops, look like multiple goroutines are attempting to add pages to a time series.")
+	}
+	t.nextPageToUse = page
+	page.pageType.Clear()
 }
 
-func (t *timeSeriesType) Reap() *pageType {
+// GiveUpPage instructs this time series to give up the given page.
+// Only the page queue calls this. This method must not be called directly.
+// The page queue will always take pages away from a time series in the same
+// order it bestowed them.
+func (t *timeSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+
+	// First see if this instance has the page but just isn't using it yet.
+	// Since pages are always taken away in the same order they are
+	// granted, this will only happen it this instance was just granted
+	// its first page and isn't using it yet. Otherwise, the page being
+	// given up will always be at the front of the linked list.
+	if t.nextPageToUse == page {
+		if t.pages.Len() != 0 {
+			panic("Oops, timeSeries being asked to give up page it was just granted, but it already has older pages that it should give up first.")
+		}
+		t.nextPageToUse = nil
+		return
+	}
 	oldLen := float64(t.pages.Len())
 	front := t.pages.Front()
 	if front == nil {
-		return nil
+		panic("Oops, timeSeries being asked to give up a page when it has none.")
 	}
-	t.ptr.PopFirstPage(t.pages.Front())
-	result := t.pages.Remove(t.pages.Front()).(*pageType)
+	if front.Value.(*pageWithMetaDataType) != page {
+		panic("Oops, timeSeries being asked to give up a page that is not the oldest page.")
+	}
+	t.ptr.PopFirstPage(front)
+	t.pages.Remove(front)
+	t.metrics.MetricValueCount.Add(int64(-len(page.pageType)))
+	t.metrics.PagesPerMetricDist.Update(oldLen, oldLen-1.0)
+}
 
-	latestTime, _ := result.LatestValue()
-	goLatestTime := trimessages.FloatToTime(latestTime)
-	gLastTimeEvicted = &goLatestTime
-	if !result.IsFull() {
-		panic("Oops, timeSeries is giving up a partially filled page.")
+// Appends all the pages in this time series to given slice.
+func (t *timeSeriesType) AppendPagesTo(pages *[]*pageWithMetaDataType) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	for e := t.pages.Front(); e != nil; e = e.Next() {
+		*pages = append(*pages, e.Value.(*pageWithMetaDataType))
 	}
-	gMetricValueCount.Add(int64(-len(*result)))
-	if oldLen == 1.0 {
-		gPagesPerMetricDist.Remove(oldLen)
-		gLeftToWritePerMetricDist.Remove(float64(t.leftToWrite))
-	} else {
-		gPagesPerMetricDist.Update(oldLen, oldLen-1.0)
-	}
-	return result
 }
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd, needPage bool) {
-	latestPage := t.latestPage()
-	latestTs, latestValue := latestPage.LatestValue()
-	if timestamp <= latestTs || value == latestValue {
+	if timestamp <= t.lastValue[0].TimeStamp || value == t.lastValue[0].Value {
 		return
 	}
-	return true, latestPage.IsFull()
+	latestPage := t.latestPage()
+	return true, latestPage == nil || latestPage.IsFull()
 }
 
-func (t *timeSeriesType) NeedToAdd(timestamp float64, value interface{}) (
-	needToAdd, needPage bool) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	return t.needToAdd(timestamp, value)
-}
-
-// Must call NeedToAdd first!
+// Add adds a single value to this time series.
+//
+// If the value and timestamp should not be added because the value matches
+// the last value in time series or timestamp does not come after last
+// timestamp in the series, returns false, false.
+//
+// If the timestamp and value should be added, but cannot be added because
+// there is no free space in a page, returns true, false. In this case, the
+// caller should call GivePageTo on the page queue to bestow a new page for
+// this time series and then try callng Add again.
+//
+// If the timestamp and value were added successfully, returns true, true
+//
+// A time series will never automatically request new pages internally to
+// avoid deadlock. Doing so would require this time series to lock another
+// time series while it itself is locked. At the same time, that time series
+// may be blocked waiting to lock this time series.
 func (t *timeSeriesType) Add(
-	timestamp float64, value interface{}, page *pageType) (
-	isAddSucceeded, isEligibleForReaping bool) {
+	timestamp float64, value interface{}) (neededToAdd, addSuccessful bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	// Oops, we are trying to add values to a timeSeries that has been
-	// drained of all its pages.
-	if t.ptr.pagePosit == nil {
-		panic("Trying to add to a time series that should have been closed")
-	}
 	needToAdd, needPage := t.needToAdd(timestamp, value)
-	if !needToAdd || (needPage && page == nil) || (!needPage && page != nil) {
-		panic("Multiple goroutines trying to add to this time series!")
+	if !needToAdd {
+		return false, false
 	}
+	if !needPage && t.nextPageToUse != nil {
+		panic("Oops, no new page needed but a next page to use is available. Perhaps multiple goroutines are adding to this same time series?")
+	}
+	// Another timeSeries took our page before we could use it.
+	// Report add unsuccessful so that caller will request another page
+	// for us.
+	if needPage && t.nextPageToUse == nil {
+		return true, false
+	}
+
 	var latestPage *pageType
-	if page == nil {
+	if t.nextPageToUse == nil {
 		latestPage = t.latestPage()
 	} else {
 		oldLen := float64(t.pages.Len())
-		t.pages.PushBack(page)
-		gPagesPerMetricDist.Update(oldLen, oldLen+1)
-		if t.pages.Len() > kReapingThreshold {
-			isEligibleForReaping = true
-		}
-		latestPage = page
+		t.ptr.AddLastPage(t.pages.PushBack(t.nextPageToUse))
+		latestPage = &t.nextPageToUse.pageType
+		t.nextPageToUse = nil
+		t.metrics.PagesPerMetricDist.Update(oldLen, oldLen+1)
 	}
-	latestPage.Add(timestamp, value)
-	isAddSucceeded = true
-	gLeftToWritePerMetricDist.Update(float64(t.leftToWrite), float64(t.leftToWrite+1))
+	latestPage.Add(t.lastValue[0])
+	t.lastValue[0].TimeStamp = timestamp
+	t.lastValue[0].Value = value
+	t.metrics.LeftToWritePerMetricDist.Update(
+		float64(t.leftToWrite), float64(t.leftToWrite+1))
 	t.leftToWrite++
-	return
+	return true, true
 }
 
+// Fetch fetches all the values and timestamps such that it can be known
+// what the value of the metric is between start inclusive and end exclusive.
+// This means that it may return a value with a timestamp just before start.
 func (t *timeSeriesType) Fetch(
 	applicationId interface{},
 	start, end float64,
 	result Appender) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	// Only include latest value if it comes before end timestamp.
+	if t.lastValue[0].TimeStamp < end {
+		record := Record{
+			ApplicationId: applicationId,
+			Info:          t.id,
+			TimeStamp:     t.lastValue[0].TimeStamp,
+			Value:         t.lastValue[0].Value,
+		}
+		result.Append(&record)
+	}
+	// If latest value has timestamp on or before start we are done.
+	if t.lastValue[0].TimeStamp <= start {
+		return
+	}
 	var e *list.Element
 	for e = t.pages.Back(); e != nil; e = e.Prev() {
-		page := e.Value.(*pageType)
-		if !page.Fetch(applicationId, t.id, start, end, result) {
+		page := e.Value.(*pageWithMetaDataType)
+		if !page.pageType.Fetch(applicationId, t.id, start, end, result) {
 			break
 		}
 	}
 }
 
-func (t *timeSeriesType) latestPage() *pageType {
-	return t.pages.Back().Value.(*pageType)
+// May return nil if time series has no pages
+func (t *timeSeriesType) latestPage() (result *pageType) {
+	back := t.pages.Back()
+	if back == nil {
+		return
+	}
+	return &back.Value.(*pageWithMetaDataType).pageType
 }
 
 type timeSeriesCollectionType struct {
 	applicationId   interface{}
+	metrics         *storeMetricsType
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
 }
 
 func newTimeSeriesCollectionType(
-	app interface{}) *timeSeriesCollectionType {
+	app interface{},
+	metrics *storeMetricsType) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
 		applicationId: app,
+		metrics:       metrics,
 		timeSeries:    make(map[*MetricInfo]*timeSeriesType),
 	}
 	result.metricInfoStore.Init()
 	return result
-}
-
-func (c *timeSeriesCollectionType) All() (result []*timeSeriesType) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	for _, ts := range c.timeSeries {
-		result = append(result, ts)
-	}
-	return
-}
-
-func (c *timeSeriesCollectionType) Lookup(m *trimessages.Metric) (
-	id *MetricInfo, timeSeries *timeSeriesType) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	id = c.metricInfoStore.Register(m)
-	timeSeries = c.timeSeries[id]
-	return
 }
 
 func (c *timeSeriesCollectionType) Iterators() (result []*Iterator) {
@@ -395,11 +479,6 @@ func (c *timeSeriesCollectionType) TsByName(name string) (
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	infoList := c.metricInfoStore.ByName[name]
-	// We aren't guarnateed that returned array will be the
-	// same length as infoList. When adding a new
-	// timeSeries, we add its id first, release the lock to
-	// get a new page, then reacquire the lock to add the new
-	// timeSeries.
 	for _, info := range infoList {
 		result = append(result, c.timeSeries[info])
 	}
@@ -418,58 +497,81 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 	return
 }
 
-func (c *timeSeriesCollectionType) AddTimeSeries(
-	id *MetricInfo, series *timeSeriesType) bool {
+// LookkupBatch looks up all the metrics in one go and returns the
+// following:
+// fetched: timeSeries already in this collection keyed by Metric.
+//  values must be added to these manually.
+// newOnes: timeSeries just added as a result of this lookup. Since these
+// are new, the first value added automatically.
+// notFetched: timeSeries in this collection but not fetched. These
+// are the time series that should be marked inactive.
+func (c *timeSeriesCollectionType) LookupBatch(
+	timestamp float64, metrics trimessages.MetricList) (
+	fetched map[*trimessages.Metric]*timeSeriesType,
+	newOnes, notFetched []*timeSeriesType) {
+	idsThisBatch := make(map[*MetricInfo]bool)
+	fetched = make(map[*trimessages.Metric]*timeSeriesType)
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.timeSeries[id] != nil {
-		panic("Multiple goroutines trying to add to this time series collection.")
+	for i := range metrics {
+		// TODO: Allow distribution metrics later.
+		if metrics[i].Kind == types.Dist {
+			continue
+		}
+		id := c.metricInfoStore.Register(metrics[i])
+		idsThisBatch[id] = true
+		if c.timeSeries[id] == nil {
+			c.timeSeries[id] = newTimeSeriesType(
+				id, timestamp, metrics[i].Value, c.metrics)
+			newOnes = append(newOnes, c.timeSeries[id])
+		} else {
+			fetched[metrics[i]] = c.timeSeries[id]
+		}
 	}
-	c.timeSeries[id] = series
-	return true
+	for existingId := range c.timeSeries {
+		if !idsThisBatch[existingId] {
+			notFetched = append(
+				notFetched, c.timeSeries[existingId])
+		}
+	}
+	return
 }
 
-func (c *timeSeriesCollectionType) Add(
+func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
-	m *trimessages.Metric,
-	supplier *pageSupplierType) bool {
-	// We must take care not to call supplier.Get() while we are holding
-	// a lock. Because supplier.Get() may have to obtain a lock to reap
-	// a page, calling it while holding a lock will make deadlock
-	// possible.
-	id, timeSeries := c.Lookup(m)
-	if timeSeries == nil {
-		newPage := supplier.Get()
-		newPage.Add(timestamp, m.Value)
-		timeSeries := newTimeSeriesType(
-			id,
-			newPage)
-		if !c.AddTimeSeries(id, timeSeries) {
-			supplier.AddFront(newPage)
-			return false
+	metrics trimessages.MetricList,
+	supplier *pageQueueType) int {
+	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
+	fetched, newOnes, notFetched := c.LookupBatch(timestamp, metrics)
+	addedCount := len(newOnes)
+	// For each metric in fetched, manually add its value to its
+	// time series
+	for metric, timeSeries := range fetched {
+		needToAdd, addSuccessful := timeSeries.Add(
+			timestamp, metric.Value)
+		// If add fails because of no free space, keep trying Add
+		// in a loop until it succeeds.
+		for needToAdd && !addSuccessful {
+			supplier.GivePageTo(timeSeries)
+			needToAdd, addSuccessful = timeSeries.Add(
+				timestamp, metric.Value)
 		}
-		return true
+		if needToAdd {
+			addedCount++
+		}
+		timeSeries.AppendPagesTo(&reclaimLowList)
 	}
-	needToAdd, needPage := timeSeries.NeedToAdd(timestamp, m.Value)
-	if needToAdd {
-		var page *pageType
-		if needPage {
-			page = supplier.Get()
-		}
-		isAddSucceeded, isEligibleForReaping := timeSeries.Add(
-			timestamp, m.Value, page)
-		if !isAddSucceeded {
-			if page != nil {
-				supplier.AddFront(page)
-			}
-			return false
-		}
-		if isEligibleForReaping {
-			supplier.Add(timeSeries)
-		}
-		return true
+	for i := range notFetched {
+		notFetched[i].AppendPagesTo(&reclaimHighList)
 	}
-	return false
+	// reclaimHighList has all the pages that should be reclaimed with
+	// high priority
+	supplier.ReclaimHigh(reclaimHighList)
+
+	// recliamLowList has all the pages that should be reclaimed with
+	// low priority
+	supplier.ReclaimLow(reclaimLowList)
+	return addedCount
 }
 
 func (c *timeSeriesCollectionType) ByName(
@@ -500,61 +602,92 @@ func (c *timeSeriesCollectionType) Latest(result Appender) {
 	}
 }
 
-type reaperType interface {
-	// Reap must succeed and return a non-nil page
-	Reap() *pageType
+// TODO: 2 mutually exclusive btrees keyed by seqNo:
+// 1. high priority btree
+// 2. low priority btree
+// If len(highPriority) > 0.1*page_count pull from highPriority
+// Otherwise pull from btree with lowest seqNO
+type pageQueueType struct {
+	valueCountPerPage  int
+	pageCount          int
+	inactiveThreshhold float64
+	lock               sync.Mutex
+	pages              []*pageWithMetaDataType
+	next               int
 }
 
-type pageSupplierType struct {
-	lock  sync.Mutex
-	queue list.List
-}
-
-func newPageSupplierType(valueCountPerPage, pageCount int) *pageSupplierType {
-	var result pageSupplierType
-	result.queue.Init()
-	for i := 0; i < pageCount; i++ {
-		newPage := make(pageType, valueCountPerPage)
-		result.queue.PushBack(&newPage)
+func newPageQueueType(
+	valueCountPerPage int,
+	pageCount int,
+	inactiveThreshhold float64) *pageQueueType {
+	pages := make([]*pageWithMetaDataType, pageCount)
+	for i := range pages {
+		pp := make(pageType, 0, valueCountPerPage)
+		pages[i] = &pageWithMetaDataType{pageType: pp}
 	}
-	return &result
+	return &pageQueueType{
+		valueCountPerPage:  valueCountPerPage,
+		pageCount:          pageCount,
+		inactiveThreshhold: inactiveThreshhold,
+		pages:              pages}
 }
 
-func (s *pageSupplierType) Get() (result *pageType) {
-	for result == nil {
-		reaper := s.pop()
-		result = reaper.Reap()
+func (s *pageQueueType) MaxValuesPerPage() int {
+	return s.valueCountPerPage
+}
+
+func (s *pageQueueType) RegisterMetrics() (err error) {
+	if err = tricorder.RegisterMetric(
+		"/store/totalPages",
+		&s.pageCount,
+		units.None,
+		"Total number of pages."); err != nil {
+		return
 	}
-	result.Clear()
-	return result
-}
-
-func (s *pageSupplierType) Add(r reaperType) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.queue.PushBack(r)
-}
-
-func (s *pageSupplierType) AddFront(r reaperType) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.queue.PushFront(r)
-}
-
-func (s *pageSupplierType) Len() int {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	return s.queue.Len()
-}
-
-func (s *pageSupplierType) pop() reaperType {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	front := s.queue.Front()
-	if front == nil {
-		panic("No more pages left! Make page size smaller, add memory, or both.")
+	if err = tricorder.RegisterMetric(
+		"/store/maxValuesPerPage",
+		&s.valueCountPerPage,
+		units.None,
+		"Maximum number ofvalues that can fit in a page."); err != nil {
+		return
 	}
-	return s.queue.Remove(front).(reaperType)
+	if err = tricorder.RegisterMetric(
+		"/store/inactiveThreshhold",
+		&s.inactiveThreshhold,
+		units.None,
+		"The ratio of inactive pages needed before they are reclaimed first"); err != nil {
+		return
+	}
+	return
+}
+
+// GivePageTo bestows a new page on t.
+// This call may lock another timeSeriesType instance. To avoid deadlock,
+// caller must not hold a lock on any timeSeriesType instance.
+func (s *pageQueueType) GivePageTo(t *timeSeriesType) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	result := s.pages[s.next]
+	if result.owner != nil {
+		result.owner.GiveUpPage(result)
+	}
+	result.owner = t
+	result.owner.AcceptPage(result)
+	s.next++
+	if s.next == len(s.pages) {
+		s.next = 0
+	}
+	return
+}
+
+func (s *pageQueueType) ReclaimHigh(
+	reclaimHighList []*pageWithMetaDataType) {
+	// TODO
+}
+
+func (s *pageQueueType) ReclaimLow(
+	reclaimHighList []*pageWithMetaDataType) {
+	// TODO
 }
 
 type recordListType []*Record
@@ -564,31 +697,49 @@ func (l *recordListType) Append(r *Record) {
 	*l = append(*l, &recordCopy)
 }
 
+type storeMetricsType struct {
+	PagesPerMetricDist       *tricorder.NonCumulativeDistribution
+	LeftToWritePerMetricDist *tricorder.NonCumulativeDistribution
+	MetricValueCount         *countType
+}
+
+func newStoreMetricsType() *storeMetricsType {
+	return &storeMetricsType{
+		PagesPerMetricDist:       gBucketer.NewNonCumulativeDistribution(),
+		LeftToWritePerMetricDist: gBucketer.NewNonCumulativeDistribution(),
+		MetricValueCount:         &countType{},
+	}
+}
+
 func (s *Store) registerEndpoint(endpointId interface{}) {
 
 	if s.byApplication[endpointId] != nil {
 		return
 	}
-	s.byApplication[endpointId] = newTimeSeriesCollectionType(endpointId)
+	s.byApplication[endpointId] = newTimeSeriesCollectionType(
+		endpointId, s.metrics)
 }
 
 func (s *Store) shallowCopy() *Store {
-	byApplicationCopy := make(map[interface{}]*timeSeriesCollectionType, len(s.byApplication))
+	byApplicationCopy := make(
+		map[interface{}]*timeSeriesCollectionType,
+		len(s.byApplication))
 	for k, v := range s.byApplication {
 		byApplicationCopy[k] = v
 	}
 	return &Store{
-		byApplication:    byApplicationCopy,
-		supplier:         s.supplier,
-		totalPageCount:   s.totalPageCount,
-		maxValuesPerPage: s.maxValuesPerPage,
+		byApplication: byApplicationCopy,
+		supplier:      s.supplier,
+		metrics:       s.metrics,
 	}
 }
 
-func (s *Store) add(
+func (s *Store) addBatch(
 	endpointId interface{},
-	timestamp float64, m *trimessages.Metric) bool {
-	return s.byApplication[endpointId].Add(timestamp, m, s.supplier)
+	timestamp float64,
+	mlist trimessages.MetricList) int {
+	return s.byApplication[endpointId].AddBatch(
+		timestamp, mlist, s.supplier)
 }
 
 func newIterator(ts *timeSeriesType) *Iterator {
@@ -614,24 +765,6 @@ func (i *Iterator) commit() {
 		i.timeSeries.AdvancePosition(i.advances)
 		i.advances = 0
 	}
-}
-
-func (s *Store) addBatch(
-	endpointId interface{},
-	timestamp float64,
-	metricList trimessages.MetricList,
-	filter func(*trimessages.Metric) bool) int {
-	result := 0
-	for _, metric := range metricList {
-		if filter != nil && !filter(metric) {
-			continue
-		}
-		if s.add(endpointId, timestamp, metric) {
-			result++
-		}
-	}
-	gMetricValueCount.Add(int64(result))
-	return result
 }
 
 func (s *Store) iterators(endpointId interface{}) []*Iterator {
@@ -677,58 +810,31 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 }
 
 func (s *Store) registerMetrics() (err error) {
-	// Let Garbage collector reclaim s.
-	supplier := s.supplier
-	totalPageCount := s.totalPageCount
-	maxValuesPerPage := s.maxValuesPerPage
+	if err = s.supplier.RegisterMetrics(); err != nil {
+		return
+	}
+	// Allow this store instance to be GCed
+	maxValuesPerPage := s.supplier.MaxValuesPerPage()
+	metrics := s.metrics
+
 	if err = tricorder.RegisterMetric(
 		"/store/pagesPerMetric",
-		gPagesPerMetricDist,
+		metrics.PagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
 		"/store/leftToWritePerMetric",
-		gLeftToWritePerMetricDist,
+		metrics.LeftToWritePerMetricDist,
 		units.None,
 		"Number of pages to write to persistent store per metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
-		"/store/lastTimeStampEvicted",
-		&gLastTimeEvicted,
-		units.None,
-		"Latest timestamp evicted from data store."); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"/store/availablePages",
-		func() int {
-			return supplier.Len()
-		},
-		units.None,
-		"Number of pages available to hold new metrics."); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"/store/totalPages",
-		&totalPageCount,
-		units.None,
-		"Total number of pages."); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"/store/maxValuesPerPage",
-		&maxValuesPerPage,
-		units.None,
-		"Maximum number ofvalues that can fit in a page."); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
-			return float64(gMetricValueCount.Get()) / gPagesPerMetricDist.Sum() / float64(maxValuesPerPage)
+			return float64(metrics.MetricValueCount.Get()) / metrics.PagesPerMetricDist.Sum() / float64(maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {
@@ -736,7 +842,7 @@ func (s *Store) registerMetrics() (err error) {
 	}
 	if err = tricorder.RegisterMetric(
 		"/store/metricValueCount",
-		gMetricValueCount.Get,
+		metrics.MetricValueCount.Get,
 		units.None,
 		"Number of stored metrics values and timestamps"); err != nil {
 		return

@@ -21,6 +21,7 @@ const (
 	    <th>Machine</th>
 	    <th>Port</th>
 	    <th>Name</th>
+	    <th>Active?</th>
 	    <th>Down?</th>
 	    <th>Status</th>
 	    <th>Staleness</th>
@@ -33,7 +34,8 @@ const (
 	  <tr>
 	    <td>{{.EndpointId.HostName}}</td>
 	    <td>{{.EndpointId.Port}}</td>
-	    <td>{{$top.AppName .EndpointId.Port}}</td>
+	    <td>{{.Name}}</td>
+	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{.Status}}</td>
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
@@ -70,26 +72,19 @@ type view struct {
 	Apps            []*datastructs.ApplicationStatus
 	TotalApps       int
 	TotalFailedApps int
-	appList         *datastructs.ApplicationList
 }
 
 func (v *view) Float32(x float64) float32 {
 	return float32(x)
 }
 
-func (v *view) AppName(port int) string {
-	app := v.appList.ByPort(port)
-	if app == nil {
-		return ""
-	}
-	return app.Name()
-}
-
 func newView(
-	apps []*datastructs.ApplicationStatus,
-	al *datastructs.ApplicationList) *view {
-	result := &view{Apps: apps, appList: al}
+	apps []*datastructs.ApplicationStatus) *view {
+	result := &view{Apps: apps}
 	for _, app := range result.Apps {
+		if !app.Active {
+			continue
+		}
 		if app.Down {
 			result.TotalFailedApps++
 		}
@@ -99,9 +94,7 @@ func newView(
 }
 
 type Handler struct {
-	HPS *datastructs.HostsPortsAndStore
-	AS  *datastructs.ApplicationStatuses
-	AL  *datastructs.ApplicationList
+	AS *datastructs.ApplicationStatuses
 }
 
 type byNameAndPort []*datastructs.ApplicationStatus
@@ -133,10 +126,9 @@ func (h *Handler) ServeHTTP(
 	w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "text/html")
-	_, hostsAndPorts := h.HPS.Get()
-	result := h.AS.GetAll(hostsAndPorts)
+	result := h.AS.All()
 	sortByNameAndPort(result)
-	v := newView(result, h.AL)
+	v := newView(result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
 		fmt.Fprintln(w, "Error in template: %v\n", err)
 	}

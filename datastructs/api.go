@@ -9,65 +9,16 @@ import (
 	"time"
 )
 
-type HostAndPort struct {
-	Host string
-	Port int
-}
-
-type HostsAndPorts map[HostAndPort]*scotty.Endpoint
-
-// Copy returns a copy of this instance.
-func (h HostsAndPorts) Copy() HostsAndPorts {
-	return h.copy()
-}
-
-// AddIfAbsent adds a new host and port to this instance if they are
-// not already there. If orig is non nil, AddIfAbsent looks for a matching
-// endpoint object in orig. If it finds one, it reuses it instead of creating
-// a new one.
-func (h HostsAndPorts) AddIfAbsent(
-	orig HostsAndPorts, host string, port int) {
-	h.addIfAbsent(orig, host, port)
-}
-
-// HostsPortsAndStore consists of the current active hosts and ports and the
-// current metrics store. An instance of this type is expected to be global
-// and can be used with multiple goroutines
-type HostsPortsAndStore struct {
-	mutex         sync.Mutex
-	store         *store.Store
-	hostsAndPorts HostsAndPorts
-}
-
-// Return the current store along with the hosts and ports
-// Caller must not modify contents of hostsAndPorts directly. Insteead,
-// caller must call Copy() and hostsAndPorts to get a copy and mofiy the
-// copy.
-func (h *HostsPortsAndStore) Get() (
-	s *store.Store, hostsAndPorts HostsAndPorts) {
-	return h.get()
-}
-
-// Initialize this instance for the first time
-func (h *HostsPortsAndStore) Init(
-	valueCountPerPage, pageCount int, hostsAndPorts HostsAndPorts) {
-	s := store.NewStore(valueCountPerPage, pageCount)
-	hostsAndPorts.updateStore(s)
-	h.update(hostsAndPorts, s)
-}
-
-// Update this instance with new hosts and ports.
-func (h *HostsPortsAndStore) Update(hostsAndPorts HostsAndPorts) {
-	oldStore, _ := h.Get()
-	newStore := oldStore.ShallowCopy()
-	hostsAndPorts.updateStore(newStore)
-	h.update(hostsAndPorts, newStore)
-}
-
 // ApplicationStatus represents the status of a single application.
 type ApplicationStatus struct {
 	EndpointId *scotty.Endpoint
 	Status     scotty.Status
+
+	// The name of the endpoint's application
+	Name string
+
+	// True if this machine is active, false otherwise.
+	Active bool
 
 	// The zero value means no successful read
 	LastReadTime time.Time
@@ -103,37 +54,92 @@ func (a *ApplicationStatus) Staleness() time.Duration {
 
 // ApplicationStatuses is thread safe representation of application statuses
 type ApplicationStatuses struct {
+	appList *ApplicationList
+	// A function must hold this lock when changing the status
+	// (active vs. inactive) of the endpoints or when adding new
+	// endpoints to ensure that when it returns, all of the time series
+	// of each inactive endpoint are also inactive and that
+	// all endpoints in this instance are also in the current store.
+	// If this lock is acquired, it must be acquired before the normal
+	// lock for this instance.
+	statusChangeLock sync.Mutex
+	// The normal lock for this instance
 	lock sync.Mutex
 	// The ApplicationStatus objects in the map are mutable to make
 	// updates more memory efficient. lock protects each ApplicationStatus
 	// object as well as the map itself.
-	byEndpoint map[*scotty.Endpoint]*ApplicationStatus
+	byEndpoint   map[*scotty.Endpoint]*ApplicationStatus
+	byHostPort   map[hostAndPort]*scotty.Endpoint
+	currentStore *store.Store
 }
 
-func NewApplicationStatuses() *ApplicationStatuses {
+// NewApplicationStatuses creates a new ApplicationStatus instance.
+// astore should be a newly initialized store.
+// Since the newly created instance will create new store.Store instances
+// whenever active machines change, caller should give up any reference it
+// has to astore and use the Store() method to get the current store.
+func NewApplicationStatuses(appList *ApplicationList, astore *store.Store) *ApplicationStatuses {
 	return &ApplicationStatuses{
-		byEndpoint: make(map[*scotty.Endpoint]*ApplicationStatus),
+		appList:      appList,
+		byEndpoint:   make(map[*scotty.Endpoint]*ApplicationStatus),
+		byHostPort:   make(map[hostAndPort]*scotty.Endpoint),
+		currentStore: astore,
 	}
 }
 
+// Store returns the current store instance.
+func (a *ApplicationStatuses) Store() *store.Store {
+	return a.store()
+}
+
+// ApplicationList returns the application list of this instance.
+func (a *ApplicationStatuses) ApplicationList() *ApplicationList {
+	return a.appList
+}
+
 // Update updates the status of a single application / endpoint.
+// This istance must have prior knowledge of e. That is, e must come from
+// a method such as ActiveEndpointIds(). Otherwise, this method panics.
 func (a *ApplicationStatuses) Update(
 	e *scotty.Endpoint, newState *scotty.State) {
 	a.update(e, newState)
 }
 
+// MarkHostsActiveExclusively marks all applications / endpoints each host
+// within activeHosts as active while marking the rest inactive.
+func (a *ApplicationStatuses) MarkHostsActiveExclusively(
+	activeHosts []string) {
+	a.markHostsActiveExclusively(activeHosts)
+}
+
 // LogChangedMetricCount logs how many metrics changed for a given
 // application / endpoint.
+// This istance must have prior knowledge of e. That is, e must come from
+// a method such as ActiveEndpointIds(). Otherwise, this method panics.
 func (a *ApplicationStatuses) LogChangedMetricCount(
 	e *scotty.Endpoint, metricCount int) {
 	a.logChangedMetricCount(e, metricCount)
 }
 
-// GetAll the statuses for all the applications in hostsAndPorts.
+// GetAll returns the statuses for all the applications.
 // Clients are free to reorder the returned slice.
-func (a *ApplicationStatuses) GetAll(
-	hostsAndPorts HostsAndPorts) (result []*ApplicationStatus) {
-	return a.getAll(hostsAndPorts)
+func (a *ApplicationStatuses) All() []*ApplicationStatus {
+	return a.all()
+}
+
+// EndpointIdByHostAndName Returns the endpoint Id for given host and
+// application name along with the current store. If no such host and
+// application name combo exists, returns nil and the curent store.
+func (a *ApplicationStatuses) EndpointIdByHostAndName(
+	host, name string) (*scotty.Endpoint, *store.Store) {
+	return a.endpointIdByHostAndName(host, name)
+}
+
+// ActiveEndpointIds  Returns all the active endpoints
+// along with the current store.
+func (a *ApplicationStatuses) ActiveEndpointIds() (
+	[]*scotty.Endpoint, *store.Store) {
+	return a.activeEndpointIds()
 }
 
 // Application represents a particular application in the fleet.

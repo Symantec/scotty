@@ -21,6 +21,20 @@ var (
 	gBucketer = tricorder.NewGeometricBucketer(1.0, 1e6)
 )
 
+type inactiveType int
+
+var gInactive inactiveType
+
+func (r *Record) setValue(value interface{}) {
+	if value == gInactive {
+		r.Active = false
+		r.Value = r.Info.Kind().ZeroValue()
+	} else {
+		r.Active = true
+		r.Value = value
+	}
+}
+
 // TODO: Maybe make this part of tricorder?
 type countType struct {
 	lock  sync.Mutex
@@ -115,7 +129,7 @@ func (p pageType) Fetch(
 		Info:          id}
 	for i := lastIdx - 1; i >= firstIdx; i-- {
 		record.TimeStamp = p[i].TimeStamp
-		record.Value = p[i].Value
+		record.setValue(p[i].Value)
 		result.Append(&record)
 	}
 	return
@@ -243,7 +257,6 @@ type timeSeriesType struct {
 	lastValue     [1]tsValueType
 	leftToWrite   int
 	pages         list.List
-	active        bool
 	nextPageToUse *pageWithMetaDataType
 }
 
@@ -257,7 +270,6 @@ func newTimeSeriesType(
 	result.lastValue[0].Value = value
 	result.leftToWrite = 1
 	result.pages.Init()
-	result.active = true
 	result.metrics.LeftToWritePerMetricDist.Add(
 		float64(result.leftToWrite))
 	result.metrics.PagesPerMetricDist.Add(0.0)
@@ -342,7 +354,7 @@ func (t *timeSeriesType) AppendPagesTo(pages *[]*pageWithMetaDataType) {
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd, needPage bool) {
-	if timestamp <= t.lastValue[0].TimeStamp || value == t.lastValue[0].Value {
+	if value == t.lastValue[0].Value || (timestamp <= t.lastValue[0].TimeStamp && value != gInactive) {
 		return
 	}
 	latestPage := t.latestPage()
@@ -353,27 +365,31 @@ func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 //
 // If the value and timestamp should not be added because the value matches
 // the last value in time series or timestamp does not come after last
-// timestamp in the series, returns false, false.
+// timestamp in the series, returns false, false, false.
 //
 // If the timestamp and value should be added, but cannot be added because
-// there is no free space in a page, returns true, false. In this case, the
-// caller should call GivePageTo on the page queue to bestow a new page for
-// this time series and then try callng Add again.
+// there is no free space in a page, returns true, false, false.
+// In this case, the caller should call GivePageTo on the page queue to
+// bestow a new page for this time series and then try callng Add again.
 //
-// If the timestamp and value were added successfully, returns true, true
+// If the timestamp and value were added successfully, returns true, true, true
+// If timeseries was previously inactive or true, true, false if timeseries
+// was already active.
 //
 // A time series will never automatically request new pages internally to
 // avoid deadlock. Doing so would require this time series to lock another
 // time series while it itself is locked. At the same time, that time series
 // may be blocked waiting to lock this time series.
 func (t *timeSeriesType) Add(
-	timestamp float64, value interface{}) (neededToAdd, addSuccessful bool) {
+	timestamp float64, value interface{}) (
+	neededToAdd, addSuccessful, justActivated bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	needToAdd, needPage := t.needToAdd(timestamp, value)
 	if !needToAdd {
-		return false, false
+		return
 	}
+	neededToAdd = true
 	if !needPage && t.nextPageToUse != nil {
 		panic("Oops, no new page needed but a next page to use is available. Perhaps multiple goroutines are adding to this same time series?")
 	}
@@ -381,8 +397,10 @@ func (t *timeSeriesType) Add(
 	// Report add unsuccessful so that caller will request another page
 	// for us.
 	if needPage && t.nextPageToUse == nil {
-		return true, false
+		return
 	}
+	addSuccessful = true
+	justActivated = t.lastValue[0].Value == gInactive
 
 	var latestPage *pageType
 	if t.nextPageToUse == nil {
@@ -395,12 +413,23 @@ func (t *timeSeriesType) Add(
 		t.metrics.PagesPerMetricDist.Update(oldLen, oldLen+1)
 	}
 	latestPage.Add(t.lastValue[0])
-	t.lastValue[0].TimeStamp = timestamp
+	// Ensure that timestamps are monotone increasing. We could get an
+	// earlier timestamp if we are getting an inactive marker.
+	if timestamp <= t.lastValue[0].TimeStamp {
+		// If current timestamp is earlier, make it be 1ms more than
+		// last timestamp. Adding 1ms makes the timestamp
+		// greater for any timestamp < 2^43 seconds past Jan 1 1970
+		// which is millinea into the future.
+		t.lastValue[0].TimeStamp += 0.001
+	} else {
+		t.lastValue[0].TimeStamp = timestamp
+	}
 	t.lastValue[0].Value = value
+
 	t.metrics.LeftToWritePerMetricDist.Update(
 		float64(t.leftToWrite), float64(t.leftToWrite+1))
 	t.leftToWrite++
-	return true, true
+	return
 }
 
 // Fetch fetches all the values and timestamps such that it can be known
@@ -418,8 +447,8 @@ func (t *timeSeriesType) Fetch(
 			ApplicationId: applicationId,
 			Info:          t.id,
 			TimeStamp:     t.lastValue[0].TimeStamp,
-			Value:         t.lastValue[0].Value,
 		}
+		record.setValue(t.lastValue[0].Value)
 		result.Append(&record)
 	}
 	// If latest value has timestamp on or before start we are done.
@@ -435,22 +464,6 @@ func (t *timeSeriesType) Fetch(
 	}
 }
 
-// SetActive sets whether or not this time series is active and returns the
-// old status.
-func (t *timeSeriesType) SetActive(active bool) (oldStatus bool) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	oldStatus = t.active
-	t.active = active
-	return
-}
-
-func (t *timeSeriesType) Active() bool {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	return t.active
-}
-
 // May return nil if time series has no pages
 func (t *timeSeriesType) latestPage() (result *pageType) {
 	back := t.pages.Back()
@@ -458,6 +471,32 @@ func (t *timeSeriesType) latestPage() (result *pageType) {
 		return
 	}
 	return &back.Value.(*pageWithMetaDataType).pageType
+}
+
+func addToTimeSeries(
+	timeSeries *timeSeriesType,
+	timestamp float64,
+	value interface{},
+	supplier *pageQueueType) (
+	neededToAdd, justActivated bool) {
+	neededToAdd, addSuccessful, justActivated := timeSeries.Add(
+		timestamp, value)
+	// If add fails because of no free space, keep trying Add
+	// in a loop until it succeeds.
+	for neededToAdd && !addSuccessful {
+		supplier.GivePageTo(timeSeries)
+		neededToAdd, addSuccessful, justActivated = timeSeries.Add(
+			timestamp, value)
+	}
+	return
+}
+
+func inactivateTimeSeries(
+	timeSeries *timeSeriesType,
+	timestamp float64,
+	supplier *pageQueueType) (justInactivated bool) {
+	justInactivated, _ = addToTimeSeries(timeSeries, timestamp, gInactive, supplier)
+	return
 }
 
 type timeSeriesCollectionType struct {
@@ -543,10 +582,10 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 // are the time series that should be marked inactive.
 func (c *timeSeriesCollectionType) LookupBatch(
 	timestamp float64, metrics trimessages.MetricList) (
-	fetched map[*trimessages.Metric]*timeSeriesType,
+	fetched map[*timeSeriesType]interface{},
 	newOnes, notFetched []*timeSeriesType) {
-	idsThisBatch := make(map[*MetricInfo]bool)
-	fetched = make(map[*trimessages.Metric]*timeSeriesType)
+	valueByMetric := make(map[*MetricInfo]interface{})
+	fetched = make(map[*timeSeriesType]interface{})
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	for i := range metrics {
@@ -555,73 +594,78 @@ func (c *timeSeriesCollectionType) LookupBatch(
 			continue
 		}
 		id := c.metricInfoStore.Register(metrics[i])
-		idsThisBatch[id] = true
-		if c.timeSeries[id] == nil {
-			c.timeSeries[id] = newTimeSeriesType(
-				id, timestamp, metrics[i].Value, c.metrics)
-			newOnes = append(newOnes, c.timeSeries[id])
-		} else {
-			fetched[metrics[i]] = c.timeSeries[id]
+		valueByMetric[id] = metrics[i].Value
+	}
+	// populate notFetched
+	for id, series := range c.timeSeries {
+		if _, ok := valueByMetric[id]; !ok {
+			notFetched = append(notFetched, series)
 		}
 	}
-	for existingId := range c.timeSeries {
-		if !idsThisBatch[existingId] {
-			notFetched = append(
-				notFetched, c.timeSeries[existingId])
+	for id, value := range valueByMetric {
+		if c.timeSeries[id] == nil {
+			c.timeSeries[id] = newTimeSeriesType(
+				id, timestamp, value, c.metrics)
+			newOnes = append(newOnes, c.timeSeries[id])
+		} else {
+			fetched[c.timeSeries[id]] = value
 		}
 	}
 	return
 }
 
-func (c *timeSeriesCollectionType) MarkInactive(supplier *pageQueueType) {
+// TODO add docs
+func (c *timeSeriesCollectionType) MarkInactive(
+	timestamp float64, supplier *pageQueueType) {
 	var reclaimHighList []*pageWithMetaDataType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	tslist := c.TsAll()
+	var inactiveCount int
 	for i := range tslist {
 		// If it was active
-		if tslist[i].SetActive(false) {
+		if inactivateTimeSeries(tslist[i], timestamp, supplier) {
 			tslist[i].AppendPagesTo(&reclaimHighList)
+			inactiveCount++
 		}
 	}
 	// reclaimHighList has all the pages that should be reclaimed with
 	// high priority
 	supplier.ReclaimHigh(reclaimHighList)
+
+	c.metrics.MetricValueCount.Add(int64(inactiveCount))
+
+	return
 }
 
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	metrics trimessages.MetricList,
-	supplier *pageQueueType) int {
+	supplier *pageQueueType) (addedCount int) {
 	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	fetched, newOnes, notFetched := c.LookupBatch(timestamp, metrics)
-	addedCount := len(newOnes)
+	addedCount = len(newOnes)
 	// For each metric in fetched, manually add its value to its
 	// time series
-	for metric, timeSeries := range fetched {
-		needToAdd, addSuccessful := timeSeries.Add(
-			timestamp, metric.Value)
-		// If add fails because of no free space, keep trying Add
-		// in a loop until it succeeds.
-		for needToAdd && !addSuccessful {
-			supplier.GivePageTo(timeSeries)
-			needToAdd, addSuccessful = timeSeries.Add(
-				timestamp, metric.Value)
-		}
+	for timeSeries, value := range fetched {
+		needToAdd, justActivated := addToTimeSeries(
+			timeSeries, timestamp, value, supplier)
 		if needToAdd {
 			addedCount++
 		}
 		// If status went from inactive to active.
-		if !timeSeries.SetActive(true) {
+		if justActivated {
 			timeSeries.AppendPagesTo(&reclaimLowList)
 		}
 	}
+	var inactiveCount int
 	for i := range notFetched {
-		// If status went from active to inactive.
-		if notFetched[i].SetActive(false) {
+		if inactivateTimeSeries(
+			notFetched[i], timestamp, supplier) {
 			notFetched[i].AppendPagesTo(&reclaimHighList)
+			inactiveCount++
 		}
 	}
 	// reclaimHighList has all the pages that should be reclaimed with
@@ -631,7 +675,10 @@ func (c *timeSeriesCollectionType) AddBatch(
 	// recliamLowList has all the pages that should be reclaimed with
 	// low priority
 	supplier.ReclaimLow(reclaimLowList)
-	return addedCount
+
+	c.metrics.MetricValueCount.Add(int64(inactiveCount + addedCount))
+
+	return
 }
 
 func (c *timeSeriesCollectionType) ByName(
@@ -854,8 +901,9 @@ func (s *Store) byEndpoint(
 	s.byApplication[endpointId].ByPrefix("", start, end, result)
 }
 
-func (s *Store) markEndpointInactive(endpointId interface{}) {
-	s.byApplication[endpointId].MarkInactive(s.supplier)
+func (s *Store) markEndpointInactive(
+	timestamp float64, endpointId interface{}) {
+	s.byApplication[endpointId].MarkInactive(timestamp, s.supplier)
 }
 
 func (s *Store) latestByEndpoint(

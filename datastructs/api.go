@@ -107,9 +107,10 @@ func (a *ApplicationStatuses) Update(
 
 // MarkHostsActiveExclusively marks all applications / endpoints each host
 // within activeHosts as active while marking the rest inactive.
+// timestamp is seconds since Jan 1, 1970 GMT.
 func (a *ApplicationStatuses) MarkHostsActiveExclusively(
-	activeHosts []string) {
-	a.markHostsActiveExclusively(activeHosts)
+	timestamp float64, activeHosts []string) {
+	a.markHostsActiveExclusively(timestamp, activeHosts)
 }
 
 // LogChangedMetricCount logs how many metrics changed for a given

@@ -49,6 +49,12 @@ type Record struct {
 	Info          *MetricInfo
 	TimeStamp     float64
 	Value         interface{}
+	Active        bool
+}
+
+// IsInactive returns true if given value indicates an inactive value
+func IsInactive(value interface{}) bool {
+	return value == gInactive
 }
 
 // Appender appends records fetched from a Store to this instance.
@@ -225,6 +231,7 @@ func (s *Store) RegisterMetrics() error {
 }
 
 // TODO: Needs a test
-func (s *Store) MarkEndpointInactive(endpointId interface{}) {
-	s.markEndpointInactive(endpointId)
+func (s *Store) MarkEndpointInactive(
+	timestamp float64, endpointId interface{}) {
+	s.markEndpointInactive(timestamp, endpointId)
 }

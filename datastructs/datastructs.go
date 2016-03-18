@@ -103,12 +103,13 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 }
 
 func (a *ApplicationStatuses) markHostsActiveExclusively(
-	activeHosts []string) {
+	timestamp float64, activeHosts []string) {
 	a.statusChangeLock.Lock()
 	defer a.statusChangeLock.Unlock()
 	toBecomeInactive, astore := a._markHostsActiveExclusively(activeHosts)
 	for i := range toBecomeInactive {
-		astore.MarkEndpointInactive(toBecomeInactive[i])
+		astore.MarkEndpointInactive(
+			timestamp, toBecomeInactive[i])
 	}
 }
 

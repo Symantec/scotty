@@ -654,12 +654,12 @@ func (c *timeSeriesCollectionType) MarkInactive(
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	metrics trimessages.MetricList,
-	supplier *pageQueueType) (addedCount int) {
+	supplier *pageQueueType) int {
 	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	fetched, newOnes, notFetched := c.LookupBatch(timestamp, metrics)
-	addedCount = len(newOnes)
+	addedCount := len(newOnes)
 	// For each metric in fetched, manually add its value to its
 	// time series
 	for timeSeries, value := range fetched {
@@ -689,9 +689,9 @@ func (c *timeSeriesCollectionType) AddBatch(
 	// low priority
 	supplier.ReclaimLow(reclaimLowList)
 
-	c.metrics.MetricValueCount.Add(int64(inactiveCount + addedCount))
-
-	return
+	result := inactiveCount + addedCount
+	c.metrics.MetricValueCount.Add(int64(result))
+	return result
 }
 
 func (c *timeSeriesCollectionType) ByName(
@@ -941,6 +941,9 @@ func (i *Iterator) next() (timestamp float64, value interface{}, skipped int) {
 		i.values = i.values[1:]
 		i.advances += (i.skipped + 1)
 		i.skipped = 0
+	}
+	if value == gInactive {
+		value = i.Info().Kind().ZeroValue()
 	}
 	return
 }

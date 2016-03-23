@@ -98,6 +98,57 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	assertValueEquals(t, 14, int(total))
 }
 
+func nextSingleValue(iter *store.Iterator) (
+	ts float64, val interface{}, skipped int) {
+	ts, val, skipped = iter.Next()
+	iter.Commit()
+	return
+}
+
+func TestIteratorMissingValue(t *testing.T) {
+	aStore := store.NewStore(100, 10, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	disappearingMetric := [1]*messages.Metric{
+		{
+			Path:        "/disappearing/metric",
+			Description: "some description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	disappearingMetric[0].Value = 77
+	addBatch(t, aStore, kEndpoint0, 200.0, disappearingMetric[:], 1)
+	addBatch(t, aStore, kEndpoint0, 210.0, disappearingMetric[:0], 1)
+	disappearingMetric[0].Value = 78
+	addBatch(t, aStore, kEndpoint0, 220.0, disappearingMetric[:], 1)
+	addBatch(t, aStore, kEndpoint0, 230.0, disappearingMetric[:0], 1)
+	addBatch(t, aStore, kEndpoint0, 240.0, disappearingMetric[:0], 0)
+
+	ts, value, skipped := nextSingleValue(aStore.Iterators(kEndpoint0)[0])
+	assertValueEquals(t, 200.0, ts)
+	assertValueEquals(t, 77, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = nextSingleValue(aStore.Iterators(kEndpoint0)[0])
+	assertValueEquals(t, 210.0, ts)
+	assertValueEquals(t, int64(0), value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = nextSingleValue(aStore.Iterators(kEndpoint0)[0])
+	assertValueEquals(t, 220.0, ts)
+	assertValueEquals(t, 78, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = nextSingleValue(aStore.Iterators(kEndpoint0)[0])
+	assertValueEquals(t, 230.0, ts)
+	assertValueEquals(t, int64(0), value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = nextSingleValue(aStore.Iterators(kEndpoint0)[0])
+	assertValueEquals(t, nil, value)
+}
+
 func TestIterator(t *testing.T) {
 	aStore := store.NewStore(2, 3, 1.0, 10) // Stores 2*3 + 1 values
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -307,7 +358,10 @@ func TestIterator(t *testing.T) {
 
 	// Add a different metric
 	secondMetric[0].Value = 1
-	addBatch(t, aStore, kEndpoint0, 100.0, secondMetric[:], 1)
+	// This makes first metric be missing so we add this second metric
+	// value and an inactive flag for the first value which is why we
+	// expect 2
+	addBatch(t, aStore, kEndpoint0, 100.0, secondMetric[:], 2)
 
 	// We should have two iterators now
 	iterators = aStore.Iterators(kEndpoint0)

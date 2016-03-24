@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/html"
+	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/datastructs"
 	"html/template"
 	"io"
@@ -15,8 +16,9 @@ import (
 const (
 	htmlTemplateStr = ` \
 	<a href="/showAllApps">Applications</a><br>
-	Total apps: {{.TotalApps}}<br>
-	Total failed apps: {{.TotalFailedApps}}<br>
+	Total Endpoints: {{.Summary.TotalEndpoints}}<br>
+	Total Active Endpoints: {{.Summary.TotalActiveEndpoints}}<br>
+	Total Failed Endpoints: {{.Summary.TotalFailedEndpoints}}<br>
 	  `
 )
 
@@ -38,22 +40,13 @@ var (
 )
 
 type view struct {
-	TotalApps       int
-	TotalFailedApps int
+	Summary showallapps.EndpointSummary
 }
 
 func newView(
 	apps []*datastructs.ApplicationStatus) *view {
-	result := &view{}
-	for _, app := range apps {
-		if !app.Active {
-			continue
-		}
-		if app.Down {
-			result.TotalFailedApps++
-		}
-		result.TotalApps++
-	}
+	var result = &view{}
+	result.Summary.Init(apps)
 	return result
 }
 

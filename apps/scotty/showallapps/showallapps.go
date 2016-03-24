@@ -14,8 +14,9 @@ const (
 	htmlTemplateStr = ` \
 	<html>
 	<body>
-	Total apps: {{.TotalApps}}<br>
-	Total failed apps: {{.TotalFailedApps}}<br>
+	Total Endpoints: {{.Summary.TotalEndpoints}}<br>
+	Total Active Endpoints: {{.Summary.TotalActiveEndpoints}}<br>
+	Total Failed Endpoints: {{.Summary.TotalFailedEndpoints}}<br>
 	<table border="1" style="width:100%">
 	  <tr>
 	    <th>Machine</th>
@@ -69,27 +70,39 @@ var (
 )
 
 type view struct {
-	Apps            []*datastructs.ApplicationStatus
-	TotalApps       int
-	TotalFailedApps int
+	Apps    []*datastructs.ApplicationStatus
+	Summary EndpointSummary
 }
 
 func (v *view) Float32(x float64) float32 {
 	return float32(x)
 }
 
-func newView(
-	apps []*datastructs.ApplicationStatus) *view {
-	result := &view{Apps: apps}
-	for _, app := range result.Apps {
+type EndpointSummary struct {
+	TotalEndpoints       int
+	TotalActiveEndpoints int
+	TotalFailedEndpoints int
+}
+
+func (e *EndpointSummary) Init(apps []*datastructs.ApplicationStatus) {
+	e.TotalEndpoints = len(apps)
+	e.TotalActiveEndpoints = 0
+	e.TotalFailedEndpoints = 0
+	for _, app := range apps {
 		if !app.Active {
 			continue
 		}
 		if app.Down {
-			result.TotalFailedApps++
+			e.TotalFailedEndpoints++
 		}
-		result.TotalApps++
+		e.TotalActiveEndpoints++
 	}
+}
+
+func newView(
+	apps []*datastructs.ApplicationStatus) *view {
+	result := &view{Apps: apps}
+	result.Summary.Init(apps)
 	return result
 }
 

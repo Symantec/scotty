@@ -157,7 +157,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 
 // AddBatch adds metric values.
 // AddBatch returns the total number of metric values added including any
-// inactive flags.
+// inactive flags. If endpoint is inactive, AddBatch returns ok = false.
 // AddBatch uses timestamp for all new values in metricList.
 // timestamp is seconds since Jan 1, 1970 GMT.
 // If a time series already in the given endpoint does not have a new value
@@ -169,7 +169,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
-	metricList trimessages.MetricList) int {
+	metricList trimessages.MetricList) (numAdded int, ok bool) {
 	return s.addBatch(endpointId, timestamp, metricList)
 }
 
@@ -261,4 +261,9 @@ func (s *Store) RegisterMetrics() error {
 func (s *Store) MarkEndpointInactive(
 	timestamp float64, endpointId interface{}) {
 	s.markEndpointInactive(timestamp, endpointId)
+}
+
+// MarkEndpointActive marks given endpoint as active.
+func (s *Store) MarkEndpointActive(endpointId interface{}) {
+	s.markEndpointActive(endpointId)
 }

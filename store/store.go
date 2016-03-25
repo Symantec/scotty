@@ -527,6 +527,7 @@ type timeSeriesCollectionType struct {
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
+	active          bool
 }
 
 func newTimeSeriesCollectionType(
@@ -536,6 +537,7 @@ func newTimeSeriesCollectionType(
 		applicationId: app,
 		metrics:       metrics,
 		timeSeries:    make(map[*MetricInfo]*timeSeriesType),
+		active:        true,
 	}
 	result.metricInfoStore.Init()
 	return result
@@ -553,14 +555,20 @@ func (c *timeSeriesCollectionType) Iterators() (result []*Iterator) {
 	return
 }
 
-func (c *timeSeriesCollectionType) TsAll() (
+func (c *timeSeriesCollectionType) tsAll() (
 	result []*timeSeriesType) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 	for _, ts := range c.timeSeries {
 		result = append(result, ts)
 	}
 	return
+}
+
+func (c *timeSeriesCollectionType) TsAllMarkingInactive() (
+	result []*timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.active = false
+	return c.tsAll()
 }
 
 func (c *timeSeriesCollectionType) TsByName(name string) (
@@ -597,11 +605,15 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 func (c *timeSeriesCollectionType) LookupBatch(
 	timestamp float64, metrics trimessages.MetricList) (
 	fetched map[*timeSeriesType]interface{},
-	newOnes, notFetched []*timeSeriesType) {
-	valueByMetric := make(map[*MetricInfo]interface{})
-	fetched = make(map[*timeSeriesType]interface{})
+	newOnes, notFetched []*timeSeriesType, ok bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if !c.active {
+		return
+	}
+	ok = true
+	valueByMetric := make(map[*MetricInfo]interface{})
+	fetched = make(map[*timeSeriesType]interface{})
 	for i := range metrics {
 		// TODO: Allow distribution metrics later.
 		if metrics[i].Kind == types.Dist {
@@ -628,12 +640,18 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	return
 }
 
+func (c *timeSeriesCollectionType) MarkActive() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.active = true
+}
+
 func (c *timeSeriesCollectionType) MarkInactive(
 	timestamp float64, supplier *pageQueueType) {
 	var reclaimHighList []*pageWithMetaDataType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
-	tslist := c.TsAll()
+	tslist := c.TsAllMarkingInactive()
 	var inactiveCount int
 	for i := range tslist {
 		// If it was active
@@ -654,11 +672,14 @@ func (c *timeSeriesCollectionType) MarkInactive(
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	metrics trimessages.MetricList,
-	supplier *pageQueueType) int {
+	supplier *pageQueueType) (result int, ok bool) {
 	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
-	fetched, newOnes, notFetched := c.LookupBatch(timestamp, metrics)
+	fetched, newOnes, notFetched, ok := c.LookupBatch(timestamp, metrics)
+	if !ok {
+		return
+	}
 	addedCount := len(newOnes)
 	// For each metric in fetched, manually add its value to its
 	// time series
@@ -689,9 +710,9 @@ func (c *timeSeriesCollectionType) AddBatch(
 	// low priority
 	supplier.ReclaimLow(reclaimLowList)
 
-	result := inactiveCount + addedCount
+	result = inactiveCount + addedCount
 	c.metrics.MetricValueCount.Add(int64(result))
-	return result
+	return
 }
 
 func (c *timeSeriesCollectionType) ByName(
@@ -922,7 +943,7 @@ func (s *Store) shallowCopy() *Store {
 func (s *Store) addBatch(
 	endpointId interface{},
 	timestamp float64,
-	mlist trimessages.MetricList) int {
+	mlist trimessages.MetricList) (int, bool) {
 	return s.byApplication[endpointId].AddBatch(
 		timestamp, mlist, s.supplier)
 }
@@ -985,6 +1006,10 @@ func (s *Store) byEndpoint(
 func (s *Store) markEndpointInactive(
 	timestamp float64, endpointId interface{}) {
 	s.byApplication[endpointId].MarkInactive(timestamp, s.supplier)
+}
+
+func (s *Store) markEndpointActive(endpointId interface{}) {
+	s.byApplication[endpointId].MarkActive()
 }
 
 func (s *Store) latestByEndpoint(

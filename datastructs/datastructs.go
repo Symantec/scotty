@@ -21,7 +21,8 @@ func (a *ApplicationStatuses) newApplicationStatus(
 	if app == nil {
 		panic("Oops, unknown port in endpoint.")
 	}
-	return &ApplicationStatus{EndpointId: e, Name: app.Name()}
+	return &ApplicationStatus{
+		EndpointId: e, Name: app.Name(), Active: true}
 }
 
 func (a *ApplicationStatuses) store() *store.Store {
@@ -58,6 +59,7 @@ func newStringSet(activeHosts []string) (result map[string]bool) {
 
 func (a *ApplicationStatuses) _markHostsActiveExclusively(
 	activeHosts []string) (
+	toBecomeActive []*scotty.Endpoint,
 	toBecomeInactive []*scotty.Endpoint,
 	astore *store.Store) {
 	activeHostSet := newStringSet(activeHosts)
@@ -84,6 +86,8 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 				Port: apps[j].Port(),
 			}
 			activeEndpoint := a.byHostPort[hp]
+
+			// If new endpoint
 			if activeEndpoint == nil {
 				activeEndpoint = scotty.NewEndpoint(
 					hp.Host, hp.Port)
@@ -93,8 +97,14 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 					storeCopy = a.currentStore.ShallowCopy()
 				}
 				storeCopy.RegisterEndpoint(activeEndpoint)
+			} else {
+				val := a.byEndpoint[activeEndpoint]
+				if !val.Active {
+					val.Active = true
+					toBecomeActive = append(
+						toBecomeActive, activeEndpoint)
+				}
 			}
-			a.byEndpoint[activeEndpoint].Active = true
 		}
 	}
 	a.currentStore = storeCopy
@@ -106,10 +116,13 @@ func (a *ApplicationStatuses) markHostsActiveExclusively(
 	timestamp float64, activeHosts []string) {
 	a.statusChangeLock.Lock()
 	defer a.statusChangeLock.Unlock()
-	toBecomeInactive, astore := a._markHostsActiveExclusively(activeHosts)
+	toBecomeActive, toBecomeInactive, astore := a._markHostsActiveExclusively(activeHosts)
 	for i := range toBecomeInactive {
 		astore.MarkEndpointInactive(
 			timestamp, toBecomeInactive[i])
+	}
+	for i := range toBecomeActive {
+		astore.MarkEndpointActive(toBecomeActive[i])
 	}
 }
 

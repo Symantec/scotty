@@ -263,6 +263,17 @@ func (p *tsValuePtrType) normalize() {
 	}
 }
 
+// pageListType Represents a list of pages owned by the same time series.
+// Page owners can change at any time. In particular they can change
+// between when we get a time series' page list and when we change
+// the priority of those pages. This abstraction makes it possible to
+// ensure that we don't change the priority of a page that has been given
+// a new owner.
+type pageListType struct {
+	Owner *timeSeriesType
+	Pages []*pageWithMetaDataType
+}
+
 type timeSeriesType struct {
 	id            *MetricInfo
 	metrics       *storeMetricsType
@@ -357,12 +368,16 @@ func (t *timeSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 	t.metrics.PagesPerMetricDist.Update(oldLen, oldLen-1.0)
 }
 
-// Appends all the pages in this time series to given slice.
-func (t *timeSeriesType) AppendPagesTo(pages *[]*pageWithMetaDataType) {
+func (t *timeSeriesType) PageList() pageListType {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	var pages []*pageWithMetaDataType
 	for e := t.pages.Front(); e != nil; e = e.Next() {
-		*pages = append(*pages, e.Value.(*pageWithMetaDataType))
+		pages = append(pages, e.Value.(*pageWithMetaDataType))
+	}
+	return pageListType{
+		Owner: t,
+		Pages: pages,
 	}
 }
 
@@ -648,7 +663,7 @@ func (c *timeSeriesCollectionType) MarkActive() {
 
 func (c *timeSeriesCollectionType) MarkInactive(
 	timestamp float64, supplier *pageQueueType) {
-	var reclaimHighList []*pageWithMetaDataType
+	var reclaimHighList []pageListType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	tslist := c.TsAllMarkingInactive()
@@ -656,11 +671,13 @@ func (c *timeSeriesCollectionType) MarkInactive(
 	for i := range tslist {
 		// If it was active
 		if inactivateTimeSeries(tslist[i], timestamp, supplier) {
-			tslist[i].AppendPagesTo(&reclaimHighList)
+			reclaimHighList = append(
+				reclaimHighList,
+				tslist[i].PageList())
 			inactiveCount++
 		}
 	}
-	// reclaimHighList has all the pages that should be reclaimed with
+	// reclaimHighList has all the page lists that should be reclaimed with
 	// high priority
 	supplier.ReclaimHigh(reclaimHighList)
 
@@ -673,7 +690,7 @@ func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	metrics trimessages.MetricList,
 	supplier *pageQueueType) (result int, ok bool) {
-	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
+	var reclaimLowList, reclaimHighList []pageListType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	fetched, newOnes, notFetched, ok := c.LookupBatch(timestamp, metrics)
@@ -691,22 +708,26 @@ func (c *timeSeriesCollectionType) AddBatch(
 		}
 		// If status went from inactive to active.
 		if justActivated {
-			timeSeries.AppendPagesTo(&reclaimLowList)
+			reclaimLowList = append(
+				reclaimLowList,
+				timeSeries.PageList())
 		}
 	}
 	var inactiveCount int
 	for i := range notFetched {
 		if inactivateTimeSeries(
 			notFetched[i], timestamp, supplier) {
-			notFetched[i].AppendPagesTo(&reclaimHighList)
+			reclaimHighList = append(
+				reclaimHighList,
+				notFetched[i].PageList())
 			inactiveCount++
 		}
 	}
-	// reclaimHighList has all the pages that should be reclaimed with
+	// reclaimHighList has all the page lists that should be reclaimed with
 	// high priority
 	supplier.ReclaimHigh(reclaimHighList)
 
-	// recliamLowList has all the pages that should be reclaimed with
+	// recliamLowList has all the page lists that should be reclaimed with
 	// low priority
 	supplier.ReclaimLow(reclaimLowList)
 
@@ -883,16 +904,28 @@ func (s *pageQueueType) GivePageTo(t *timeSeriesType) {
 }
 
 func (s *pageQueueType) ReclaimHigh(
-	reclaimHighList []*pageWithMetaDataType) {
-	for i := range reclaimHighList {
-		s.pq.ReclaimHigh(reclaimHighList[i])
+	reclaimHighList []pageListType) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	for _, pageList := range reclaimHighList {
+		for i := range pageList.Pages {
+			if pageList.Pages[i].owner == pageList.Owner {
+				s.pq.ReclaimHigh(pageList.Pages[i])
+			}
+		}
 	}
 }
 
 func (s *pageQueueType) ReclaimLow(
-	reclaimLowList []*pageWithMetaDataType) {
-	for i := range reclaimLowList {
-		s.pq.ReclaimLow(reclaimLowList[i])
+	reclaimLowList []pageListType) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	for _, pageList := range reclaimLowList {
+		for i := range pageList.Pages {
+			if pageList.Pages[i].owner == pageList.Owner {
+				s.pq.ReclaimLow(pageList.Pages[i])
+			}
+		}
 	}
 }
 

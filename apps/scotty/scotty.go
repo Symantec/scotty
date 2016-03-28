@@ -29,10 +29,12 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -83,6 +85,8 @@ var (
 		"kafka configuration file")
 	fLogBufLines = flag.Uint(
 		"logbufLines", 1024, "Number of lines to store in the log buffer")
+	fPidFile = flag.String(
+		"pidfile", "", "Name of file to write my PID to")
 )
 
 type byHostName messages.ErrorList
@@ -860,11 +864,44 @@ func startPStoreLoop(
 	}()
 }
 
+func gracefulCleanup() {
+	os.Remove(*fPidFile)
+	os.Exit(1)
+}
+
+func writePidfile() {
+	file, err := os.Create(*fPidFile)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		os.Exit(1)
+	}
+	defer file.Close()
+	fmt.Fprintln(file, os.Getpid())
+}
+
+func handleSignals(logger *log.Logger) {
+	if *fPidFile == "" {
+		return
+	}
+	sigtermChannel := make(chan os.Signal)
+	signal.Notify(sigtermChannel, syscall.SIGTERM, syscall.SIGINT)
+	writePidfile()
+	go func() {
+		for {
+			select {
+			case <-sigtermChannel:
+				gracefulCleanup()
+			}
+		}
+	}()
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
 	circularBuffer := logbuf.New(*fLogBufLines)
 	logger := log.New(circularBuffer, "", log.LstdFlags)
+	handleSignals(logger)
 	applicationList := createApplicationList()
 	applicationStats := datastructs.NewApplicationStatuses()
 	connectionErrors := newConnectionErrorsType()

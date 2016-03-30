@@ -872,8 +872,7 @@ func gracefulCleanup() {
 func writePidfile() {
 	file, err := os.Create(*fPidFile)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(1)
+		return
 	}
 	defer file.Close()
 	fmt.Fprintln(file, os.Getpid())

@@ -2,7 +2,6 @@
 package store
 
 import (
-	"github.com/Symantec/scotty"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -46,7 +45,7 @@ func (m *MetricInfo) Bits() int {
 // Record represents one value for one particular metric at a particular
 // time.
 type Record struct {
-	ApplicationId *scotty.Endpoint
+	ApplicationId interface{}
 	Info          *MetricInfo
 	TimeStamp     float64
 	Value         interface{}
@@ -71,7 +70,7 @@ func AppendTo(result *[]*Record) Appender {
 type Visitor interface {
 
 	// Called once for each endpoint registered with the Store instance
-	Visit(store *Store, endpoint *scotty.Endpoint) error
+	Visit(store *Store, endpoint interface{}) error
 }
 
 type Builder struct {
@@ -83,7 +82,7 @@ type Builder struct {
 func NewBuilder(
 	valueCountPerPage, pageCount int) *Builder {
 	store := &Store{
-		byApplication:    make(map[*scotty.Endpoint]*timeSeriesCollectionType),
+		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
 		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
 		totalPageCount:   pageCount,
 		maxValuesPerPage: valueCountPerPage,
@@ -94,7 +93,7 @@ func NewBuilder(
 
 // RegisterEndpoint registers a endpoint with the store being built.
 // RegisterEndpoint panics if endpoint is already registered.
-func (b *Builder) RegisterEndpoint(endpointId *scotty.Endpoint) {
+func (b *Builder) RegisterEndpoint(endpointId interface{}) {
 	b.registerEndpoint(endpointId)
 }
 
@@ -135,7 +134,7 @@ func (i *Iterator) Commit() {
 // Client must register all the endpoints with the Store
 // instance before storing any metrics.
 type Store struct {
-	byApplication    map[*scotty.Endpoint]*timeSeriesCollectionType
+	byApplication    map[interface{}]*timeSeriesCollectionType
 	supplier         *pageSupplierType
 	totalPageCount   int
 	maxValuesPerPage int
@@ -155,7 +154,7 @@ func (s *Store) NewBuilder() *Builder {
 // same endpointId. However multiple goroutines may call Add() as long as
 // long as each passes a different endpointId.
 func (s *Store) Add(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	timestamp float64, m *trimessages.Metric) bool {
 	return s.add(endpointId, timestamp, m)
 }
@@ -168,7 +167,7 @@ func (s *Store) Add(
 // with the same endpointId. However multiple goroutines may call
 // AddBatch() as long as long as each passes a different endpointId.
 func (s *Store) AddBatch(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	timestamp float64,
 	metricList trimessages.MetricList,
 	filter func(*trimessages.Metric) bool) int {
@@ -186,7 +185,7 @@ func (s *Store) AddBatch(
 // same path. This could happen if the definition of a metric changes.
 func (s *Store) ByNameAndEndpoint(
 	path string,
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byNameAndEndpoint(
@@ -204,7 +203,7 @@ func (s *Store) ByNameAndEndpoint(
 // same path. This could happen if the definition of a metric changes.
 func (s *Store) ByPrefixAndEndpoint(
 	prefix string,
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byPrefixAndEndpoint(
@@ -220,7 +219,7 @@ func (s *Store) ByPrefixAndEndpoint(
 // then sorted by time in descending order within each metric.
 // The endpoints and metrics are in no particular order.
 func (s *Store) ByEndpoint(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byEndpoint(endpointId, start, end, result)
@@ -228,7 +227,7 @@ func (s *Store) ByEndpoint(
 
 // Iterators returns all the Iterators for all the time series for the
 // given endpoint.
-func (s *Store) Iterators(endpointId *scotty.Endpoint) []*Iterator {
+func (s *Store) Iterators(endpointId interface{}) []*Iterator {
 	return s.iterators(endpointId)
 }
 
@@ -236,7 +235,7 @@ func (s *Store) Iterators(endpointId *scotty.Endpoint) []*Iterator {
 // given endpoint.
 // LatestByEndpoint appends the records to result in no particular order.
 func (s *Store) LatestByEndpoint(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	result Appender) {
 	s.latestByEndpoint(endpointId, result)
 }

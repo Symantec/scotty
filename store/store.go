@@ -2,7 +2,6 @@ package store
 
 import (
 	"container/list"
-	"github.com/Symantec/scotty"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -109,7 +108,7 @@ func (p pageType) IsFull() bool {
 }
 
 func (p pageType) Fetch(
-	applicationId *scotty.Endpoint,
+	applicationId interface{},
 	id *MetricInfo,
 	start, end float64,
 	result Appender) (keepGoing bool) {
@@ -346,7 +345,7 @@ func (t *timeSeriesType) Add(
 }
 
 func (t *timeSeriesType) Fetch(
-	applicationId *scotty.Endpoint,
+	applicationId interface{},
 	start, end float64,
 	result Appender) {
 	t.lock.Lock()
@@ -365,7 +364,7 @@ func (t *timeSeriesType) latestPage() *pageType {
 }
 
 type timeSeriesCollectionType struct {
-	applicationId   *scotty.Endpoint
+	applicationId   interface{}
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
@@ -373,7 +372,7 @@ type timeSeriesCollectionType struct {
 }
 
 func newTimeSeriesCollectionType(
-	app *scotty.Endpoint) *timeSeriesCollectionType {
+	app interface{}) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
 		applicationId: app,
 		timeSeries:    make(map[*MetricInfo]*timeSeriesType),
@@ -621,7 +620,7 @@ func (l *recordListType) Append(r *Record) {
 	*l = append(*l, &recordCopy)
 }
 
-func (b *Builder) registerEndpoint(endpointId *scotty.Endpoint) {
+func (b *Builder) registerEndpoint(endpointId interface{}) {
 
 	if (*b.store).byApplication[endpointId] != nil {
 		panic("Endpoint already registered")
@@ -647,7 +646,7 @@ func (b *Builder) build() *Store {
 
 func (s *Store) newBuilder() *Builder {
 	store := &Store{
-		byApplication:    make(map[*scotty.Endpoint]*timeSeriesCollectionType),
+		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
 		supplier:         s.supplier,
 		totalPageCount:   s.totalPageCount,
 		maxValuesPerPage: s.maxValuesPerPage,
@@ -656,7 +655,7 @@ func (s *Store) newBuilder() *Builder {
 }
 
 func (s *Store) add(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	timestamp float64, m *trimessages.Metric) bool {
 	return s.byApplication[endpointId].Add(timestamp, m, s.supplier)
 }
@@ -687,7 +686,7 @@ func (i *Iterator) commit() {
 }
 
 func (s *Store) addBatch(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	timestamp float64,
 	metricList trimessages.MetricList,
 	filter func(*trimessages.Metric) bool) int {
@@ -704,13 +703,13 @@ func (s *Store) addBatch(
 	return result
 }
 
-func (s *Store) iterators(endpointId *scotty.Endpoint) []*Iterator {
+func (s *Store) iterators(endpointId interface{}) []*Iterator {
 	return s.byApplication[endpointId].Iterators()
 }
 
 func (s *Store) byNameAndEndpoint(
 	name string,
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byApplication[endpointId].ByName(name, start, end, result)
@@ -718,21 +717,21 @@ func (s *Store) byNameAndEndpoint(
 
 func (s *Store) byPrefixAndEndpoint(
 	prefix string,
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byApplication[endpointId].ByPrefix(prefix, start, end, result)
 }
 
 func (s *Store) byEndpoint(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	start, end float64,
 	result Appender) {
 	s.byApplication[endpointId].ByPrefix("", start, end, result)
 }
 
 func (s *Store) latestByEndpoint(
-	endpointId *scotty.Endpoint,
+	endpointId interface{},
 	result Appender) {
 	s.byApplication[endpointId].Latest(result)
 }

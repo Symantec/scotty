@@ -105,18 +105,16 @@ func (i *Iterator) Commit() {
 // Client must register all the endpoints with the Store
 // instance before storing any metrics.
 type Store struct {
-	byApplication    map[interface{}]*timeSeriesCollectionType
-	supplier         *pageSupplierType
-	totalPageCount   int
-	maxValuesPerPage int
+	byApplication map[interface{}]*timeSeriesCollectionType
+	supplier      *pageQueueType
+	metrics       *storeMetricsType
 }
 
 func NewStore(valueCountPerPage, pageCount int) *Store {
 	return &Store{
-		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
-		supplier:         newPageSupplierType(valueCountPerPage, pageCount),
-		totalPageCount:   pageCount,
-		maxValuesPerPage: valueCountPerPage,
+		byApplication: make(map[interface{}]*timeSeriesCollectionType),
+		supplier:      newPageQueueType(valueCountPerPage, pageCount, 0.1),
+		metrics:       newStoreMetricsType(),
 	}
 }
 
@@ -128,22 +126,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 	s.registerEndpoint(endpointId)
 }
 
-// Add adds a metric value to this store. Add only stores a metric value
-// if it has changed. Add returns true if the value for the metric changed
-// or false otherwise.
-// timestamp is seconds after Jan 1, 1970 GMT
-// No two goroutines may call Add() on a Store instance concurrently with the
-// same endpointId. However multiple goroutines may call Add() as long as
-// long as each passes a different endpointId.
-func (s *Store) Add(
-	endpointId interface{},
-	timestamp float64, m *trimessages.Metric) bool {
-	return s.add(endpointId, timestamp, m)
-}
-
-// AddBatch works like Add but adds several metric values at once.
-// If filter is non-nill, AddBatch ignores any metrics in metricList for
-// which filter returns false.
+// AddBatch adds metric values.
 // AddBatch returns the total number of metric values added.
 // No two goroutines may call AddBatch() on a Store instance concurrently
 // with the same endpointId. However multiple goroutines may call
@@ -151,9 +134,17 @@ func (s *Store) Add(
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
-	metricList trimessages.MetricList,
-	filter func(*trimessages.Metric) bool) int {
-	return s.addBatch(endpointId, timestamp, metricList, filter)
+	metricList trimessages.MetricList) int {
+	return s.addBatch(endpointId, timestamp, metricList)
+}
+
+// TODO: Make so that Add does not change the priority of the pages of
+// the other time series.
+func (s *Store) Add(
+	endpointId interface{},
+	timestamp float64,
+	metric *trimessages.Metric) bool {
+	return s.addBatch(endpointId, timestamp, trimessages.MetricList{metric}) == 1
 }
 
 // ByNameAndEndpoint returns records for a metric by path and endpoint and
@@ -234,11 +225,4 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 // this instance.
 func (s *Store) RegisterMetrics() error {
 	return s.registerMetrics()
-}
-
-// AvailablePages returns the number of pages available for collecting
-// new metrics. This count incudes pages that are currently in use but
-// are eligible to be recycled.
-func (s *Store) AvailablePages() int {
-	return s.supplier.Len()
 }

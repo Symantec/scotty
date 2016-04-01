@@ -95,7 +95,7 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	aStore := store.NewStore(2, 3)
+	aStore := store.NewStore(2, 3) // Stores 2*3 + 1 values
 	aStore.RegisterEndpoint(kEndpoint0)
 
 	firstMetric := messages.Metric{
@@ -111,7 +111,7 @@ func TestIterator(t *testing.T) {
 		Kind:        types.Int64,
 		Bits:        64}
 
-	// Adding 7 values evicts first 2 values
+	// Adding 8 values evicts first 2 values
 	firstMetric.Value = 1
 	add(t, aStore, kEndpoint0, 100.0, &firstMetric, true)
 	firstMetric.Value = 2
@@ -126,6 +126,8 @@ func TestIterator(t *testing.T) {
 	add(t, aStore, kEndpoint0, 150.0, &firstMetric, true)
 	firstMetric.Value = 7
 	add(t, aStore, kEndpoint0, 160.0, &firstMetric, true)
+	firstMetric.Value = 8
+	add(t, aStore, kEndpoint0, 170.0, &firstMetric, true)
 
 	iterators := aStore.Iterators(kEndpoint0)
 	assertValueEquals(t, 1, len(iterators))
@@ -210,18 +212,19 @@ func TestIterator(t *testing.T) {
 	iterators[0].Commit()
 	iterators[0].Commit()
 
-	// No more values to consume
+	// Now we have past the pages and are at the last value
 	iterators = aStore.Iterators(kEndpoint0)
 	assertValueEquals(t, 1, len(iterators))
 
 	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 170.0, ts)
+	assertValueEquals(t, 8, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
 	assertValueEquals(t, nil, value)
 
-	// Now add a new value
-	firstMetric.Value = 8
-	add(t, aStore, kEndpoint0, 170.0, &firstMetric, true)
-
-	// Now there is one more value to consume
+	// No commit, so we replay the same values
 	iterators = aStore.Iterators(kEndpoint0)
 	assertValueEquals(t, 1, len(iterators))
 
@@ -267,6 +270,31 @@ func TestIterator(t *testing.T) {
 	ts, value, skipped = iterators[0].Next()
 	assertValueEquals(t, nil, value)
 
+	// Now add a new value
+	firstMetric.Value = 10
+	add(t, aStore, kEndpoint0, 190.0, &firstMetric, true)
+
+	// Now there is one more value to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, 190.0, ts)
+	assertValueEquals(t, 10, value)
+	assertValueEquals(t, 0, skipped)
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
+	iterators[0].Commit()
+
+	// No more values to consume
+	iterators = aStore.Iterators(kEndpoint0)
+	assertValueEquals(t, 1, len(iterators))
+
+	ts, value, skipped = iterators[0].Next()
+	assertValueEquals(t, nil, value)
+
 	// Add a different metric
 	secondMetric.Value = 1
 	add(t, aStore, kEndpoint0, 100.0, &secondMetric, true)
@@ -277,7 +305,7 @@ func TestIterator(t *testing.T) {
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
-	aStore := store.NewStore(1, 12)
+	aStore := store.NewStore(1, 8)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -521,11 +549,11 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 200.0, result[barIdx+1].TimeStamp)
 	assertValueEquals(t, 10, result[barIdx+1].Value)
 
-	// Now add 2 more values. Doing this should evict
-	// The earliest /foo/bar and /foo/baz value on endpoint0.
-	// leaving only
-	// t=112, value=4 and t=124, value=8 for /foo/bar.
-	// t=115, value=5 and t=127, value=9 for /foo/baz
+	// Now add 2 more values. Doing this should evict the first 2
+	// values on foo/bar on endpoint0 and leave foo/baz alone because
+	// there is no longer a 2 page minimum.
+	// t=124, value=8 for /foo/bar.
+	// t=103, value=1, t=115, value=5 and t=127, value=9 for /foo/baz
 	aMetric.Path = "/foo/baz"
 	aMetric.Value = 13
 	add(t, aStore, kEndpoint0, 139.0, &aMetric, true)
@@ -534,44 +562,30 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	result = nil
 	aStore.ByNameAndEndpoint(
-		"/foo/bar", kEndpoint0, 124.0, 125.0, store.AppendTo(&result))
+		"/foo/bar", kEndpoint0, 123.0, 125.0, store.AppendTo(&result))
 
 	assertValueEquals(t, 1, len(result))
 	assertValueEquals(t, 124.0, result[0].TimeStamp)
 	assertValueEquals(t, 8, result[0].Value)
-
-	result = nil
-	aStore.ByNameAndEndpoint(
-		"/foo/bar", kEndpoint0, 123.0, 125.0, store.AppendTo(&result))
-
-	assertValueEquals(t, 2, len(result))
-	assertValueEquals(t, 124.0, result[0].TimeStamp)
-	assertValueEquals(t, 8, result[0].Value)
-	assertValueEquals(t, 112.0, result[1].TimeStamp)
-	assertValueEquals(t, 4, result[1].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/bar", kEndpoint0, 100.0, 125.0, store.AppendTo(&result))
 
-	assertValueEquals(t, 2, len(result))
+	assertValueEquals(t, 1, len(result))
 	assertValueEquals(t, 124.0, result[0].TimeStamp)
 	assertValueEquals(t, 8, result[0].Value)
-	assertValueEquals(t, 112.0, result[1].TimeStamp)
-	assertValueEquals(t, 4, result[1].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/bar", kEndpoint0, 100.0, 124.0, store.AppendTo(&result))
 
-	assertValueEquals(t, 1, len(result))
-	assertValueEquals(t, 112.0, result[0].TimeStamp)
-	assertValueEquals(t, 4, result[0].Value)
+	assertValueEquals(t, 0, len(result))
 
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/baz", kEndpoint0, 0, 1000.0, store.AppendTo(&result))
-	assertValueEquals(t, 4, len(result))
+	assertValueEquals(t, 5, len(result))
 
 	assertValueEquals(t, 145.0, result[0].TimeStamp)
 	assertValueEquals(t, 15, result[0].Value)
@@ -581,6 +595,8 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 9, result[2].Value)
 	assertValueEquals(t, 115.0, result[3].TimeStamp)
 	assertValueEquals(t, 5, result[3].Value)
+	assertValueEquals(t, 103.0, result[4].TimeStamp)
+	assertValueEquals(t, 1, result[4].Value)
 
 	// Now test get latest metrics.
 	result = nil
@@ -596,14 +612,24 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 145.0, result[bazIdx].TimeStamp)
 	assertValueEquals(t, 15, result[bazIdx].Value)
 
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/baz", kEndpoint0, 103.0, 104.0, store.AppendTo(&result))
+	assertValueEquals(t, 1, len(result))
+
 	// Now add "foo/baz" values but change the "foo/baz" metric so
-	// that it is different.
-	// This will cause the earliest value for /foo/bar in endpoint1 to
-	// get evicted, time=200 value=10
+	// that it is different. Because this is a new metric with just
+	// the latest value, no page eviction takes place.
 	aMetric.Path = "/foo/baz"
 	aMetric.Bits = 32
 	aMetric.Value = 29
 	add(t, aStore, kEndpoint0, 145.0, &aMetric, true)
+
+	// No eviction
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/baz", kEndpoint0, 103.0, 104.0, store.AppendTo(&result))
+	assertValueEquals(t, 1, len(result))
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -627,16 +653,13 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/bar", kEndpoint1, 0.0, 1000.0, store.AppendTo(&result))
-	assertValueEquals(t, 2, len(result))
+	assertValueEquals(t, 3, len(result))
 	assertValueEquals(t, 224.0, result[0].TimeStamp)
 	assertValueEquals(t, 18, result[0].Value)
 	assertValueEquals(t, 212.0, result[1].TimeStamp)
 	assertValueEquals(t, 14, result[1].Value)
-
-	result = nil
-	aStore.ByNameAndEndpoint(
-		"/foo/baz", kEndpoint1, 0.0, 1000.0, store.AppendTo(&result))
-	assertValueEquals(t, 3, len(result))
+	assertValueEquals(t, 200.0, result[2].TimeStamp)
+	assertValueEquals(t, 10, result[2].Value)
 }
 
 func add(

@@ -243,6 +243,7 @@ type timeSeriesType struct {
 	lastValue     [1]tsValueType
 	leftToWrite   int
 	pages         list.List
+	active        bool
 	nextPageToUse *pageWithMetaDataType
 }
 
@@ -256,6 +257,7 @@ func newTimeSeriesType(
 	result.lastValue[0].Value = value
 	result.leftToWrite = 1
 	result.pages.Init()
+	result.active = true
 	result.metrics.LeftToWritePerMetricDist.Add(
 		float64(result.leftToWrite))
 	result.metrics.PagesPerMetricDist.Add(0.0)
@@ -433,6 +435,22 @@ func (t *timeSeriesType) Fetch(
 	}
 }
 
+// SetActive sets whether or not this time series is active and returns the
+// old status.
+func (t *timeSeriesType) SetActive(active bool) (oldStatus bool) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	oldStatus = t.active
+	t.active = active
+	return
+}
+
+func (t *timeSeriesType) Active() bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.active
+}
+
 // May return nil if time series has no pages
 func (t *timeSeriesType) latestPage() (result *pageType) {
 	back := t.pages.Back()
@@ -443,8 +461,16 @@ func (t *timeSeriesType) latestPage() (result *pageType) {
 }
 
 type timeSeriesCollectionType struct {
-	applicationId   interface{}
-	metrics         *storeMetricsType
+	applicationId interface{}
+	metrics       *storeMetricsType
+	// A function must hold this lock when changing the status of
+	// any time series in this instance or when adding a new time series
+	// to ensure that when it returns, the status of each time series
+	// is consistent with the status of its corresponding pages.
+	// If this lock is acquired, it must be acquired before the normal
+	// lock of this instance.
+	statusChangeLock sync.Mutex
+	// Normal lock of this instance.
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
@@ -470,6 +496,16 @@ func (c *timeSeriesCollectionType) Iterators() (result []*Iterator) {
 	for _, ts := range c.timeSeries {
 		result[idx] = newIterator(ts)
 		idx++
+	}
+	return
+}
+
+func (c *timeSeriesCollectionType) TsAll() (
+	result []*timeSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for _, ts := range c.timeSeries {
+		result = append(result, ts)
 	}
 	return
 }
@@ -537,11 +573,29 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	return
 }
 
+func (c *timeSeriesCollectionType) MarkInactive(supplier *pageQueueType) {
+	var reclaimHighList []*pageWithMetaDataType
+	c.statusChangeLock.Lock()
+	defer c.statusChangeLock.Unlock()
+	tslist := c.TsAll()
+	for i := range tslist {
+		// If it was active
+		if tslist[i].SetActive(false) {
+			tslist[i].AppendPagesTo(&reclaimHighList)
+		}
+	}
+	// reclaimHighList has all the pages that should be reclaimed with
+	// high priority
+	supplier.ReclaimHigh(reclaimHighList)
+}
+
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	metrics trimessages.MetricList,
 	supplier *pageQueueType) int {
 	var reclaimLowList, reclaimHighList []*pageWithMetaDataType
+	c.statusChangeLock.Lock()
+	defer c.statusChangeLock.Unlock()
 	fetched, newOnes, notFetched := c.LookupBatch(timestamp, metrics)
 	addedCount := len(newOnes)
 	// For each metric in fetched, manually add its value to its
@@ -559,10 +613,16 @@ func (c *timeSeriesCollectionType) AddBatch(
 		if needToAdd {
 			addedCount++
 		}
-		timeSeries.AppendPagesTo(&reclaimLowList)
+		// If status went from inactive to active.
+		if !timeSeries.SetActive(true) {
+			timeSeries.AppendPagesTo(&reclaimLowList)
+		}
 	}
 	for i := range notFetched {
-		notFetched[i].AppendPagesTo(&reclaimHighList)
+		// If status went from active to inactive.
+		if notFetched[i].SetActive(false) {
+			notFetched[i].AppendPagesTo(&reclaimHighList)
+		}
 	}
 	// reclaimHighList has all the pages that should be reclaimed with
 	// high priority
@@ -792,6 +852,10 @@ func (s *Store) byEndpoint(
 	start, end float64,
 	result Appender) {
 	s.byApplication[endpointId].ByPrefix("", start, end, result)
+}
+
+func (s *Store) markEndpointInactive(endpointId interface{}) {
+	s.byApplication[endpointId].MarkInactive(s.supplier)
 }
 
 func (s *Store) latestByEndpoint(

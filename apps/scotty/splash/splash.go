@@ -46,6 +46,9 @@ func newView(
 	apps []*datastructs.ApplicationStatus) *view {
 	result := &view{}
 	for _, app := range apps {
+		if !app.Active {
+			continue
+		}
 		if app.Down {
 			result.TotalFailedApps++
 		}
@@ -59,7 +62,6 @@ type HtmlWriter interface {
 }
 
 type Handler struct {
-	HPS *datastructs.HostsPortsAndStore
 	AS  *datastructs.ApplicationStatuses
 	Log HtmlWriter
 }
@@ -69,8 +71,7 @@ func (h *Handler) ServeHTTP(
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
 	w.Header().Set("Content-Type", "text/html")
-	_, hostsAndPorts := h.HPS.Get()
-	result := h.AS.GetAll(hostsAndPorts)
+	result := h.AS.All()
 	fmt.Fprintln(writer, "<html>")
 	fmt.Fprintln(writer, "<title>Scotty status page</title>")
 	fmt.Fprintln(writer, "<body>")

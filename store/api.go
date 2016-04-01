@@ -128,9 +128,6 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 
 // AddBatch adds metric values.
 // AddBatch returns the total number of metric values added.
-// No two goroutines may call AddBatch() on a Store instance concurrently
-// with the same endpointId. However multiple goroutines may call
-// AddBatch() as long as long as each passes a different endpointId.
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
@@ -225,4 +222,9 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 // this instance.
 func (s *Store) RegisterMetrics() error {
 	return s.registerMetrics()
+}
+
+// TODO: Needs a test
+func (s *Store) MarkEndpointInactive(endpointId interface{}) {
+	s.markEndpointInactive(endpointId)
 }

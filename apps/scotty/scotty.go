@@ -551,7 +551,6 @@ func gatherDataForEndpoint(
 
 	}
 	sortMetricsByPath(result)
-
 	return
 }
 
@@ -609,12 +608,10 @@ func httpError(w http.ResponseWriter, status int) {
 
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
-	HostsPortsAndStore *datastructs.HostsPortsAndStore
-	AppList            *datastructs.ApplicationList
+	AS *datastructs.ApplicationStatuses
 }
 
 func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	metricStore, endpoints := h.HostsPortsAndStore.Get()
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
 	hostNameAndPath := strings.SplitN(r.URL.Path, "/", 3)
@@ -634,18 +631,13 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		history = 60
 	}
-	app := h.AppList.ByName(name)
-	if app == nil {
+	endpoint, metricStore := h.AS.EndpointIdByHostAndName(host, name)
+	if endpoint == nil {
 		httpError(w, 404)
 		return
 	}
-	var data messages.EndpointMetricsList
-	endpoint := endpoints[datastructs.HostAndPort{Host: host, Port: app.Port()}]
-	if endpoint != nil {
-		data = gatherDataForEndpoint(metricStore, endpoint, path, history, isSingleton)
-	} else {
-		data = make(messages.EndpointMetricsList, 0)
-	}
+	data := gatherDataForEndpoint(
+		metricStore, endpoint, path, history, isSingleton)
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
@@ -722,55 +714,39 @@ func computePageCount() int {
 	return *fPageCount
 }
 
-func updateEndpoints(
-	machines *mdb.Mdb,
-	apps []*datastructs.Application,
-	hostsPortsAndStore *datastructs.HostsPortsAndStore) {
-	_, endpoints := hostsPortsAndStore.Get()
-	newEndpoints := make(datastructs.HostsAndPorts)
-	addEndpoints(machines, apps, endpoints, newEndpoints)
-	hostsPortsAndStore.Update(newEndpoints)
-}
-
-func addEndpoints(
-	machines *mdb.Mdb,
-	apps []*datastructs.Application,
-	origHostsAndPorts,
-	hostsAndPorts datastructs.HostsAndPorts) {
-	for _, machine := range machines.Machines {
-		for _, app := range apps {
-			hostsAndPorts.AddIfAbsent(origHostsAndPorts, machine.Hostname, app.Port())
-		}
+func hostNames(machines []mdb.Machine) (result []string) {
+	result = make([]string, len(machines))
+	for i := range machines {
+		result[i] = machines[i].Hostname
 	}
+	return
 }
 
-func initHostsPortsAndStore(
+func createApplicationStats(
 	appList *datastructs.ApplicationList,
-	logger *log.Logger,
-	result *datastructs.HostsPortsAndStore) {
-	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
-	firstEndpoints := make(datastructs.HostsAndPorts)
-	addEndpoints(<-mdbChannel, appList.All(), nil, firstEndpoints)
+	logger *log.Logger) *datastructs.ApplicationStatuses {
 	fmt.Println("Initialization started.")
-	// Value interface + float64 = 24 bytes
-	result.Init(
-		(*fBytesPerPage)/24, computePageCount(), firstEndpoints)
-	fmt.Println("Initialization complete.")
-	firstStore, _ := result.Get()
-	if err := firstStore.RegisterMetrics(); err != nil {
+	astore := store.NewStore((*fBytesPerPage)/24, computePageCount())
+	if err := astore.RegisterMetrics(); err != nil {
 		log.Fatal(err)
 	}
+	stats := datastructs.NewApplicationStatuses(appList, astore)
+	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
+	machines := <-mdbChannel
+	stats.MarkHostsActiveExclusively(hostNames(machines.Machines))
+	fmt.Println("Initialization complete.")
 	// Endpoint refresher goroutine
 	go func() {
 		for {
-			updateEndpoints(<-mdbChannel, appList.All(), result)
+			machines := <-mdbChannel
+			stats.MarkHostsActiveExclusively(
+				hostNames(machines.Machines))
 		}
 	}()
+	return stats
 }
 
 func startCollector(
-	hostsPortsAndStore *datastructs.HostsPortsAndStore,
-	appList *datastructs.ApplicationList,
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType) {
 	collector.SetConcurrentPolls(*fPollCount)
@@ -807,10 +783,9 @@ func startCollector(
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
 		for {
-			metricStore, endpoints := hostsPortsAndStore.Get()
+			endpoints, metricStore := appStats.ActiveEndpointIds()
 			logger := &loggerType{
 				Store:               metricStore,
-				AppList:             appList,
 				AppStats:            appStats,
 				ConnectionErrors:    connectionErrors,
 				CollectionTimesDist: collectionTimesDist,
@@ -829,8 +804,7 @@ func startCollector(
 }
 
 func startPStoreLoop(
-	hostsPortsAndStore *datastructs.HostsPortsAndStore,
-	appList *datastructs.ApplicationList,
+	stats *datastructs.ApplicationStatuses,
 	logger *log.Logger) {
 	go func() {
 		writer, err := newWriter()
@@ -838,7 +812,8 @@ func startPStoreLoop(
 			logger.Println(err)
 			return
 		}
-		pstoreHandler := newPStoreHandler(writer, appList, *fPStoreBatchSize)
+		pstoreHandler := newPStoreHandler(
+			writer, stats.ApplicationList(), *fPStoreBatchSize)
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}
@@ -849,7 +824,7 @@ func startPStoreLoop(
 		// pstoreHandler instance. accessing pstoreHandler metrics is the
 		// one exception to this rule.
 		for {
-			metricStore, _ := hostsPortsAndStore.Get()
+			metricStore := stats.Store()
 			writeTime := time.Now()
 			pstoreHandler.StartVisit()
 			metricStore.VisitAllEndpoints(pstoreHandler)
@@ -899,42 +874,29 @@ func main() {
 	circularBuffer := logbuf.New(*fLogBufLines)
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
-	applicationList := createApplicationList()
-	applicationStats := datastructs.NewApplicationStatuses()
+	applicationStats := createApplicationStats(
+		createApplicationList(), logger)
 	connectionErrors := newConnectionErrorsType()
-	var hostsPortsAndStore datastructs.HostsPortsAndStore
-	initHostsPortsAndStore(applicationList, logger, &hostsPortsAndStore)
-	startCollector(
-		&hostsPortsAndStore,
-		applicationList,
-		applicationStats,
-		connectionErrors)
-	startPStoreLoop(
-		&hostsPortsAndStore,
-		applicationList,
-		logger)
+	startCollector(applicationStats, connectionErrors)
+	startPStoreLoop(applicationStats, logger)
 
 	http.Handle(
 		"/",
 		gzipHandler{&splash.Handler{
 			AS:  applicationStats,
-			HPS: &hostsPortsAndStore,
 			Log: circularBuffer,
 		}})
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
-			AS:  applicationStats,
-			HPS: &hostsPortsAndStore,
-			AL:  applicationList,
+			AS: applicationStats,
 		}})
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(
 			"/api/hosts/",
 			gzipHandler{&byEndpointHandler{
-				HostsPortsAndStore: &hostsPortsAndStore,
-				AppList:            applicationList,
+				AS: applicationStats,
 			}}))
 	http.Handle(
 		"/api/errors/",

@@ -10,47 +10,24 @@ import (
 	"time"
 )
 
-func (h HostsAndPorts) copy() HostsAndPorts {
-	result := make(HostsAndPorts, len(h))
-	for key, value := range h {
-		result[key] = value
+type hostAndPort struct {
+	Host string
+	Port int
+}
+
+func (a *ApplicationStatuses) newApplicationStatus(
+	e *scotty.Endpoint) *ApplicationStatus {
+	app := a.appList.ByPort(e.Port())
+	if app == nil {
+		panic("Oops, unknown port in endpoint.")
 	}
-	return result
+	return &ApplicationStatus{EndpointId: e, Name: app.Name()}
 }
 
-func (h HostsAndPorts) addIfAbsent(orig HostsAndPorts, host string, port int) {
-	hostAndPort := HostAndPort{Host: host, Port: port}
-	origEndpoint := orig[hostAndPort]
-	if origEndpoint == nil {
-		h[hostAndPort] = scotty.NewEndpoint(host, port)
-	} else {
-		h[hostAndPort] = origEndpoint
-	}
-}
-
-func (h HostsAndPorts) updateStore(s *store.Store) {
-	for _, value := range h {
-		s.RegisterEndpoint(value)
-	}
-}
-
-func (h *HostsPortsAndStore) get() (
-	s *store.Store, hostsAndPorts HostsAndPorts) {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	return h.store, h.hostsAndPorts
-}
-
-func (h *HostsPortsAndStore) update(
-	newHostsAndPorts HostsAndPorts, newStore *store.Store) {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	h.hostsAndPorts = newHostsAndPorts
-	h.store = newStore
-}
-
-func newApplicationStatus(e *scotty.Endpoint) *ApplicationStatus {
-	return &ApplicationStatus{EndpointId: e}
+func (a *ApplicationStatuses) store() *store.Store {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	return a.currentStore
 }
 
 func (a *ApplicationStatuses) update(
@@ -59,8 +36,7 @@ func (a *ApplicationStatuses) update(
 	defer a.lock.Unlock()
 	record := a.byEndpoint[e]
 	if record == nil {
-		record = newApplicationStatus(e)
-		a.byEndpoint[e] = record
+		panic("Unknown endpoint in Update.")
 	}
 	record.Status = newState.Status()
 	if record.Status == scotty.Synced {
@@ -72,14 +48,77 @@ func (a *ApplicationStatuses) update(
 	}
 }
 
+func newStringSet(activeHosts []string) (result map[string]bool) {
+	result = make(map[string]bool)
+	for i := range activeHosts {
+		result[activeHosts[i]] = true
+	}
+	return
+}
+
+func (a *ApplicationStatuses) _markHostsActiveExclusively(
+	activeHosts []string) (
+	toBecomeInactive []*scotty.Endpoint,
+	astore *store.Store) {
+	activeHostSet := newStringSet(activeHosts)
+	apps := a.appList.All()
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	storeCopy := a.currentStore
+	// First mark everything that is not part of the new list of hosts
+	// as inactive.
+	for e, val := range a.byEndpoint {
+		if !activeHostSet[e.HostName()] {
+			// Make endpoint inactive
+			if val.Active {
+				val.Active = false
+				toBecomeInactive = append(toBecomeInactive, e)
+			}
+		}
+	}
+	// Now mark new hosts active
+	for i := range activeHosts {
+		for j := range apps {
+			hp := hostAndPort{
+				Host: activeHosts[i],
+				Port: apps[j].Port(),
+			}
+			activeEndpoint := a.byHostPort[hp]
+			if activeEndpoint == nil {
+				activeEndpoint = scotty.NewEndpoint(
+					hp.Host, hp.Port)
+				a.byHostPort[hp] = activeEndpoint
+				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(activeEndpoint)
+				if storeCopy == a.currentStore {
+					storeCopy = a.currentStore.ShallowCopy()
+				}
+				storeCopy.RegisterEndpoint(activeEndpoint)
+			}
+			a.byEndpoint[activeEndpoint].Active = true
+		}
+	}
+	a.currentStore = storeCopy
+	astore = a.currentStore
+	return
+}
+
+func (a *ApplicationStatuses) markHostsActiveExclusively(
+	activeHosts []string) {
+	a.statusChangeLock.Lock()
+	defer a.statusChangeLock.Unlock()
+	toBecomeInactive, astore := a._markHostsActiveExclusively(activeHosts)
+	for i := range toBecomeInactive {
+		astore.MarkEndpointInactive(toBecomeInactive[i])
+	}
+}
+
 func (a *ApplicationStatuses) logChangedMetricCount(
 	e *scotty.Endpoint, metricCount int) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	record := a.byEndpoint[e]
 	if record == nil {
-		record = newApplicationStatus(e)
-		a.byEndpoint[e] = record
+		panic("Unknown endpoint in LogChangedMetricCount.")
 	}
 	if record.InitialMetricCount == 0 {
 		record.InitialMetricCount = metricCount
@@ -89,21 +128,43 @@ func (a *ApplicationStatuses) logChangedMetricCount(
 	}
 }
 
-func (a *ApplicationStatuses) getAll(
-	hostsAndPorts HostsAndPorts) (result []*ApplicationStatus) {
-	result = make([]*ApplicationStatus, len(hostsAndPorts))
+func (a *ApplicationStatuses) all() (result []*ApplicationStatus) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
+	result = make([]*ApplicationStatus, len(a.byEndpoint))
 	idx := 0
-	for _, id := range hostsAndPorts {
-		record := a.byEndpoint[id]
-		if record == nil {
-			result[idx] = newApplicationStatus(id)
-		} else {
-			acopy := *record
-			result[idx] = &acopy
-		}
+	for _, val := range a.byEndpoint {
+		acopy := *val
+		result[idx] = &acopy
 		idx++
+	}
+	return
+}
+
+func (a *ApplicationStatuses) endpointIdByHostAndName(host, name string) (
+	id *scotty.Endpoint, astore *store.Store) {
+	app := a.appList.ByName(name)
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	if app == nil {
+		return nil, a.currentStore
+	}
+	hp := hostAndPort{
+		Host: host,
+		Port: app.Port(),
+	}
+	return a.byHostPort[hp], a.currentStore
+}
+
+func (a *ApplicationStatuses) activeEndpointIds() (
+	activeEndpoints []*scotty.Endpoint, astore *store.Store) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	astore = a.currentStore
+	for e, stat := range a.byEndpoint {
+		if stat.Active {
+			activeEndpoints = append(activeEndpoints, e)
+		}
 	}
 	return
 }

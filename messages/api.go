@@ -8,14 +8,17 @@ import (
 
 // Timestamped value represents a single timestamped value.
 // The type of value stored in the value field depends on the kind field
-// of the enclosing EndpointMetrics struct.
+// of the enclosing EndpointMetric struct.
 // See https://godoc.org/github.com/Symantec/tricorder/go/tricorder/messages#Metric
 // for more detail.
 type TimestampedValue struct {
 	// The timestamp of the value in seconds past Jan 1, 1970 GMT
 	Timestamp string `json:"timestamp"`
-	// value stored here.
+	// value stored here. 0 equivalent stored for inactive markers.
 	Value interface{} `json:"value"`
+	// True for real values, false for inactive markers. Used to
+	// distinguish inactive markers from real 0 values.
+	Active bool `json:"active"`
 }
 
 // TimestampedValueList represents a list of TimestampedValue instances.
@@ -24,8 +27,8 @@ type TimestampedValue struct {
 // in place.
 type TimestampedValueList []*TimestampedValue
 
-// EndpointMetrics represents the current metrics on an endpoint
-type EndpointMetrics struct {
+// EndpointMetric represents the values of a metric on an endpoint
+type EndpointMetric struct {
 	HostName    string               `json:"hostName,omitempty"`
 	Path        string               `json:"path,omitempty"`
 	Description string               `json:"description"`
@@ -35,10 +38,10 @@ type EndpointMetrics struct {
 	Values      TimestampedValueList `json:"values"`
 }
 
-// EndpointMetricsList represents a list of EndpointMetrics. Client should
-// treat EndpointMetricsList instances as immutable. In particular,
-// clients should not modify contained EndpointMetrics instances in place.
-type EndpointMetricsList []*EndpointMetrics
+// EndpointMetricList represents a list of EndpointMetric. Client should
+// treat EndpointMetricList instances as immutable. In particular,
+// clients should not modify contained EndpointMetric instances in place.
+type EndpointMetricList []*EndpointMetric
 
 // Error represents an error retrieving metrics from a particular endpoint
 type Error struct {

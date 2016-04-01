@@ -488,14 +488,14 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // appends to a messages.EndpointMetricsList.
 // endpointMetricsAppender is NOT threadsafe.
 type endpointMetricsAppender struct {
-	endpointMetrics *messages.EndpointMetricsList
+	endpointMetrics *messages.EndpointMetricList
 	lastInfo        *store.MetricInfo
-	lastMetric      *messages.EndpointMetrics
+	lastMetric      *messages.EndpointMetric
 }
 
 // newEndpointMetricsAppender creates a endpointMetricsAppender that appends
 // to result.
-func newEndpointMetricsAppender(result *messages.EndpointMetricsList) *endpointMetricsAppender {
+func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMetricsAppender {
 	return &endpointMetricsAppender{endpointMetrics: result}
 }
 
@@ -503,7 +503,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) {
 	if r.Info != a.lastInfo {
 		a.lastInfo = r.Info
 		_, jsonKind := trimessages.AsJson(nil, a.lastInfo.Kind(), a.lastInfo.Unit())
-		a.lastMetric = &messages.EndpointMetrics{
+		a.lastMetric = &messages.EndpointMetric{
 			Path:        a.lastInfo.Path(),
 			Kind:        jsonKind,
 			Description: a.lastInfo.Description(),
@@ -515,6 +515,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) {
 	newTimestampedValue := &messages.TimestampedValue{
 		Timestamp: trimessages.SinceEpochFloat(r.TimeStamp).String(),
 		Value:     jsonValue,
+		Active:    r.Active,
 	}
 	a.lastMetric.Values = append(a.lastMetric.Values, newTimestampedValue)
 }
@@ -533,8 +534,8 @@ func gatherDataForEndpoint(
 	endpoint *collector.Endpoint,
 	path string,
 	history int,
-	isSingleton bool) (result messages.EndpointMetricsList) {
-	result = make(messages.EndpointMetricsList, 0)
+	isSingleton bool) (result messages.EndpointMetricList) {
+	result = make(messages.EndpointMetricList, 0)
 	now := trimessages.TimeToFloat(time.Now())
 	appender := newEndpointMetricsAppender(&result)
 	if path == "" {
@@ -561,7 +562,7 @@ func gatherDataForEndpoint(
 }
 
 // byPath sorts metrics by path lexographically
-type byPath messages.EndpointMetricsList
+type byPath messages.EndpointMetricList
 
 func (b byPath) Len() int {
 	return len(b)
@@ -575,7 +576,7 @@ func (b byPath) Swap(i, j int) {
 	b[j], b[i] = b[i], b[j]
 }
 
-func sortMetricsByPath(result messages.EndpointMetricsList) {
+func sortMetricsByPath(result messages.EndpointMetricList) {
 	sort.Sort(byPath(result))
 }
 

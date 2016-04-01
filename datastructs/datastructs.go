@@ -3,7 +3,6 @@ package datastructs
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/store"
 	"gopkg.in/yaml.v2"
@@ -20,7 +19,7 @@ func (h HostsAndPorts) copy() HostsAndPorts {
 }
 
 func (h HostsAndPorts) addIfAbsent(orig HostsAndPorts, host string, port int) {
-	hostAndPort := fmt.Sprintf("%s:%d", host, port)
+	hostAndPort := HostAndPort{Host: host, Port: port}
 	origEndpoint := orig[hostAndPort]
 	if origEndpoint == nil {
 		h[hostAndPort] = scotty.NewEndpoint(host, port)
@@ -29,9 +28,9 @@ func (h HostsAndPorts) addIfAbsent(orig HostsAndPorts, host string, port int) {
 	}
 }
 
-func (h HostsAndPorts) updateBuilder(builder *store.Builder) {
+func (h HostsAndPorts) updateStore(s *store.Store) {
 	for _, value := range h {
-		builder.RegisterEndpoint(value)
+		s.RegisterEndpoint(value)
 	}
 }
 
@@ -43,12 +42,10 @@ func (h *HostsPortsAndStore) get() (
 }
 
 func (h *HostsPortsAndStore) update(
-	hostsAndPorts HostsAndPorts, builder *store.Builder) {
-	hostsAndPorts.updateBuilder(builder)
-	newStore := builder.Build()
+	newHostsAndPorts HostsAndPorts, newStore *store.Store) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	h.hostsAndPorts = hostsAndPorts
+	h.hostsAndPorts = newHostsAndPorts
 	h.store = newStore
 }
 

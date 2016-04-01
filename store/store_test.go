@@ -39,19 +39,17 @@ func (e *errVisitor) Visit(
 }
 
 func TestVisitorError(t *testing.T) {
-	builder := store.NewBuilder(1, 8)
-	builder.RegisterEndpoint(kEndpoint0)
-	builder.RegisterEndpoint(kEndpoint1)
-	aStore := builder.Build()
+	aStore := store.NewStore(1, 8)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aStore.RegisterEndpoint(kEndpoint1)
 	var ev errVisitor
 	assertValueEquals(t, kError, aStore.VisitAllEndpoints(&ev))
 }
 
 func TestAggregateAppenderAndVisitor(t *testing.T) {
-	builder := store.NewBuilder(1, 8)
-	builder.RegisterEndpoint(kEndpoint0)
-	builder.RegisterEndpoint(kEndpoint1)
-	aStore := builder.Build()
+	aStore := store.NewStore(1, 8)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aStore.RegisterEndpoint(kEndpoint1)
 
 	aMetric := messages.Metric{
 		Path:        "/foo/bar",
@@ -97,9 +95,8 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	builder := store.NewBuilder(2, 3)
-	builder.RegisterEndpoint(kEndpoint0)
-	aStore := builder.Build()
+	aStore := store.NewStore(2, 3)
+	aStore.RegisterEndpoint(kEndpoint0)
 
 	firstMetric := messages.Metric{
 		Path:        "/foo/bar",
@@ -279,72 +276,10 @@ func TestIterator(t *testing.T) {
 	assertValueEquals(t, 2, len(iterators))
 }
 
-func TestReclaimPages(t *testing.T) {
-	builder := store.NewBuilder(1, 8)
-	builder.RegisterEndpoint(kEndpoint0)
-	builder.RegisterEndpoint(kEndpoint1)
-	builder.RegisterEndpoint(kEndpoint2)
-	aStore := builder.Build()
-
-	firstMetric := messages.Metric{
-		Path:        "/foo/bar",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
-	secondMetric := messages.Metric{
-		Path:        "/foo/baz",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
-
-	if out := aStore.AvailablePages(); out != 8 {
-		t.Errorf("Expected 8 pages, got %d", out)
-	}
-
-	// Adding these metrics uses all available pages.
-	firstMetric.Value = 1
-	add(t, aStore, kEndpoint0, 100.0, &firstMetric, true)
-	firstMetric.Value = 2
-	add(t, aStore, kEndpoint0, 110.0, &firstMetric, true)
-	firstMetric.Value = 3
-	add(t, aStore, kEndpoint0, 120.0, &firstMetric, true)
-	firstMetric.Value = 4
-	add(t, aStore, kEndpoint0, 130.0, &firstMetric, true)
-	firstMetric.Value = 1
-	add(t, aStore, kEndpoint1, 100.0, &firstMetric, true)
-	firstMetric.Value = 2
-	add(t, aStore, kEndpoint1, 110.0, &firstMetric, true)
-	secondMetric.Value = 1
-	add(t, aStore, kEndpoint1, 100.0, &secondMetric, true)
-	firstMetric.Value = 1
-	add(t, aStore, kEndpoint2, 100.0, &firstMetric, true)
-
-	// All 8 pages used, but the first two of the four pages that
-	// kEndpoint0, firstMetric is using can be recycled.
-	if out := aStore.AvailablePages(); out != 2 {
-		t.Errorf("Expected 2 pages, got %d", out)
-	}
-
-	// Now update aStore to have brand new end points.
-	builder = aStore.NewBuilder()
-	builder.RegisterEndpoint(kEndpoint2)
-	builder.RegisterEndpoint(kEndpoint3)
-	aStore = builder.Build()
-
-	// We could recliam all pages except the one that
-	// kEndpoint2, firstMetric is using.
-	if out := aStore.AvailablePages(); out != 7 {
-		t.Errorf("Expected 7 of 8 pages available, got %d", out)
-	}
-}
-
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
-	builder := store.NewBuilder(1, 12)
-	builder.RegisterEndpoint(kEndpoint0)
-	builder.RegisterEndpoint(kEndpoint1)
-	aStore := builder.Build()
+	aStore := store.NewStore(1, 12)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aStore.RegisterEndpoint(kEndpoint1)
 
 	var result []*store.Record
 

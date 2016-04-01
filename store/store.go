@@ -212,10 +212,6 @@ type timeSeriesType struct {
 	ptr         tsValuePtrType
 	leftToWrite int
 	pages       list.List
-
-	// True if time series is closed. No new values may be added
-	// to a closed time series, but closed time series may give up pages.
-	closed bool
 }
 
 func newTimeSeriesType(
@@ -250,12 +246,6 @@ func (t *timeSeriesType) PageCount() int {
 	return t.pages.Len()
 }
 
-func (t *timeSeriesType) Close() {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	t.closed = true
-}
-
 func (t *timeSeriesType) Reap() *pageType {
 	t.lock.Lock()
 	defer t.lock.Unlock()
@@ -266,16 +256,12 @@ func (t *timeSeriesType) Reap() *pageType {
 	}
 	t.ptr.PopFirstPage(t.pages.Front())
 	result := t.pages.Remove(t.pages.Front()).(*pageType)
-	// Don't update last time evicted for closed time series.
-	// Also closed time series give up all their pages even
-	// partially filled ones.
-	if !t.closed {
-		latestTime, _ := result.LatestValue()
-		goLatestTime := trimessages.FloatToTime(latestTime)
-		gLastTimeEvicted = &goLatestTime
-		if !result.IsFull() {
-			panic("Oops, timeSeries is giving up a partially filled page.")
-		}
+
+	latestTime, _ := result.LatestValue()
+	goLatestTime := trimessages.FloatToTime(latestTime)
+	gLastTimeEvicted = &goLatestTime
+	if !result.IsFull() {
+		panic("Oops, timeSeries is giving up a partially filled page.")
 	}
 	gMetricValueCount.Add(int64(-len(*result)))
 	if oldLen == 1.0 {
@@ -289,9 +275,6 @@ func (t *timeSeriesType) Reap() *pageType {
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd, needPage bool) {
-	if t.closed {
-		return
-	}
 	latestPage := t.latestPage()
 	latestTs, latestValue := latestPage.LatestValue()
 	if timestamp <= latestTs || value == latestValue {
@@ -313,9 +296,6 @@ func (t *timeSeriesType) Add(
 	isAddSucceeded, isEligibleForReaping bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.closed {
-		return
-	}
 	// Oops, we are trying to add values to a timeSeries that has been
 	// drained of all its pages.
 	if t.ptr.pagePosit == nil {
@@ -368,7 +348,6 @@ type timeSeriesCollectionType struct {
 	lock            sync.Mutex
 	timeSeries      map[*MetricInfo]*timeSeriesType
 	metricInfoStore metricInfoStoreType
-	closed          bool
 }
 
 func newTimeSeriesCollectionType(
@@ -379,12 +358,6 @@ func newTimeSeriesCollectionType(
 	}
 	result.metricInfoStore.Init()
 	return result
-}
-
-func (c *timeSeriesCollectionType) Close() {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.closed = true
 }
 
 func (c *timeSeriesCollectionType) All() (result []*timeSeriesType) {
@@ -449,9 +422,6 @@ func (c *timeSeriesCollectionType) AddTimeSeries(
 	id *MetricInfo, series *timeSeriesType) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.closed {
-		return false
-	}
 	if c.timeSeries[id] != nil {
 		panic("Multiple goroutines trying to add to this time series collection.")
 	}
@@ -577,32 +547,6 @@ func (s *pageSupplierType) Len() int {
 	return s.queue.Len()
 }
 
-func (s *pageSupplierType) MoveToFront(belongsInFront map[*timeSeriesType]bool) {
-	frontCounts := make(map[reaperType]int, len(belongsInFront))
-	for series, ok := range belongsInFront {
-		if ok {
-			frontCounts[series] = series.PageCount()
-		}
-	}
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	e := s.queue.Front()
-	for e != nil {
-		current := e
-		// Advance e ahead of time as removing an Element resets its
-		// pointers.
-		e = e.Next()
-		if _, ok := frontCounts[current.Value.(reaperType)]; ok {
-			s.queue.Remove(current)
-		}
-	}
-	for reaper, count := range frontCounts {
-		for i := 0; i < count; i++ {
-			s.queue.PushFront(reaper)
-		}
-	}
-}
-
 func (s *pageSupplierType) pop() reaperType {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -620,38 +564,25 @@ func (l *recordListType) Append(r *Record) {
 	*l = append(*l, &recordCopy)
 }
 
-func (b *Builder) registerEndpoint(endpointId interface{}) {
+func (s *Store) registerEndpoint(endpointId interface{}) {
 
-	if (*b.store).byApplication[endpointId] != nil {
-		panic("Endpoint already registered")
+	if s.byApplication[endpointId] != nil {
+		return
 	}
-	var collection *timeSeriesCollectionType
-	if b.prevStore != nil {
-		collection = b.prevStore.byApplication[endpointId]
-	}
-	if collection == nil {
-		collection = newTimeSeriesCollectionType(endpointId)
-	}
-	(*b.store).byApplication[endpointId] = collection
+	s.byApplication[endpointId] = newTimeSeriesCollectionType(endpointId)
 }
 
-func (b *Builder) build() *Store {
-	if b.prevStore != nil {
-		closeUnusedInPreviousStore(*b.store, b.prevStore)
+func (s *Store) shallowCopy() *Store {
+	byApplicationCopy := make(map[interface{}]*timeSeriesCollectionType, len(s.byApplication))
+	for k, v := range s.byApplication {
+		byApplicationCopy[k] = v
 	}
-	result := *b.store
-	*b.store = nil
-	return result
-}
-
-func (s *Store) newBuilder() *Builder {
-	store := &Store{
-		byApplication:    make(map[interface{}]*timeSeriesCollectionType),
+	return &Store{
+		byApplication:    byApplicationCopy,
 		supplier:         s.supplier,
 		totalPageCount:   s.totalPageCount,
 		maxValuesPerPage: s.maxValuesPerPage,
 	}
-	return &Builder{store: &store, prevStore: s}
 }
 
 func (s *Store) add(
@@ -811,35 +742,4 @@ func (s *Store) registerMetrics() (err error) {
 		return
 	}
 	return
-}
-
-func reclaimPages(
-	collections []*timeSeriesCollectionType, supplier *pageSupplierType) {
-	// First close all the collections to ensure that no new time series
-	// come in while we close all the existing time series.
-	for _, coll := range collections {
-		coll.Close()
-	}
-	// Now close each time series
-	closedTimeSeries := make(map[*timeSeriesType]bool)
-	for _, coll := range collections {
-		timeSeriesList := coll.All()
-		for _, timeSeries := range timeSeriesList {
-			timeSeries.Close()
-			closedTimeSeries[timeSeries] = true
-		}
-	}
-	supplier.MoveToFront(closedTimeSeries)
-}
-
-func closeUnusedInPreviousStore(store, prevStore *Store) {
-	var unusedTimeSeriesCollections []*timeSeriesCollectionType
-	for endpointId := range prevStore.byApplication {
-		if store.byApplication[endpointId] == nil {
-			unusedTimeSeriesCollections = append(
-				unusedTimeSeriesCollections,
-				prevStore.byApplication[endpointId])
-		}
-	}
-	reclaimPages(unusedTimeSeriesCollections, prevStore.supplier)
 }

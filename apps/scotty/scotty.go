@@ -642,9 +642,8 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 404)
 		return
 	}
-	hostAndPort := fmt.Sprintf("%s:%d", host, app.Port())
 	var data messages.EndpointMetricsList
-	endpoint := endpoints[hostAndPort]
+	endpoint := endpoints[datastructs.HostAndPort{Host: host, Port: app.Port()}]
 	if endpoint != nil {
 		data = gatherDataForEndpoint(metricStore, endpoint, path, history, isSingleton)
 	} else {

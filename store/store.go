@@ -2,10 +2,12 @@ package store
 
 import (
 	"container/list"
+	"github.com/Symantec/scotty/store/btreepq"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"github.com/google/btree"
 	"math"
 	"sort"
 	"strings"
@@ -153,11 +155,20 @@ type pageMetaDataType struct {
 	owner *timeSeriesType
 }
 
+func (m *pageMetaDataType) SetSeqNo(i uint64) {
+	m.seqNo = i
+}
+
 type pageWithMetaDataType struct {
 	// page queue lock protects this.
 	pageMetaDataType
 	// Lock of current page owner protects this.
 	pageType
+}
+
+func (p *pageWithMetaDataType) Less(than btree.Item) bool {
+	pthan := than.(*pageWithMetaDataType)
+	return p.seqNo < pthan.seqNo
 }
 
 // Keeps track of next metric value to write to LMM
@@ -718,25 +729,30 @@ type pageQueueType struct {
 	valueCountPerPage  int
 	pageCount          int
 	inactiveThreshhold float64
+	degree             int
 	lock               sync.Mutex
-	pages              []*pageWithMetaDataType
-	next               int
+	pq                 *btreepq.PageQueue
 }
 
 func newPageQueueType(
 	valueCountPerPage int,
 	pageCount int,
-	inactiveThreshhold float64) *pageQueueType {
-	pages := make([]*pageWithMetaDataType, pageCount)
-	for i := range pages {
-		pp := make(pageType, 0, valueCountPerPage)
-		pages[i] = &pageWithMetaDataType{pageType: pp}
-	}
+	inactiveThreshhold float64,
+	degree int) *pageQueueType {
+	pages := btreepq.New(
+		pageCount,
+		int(float64(pageCount)*inactiveThreshhold),
+		degree,
+		func() btreepq.Page {
+			pp := make(pageType, 0, valueCountPerPage)
+			return &pageWithMetaDataType{pageType: pp}
+		})
 	return &pageQueueType{
 		valueCountPerPage:  valueCountPerPage,
 		pageCount:          pageCount,
 		inactiveThreshhold: inactiveThreshhold,
-		pages:              pages}
+		degree:             degree,
+		pq:                 pages}
 }
 
 func (s *pageQueueType) MaxValuesPerPage() int {
@@ -765,6 +781,13 @@ func (s *pageQueueType) RegisterMetrics() (err error) {
 		"The ratio of inactive pages needed before they are reclaimed first"); err != nil {
 		return
 	}
+	if err = tricorder.RegisterMetric(
+		"/store/btreeDegree",
+		&s.degree,
+		units.None,
+		"The ratio of inactive pages needed before they are reclaimed first"); err != nil {
+		return
+	}
 	return
 }
 
@@ -774,27 +797,26 @@ func (s *pageQueueType) RegisterMetrics() (err error) {
 func (s *pageQueueType) GivePageTo(t *timeSeriesType) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	result := s.pages[s.next]
+	result := s.pq.NextPage().(*pageWithMetaDataType)
 	if result.owner != nil {
 		result.owner.GiveUpPage(result)
 	}
 	result.owner = t
 	result.owner.AcceptPage(result)
-	s.next++
-	if s.next == len(s.pages) {
-		s.next = 0
-	}
-	return
 }
 
 func (s *pageQueueType) ReclaimHigh(
 	reclaimHighList []*pageWithMetaDataType) {
-	// TODO
+	for i := range reclaimHighList {
+		s.pq.ReclaimHigh(reclaimHighList[i])
+	}
 }
 
 func (s *pageQueueType) ReclaimLow(
-	reclaimHighList []*pageWithMetaDataType) {
-	// TODO
+	reclaimLowList []*pageWithMetaDataType) {
+	for i := range reclaimLowList {
+		s.pq.ReclaimLow(reclaimLowList[i])
+	}
 }
 
 type recordListType []*Record

@@ -111,11 +111,19 @@ type Store struct {
 	metrics       *storeMetricsType
 }
 
-func NewStore(valueCountPerPage, pageCount int) *Store {
+func NewStore(
+	valueCountPerPage,
+	pageCount int,
+	inactiveThreshhold float64,
+	degree int) *Store {
 	return &Store{
 		byApplication: make(map[interface{}]*timeSeriesCollectionType),
-		supplier:      newPageQueueType(valueCountPerPage, pageCount, 0.1),
-		metrics:       newStoreMetricsType(),
+		supplier: newPageQueueType(
+			valueCountPerPage,
+			pageCount,
+			inactiveThreshhold,
+			degree),
+		metrics: newStoreMetricsType(),
 	}
 }
 

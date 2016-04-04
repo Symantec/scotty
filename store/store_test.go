@@ -7,6 +7,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"math"
 	"reflect"
 	"testing"
 )
@@ -39,7 +40,7 @@ func (e *errVisitor) Visit(
 }
 
 func TestVisitorError(t *testing.T) {
-	aStore := store.NewStore(1, 8)
+	aStore := store.NewStore(1, 8, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 	var ev errVisitor
@@ -47,7 +48,7 @@ func TestVisitorError(t *testing.T) {
 }
 
 func TestAggregateAppenderAndVisitor(t *testing.T) {
-	aStore := store.NewStore(1, 8)
+	aStore := store.NewStore(1, 8, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -98,7 +99,7 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	aStore := store.NewStore(2, 3) // Stores 2*3 + 1 values
+	aStore := store.NewStore(2, 3, 1.0, 10) // Stores 2*3 + 1 values
 	aStore.RegisterEndpoint(kEndpoint0)
 
 	firstMetric := [1]*messages.Metric{
@@ -314,7 +315,7 @@ func TestIterator(t *testing.T) {
 }
 
 func TestIndivMetricGoneInactive(t *testing.T) {
-	aStore := store.NewStore(1, 100)
+	aStore := store.NewStore(1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := [3]*messages.Metric{
 		{
@@ -388,7 +389,7 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 }
 
 func TestMachineGoneInactive(t *testing.T) {
-	aStore := store.NewStore(1, 100)
+	aStore := store.NewStore(1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 	aMetric := [2]*messages.Metric{
@@ -473,7 +474,7 @@ func TestMachineGoneInactive(t *testing.T) {
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
-	aStore := store.NewStore(1, 8)
+	aStore := store.NewStore(1, 8, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -849,6 +850,53 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 10, result[2].Value)
 }
 
+func TestHighPriorityEviction(t *testing.T) {
+	// Holds 9 values
+	aStore := store.NewStore(1, 6, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+
+	// 2 values to /foo, /bar, /baz
+	// 3rd value to /foo, /bar, /baz gets inactive marker
+	// 4th value to /foo and /bar only on endpoint 0
+	addDataForHighPriorityEvictionTest(aStore)
+
+	var result []*store.Record
+	aStore.ByNameAndEndpoint(
+		"/baz",
+		kEndpoint0,
+		0.0,
+		math.Inf(0),
+		store.AppendTo(&result))
+	// Since the high priority threshhold is 100%, we don't expect all the
+	// pages of /baz to get reclaimed.
+	if len(result) <= 1 {
+		t.Error("Expected /baz to have at least 2 values")
+	}
+
+	// Holds 9 values
+	aStore = store.NewStore(1, 6, 0.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+
+	// 3 values to /foo, /bar, /baz
+	// 4th value to /foo and /bar only on endpoint 0
+	addDataForHighPriorityEvictionTest(aStore)
+
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/baz",
+		kEndpoint0,
+		0.0,
+		math.Inf(0),
+		store.AppendTo(&result))
+
+	// Since the high priority threshhold is only 0%, we expect the
+	// two pages in /baz to get reclaimed for the 4th value in
+	// /foo and /bar
+	if len(result) > 1 {
+		t.Error("Expected /baz to have only a single value")
+	}
+}
+
 func addBatch(
 	t *testing.T,
 	astore *store.Store,
@@ -865,4 +913,46 @@ func assertValueEquals(t *testing.T, expected, actual interface{}) {
 	if expected != actual {
 		t.Errorf("Expected %v, got %v", expected, actual)
 	}
+}
+
+// 3 values to /foo, /bar, /baz
+// 4th value to /foo and /bar only on endpoint 0
+func addDataForHighPriorityEvictionTest(s *store.Store) {
+	aMetric := [3]*messages.Metric{
+		{
+			Path:        "/foo",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	aMetric[0].Value = 2
+	aMetric[1].Value = 4
+	aMetric[2].Value = 5
+	s.AddBatch(kEndpoint0, 100, aMetric[:])
+	aMetric[0].Value = 12
+	aMetric[1].Value = 14
+	aMetric[2].Value = 15
+	s.AddBatch(kEndpoint0, 110, aMetric[:])
+	aMetric[0].Value = 22
+	aMetric[1].Value = 24
+	s.AddBatch(kEndpoint0, 120, aMetric[:2])
+	aMetric[0].Value = 32
+	aMetric[1].Value = 34
+	s.AddBatch(kEndpoint0, 130, aMetric[:2])
 }

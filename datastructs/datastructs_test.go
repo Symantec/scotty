@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"math"
 	"reflect"
 	"sort"
 	"testing"
@@ -142,7 +143,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	alBuilder.Add(35, "AnApp")
 	alBuilder.Add(92, "AnotherApp")
 	appList := alBuilder.Build()
-	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 100))
+	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 100, 1.0, 10))
 	appStatus.MarkHostsActiveExclusively(
 		92.5,
 		[]string{"host1", "host2", "host3"})
@@ -226,6 +227,131 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
 	assertValueEquals(t, "AnotherApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
+}
+
+func TestHighPriorityEviction(t *testing.T) {
+	alBuilder := NewApplicationListBuilder()
+	alBuilder.Add(37, "AnApp")
+	appList := alBuilder.Build()
+	// 9 values
+	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 6, 1.0, 10))
+	// host1, host2, host3 marked active
+	// 2 values to AnApp:/foo on host1, host2 and host3
+	// 3rd value to anApp:/foo on host1, host2 only
+	// host1 and host2 only marked active giving host3:AnApp:/foo
+	// an inactive marker as third value
+	// 4th value added to AnApp:/foo on host1 and host2 only
+	addDataForHighPriorityEvictionTest(appStatus)
+
+	endpointId, aStore := appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+
+	var result []*store.Record
+	aStore.ByNameAndEndpoint(
+		"/foo",
+		endpointId,
+		0.0,
+		math.Inf(0),
+		store.AppendTo(&result))
+
+	// Since the high priority threshhold is 100%,
+	// we don't expect all the
+	// pages of host3:AnApp:/foo to get reclaimed.
+	if len(result) <= 1 {
+		t.Error("Expected host3:AnApp:/foo to have at least 2 values")
+	}
+
+	// 9 values
+	appStatus = NewApplicationStatuses(appList, store.NewStore(1, 6, 0.0, 10))
+	// host1, host2, host3 marked active
+	// 3 values to AnApp:/foo on host1, host2 and host3
+	// host1 and host2 only marked active
+	// 4th value added to AnApp:/foo on host1 and host2 only
+	addDataForHighPriorityEvictionTest(appStatus)
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo",
+		endpointId,
+		0.0,
+		math.Inf(0),
+		store.AppendTo(&result))
+
+	// Since the high priority threshhold is 0%,
+	// we do expect all the pages for host3:Anpp:/foo to get reclaimed
+	if len(result) > 1 {
+		t.Error("Expected host3:AnApp:/foo to have only 1 value")
+	}
+}
+
+func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
+	aMetric := [1]*messages.Metric{
+		{
+			Path:        "/foo",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	appStatus.MarkHostsActiveExclusively(
+		10.0,
+		[]string{"host1", "host2", "host3"})
+
+	aMetric[0].Value = 50
+
+	endpointId, aStore := appStatus.EndpointIdByHostAndName(
+		"host1", "AnApp")
+	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host2", "AnApp")
+	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+
+	aMetric[0].Value = 55
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host1", "AnApp")
+	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host2", "AnApp")
+	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+
+	aMetric[0].Value = 60
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host1", "AnApp")
+	aStore.AddBatch(endpointId, 120.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host2", "AnApp")
+	aStore.AddBatch(endpointId, 120.0, aMetric[:])
+
+	appStatus.MarkHostsActiveExclusively(
+		120.0,
+		[]string{"host1", "host2"})
+
+	aMetric[0].Value = 65
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host1", "AnApp")
+	aStore.AddBatch(endpointId, 130.0, aMetric[:])
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host2", "AnApp")
+	aStore.AddBatch(endpointId, 130.0, aMetric[:])
 }
 
 func assertDeepEqual(

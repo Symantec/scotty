@@ -47,7 +47,8 @@ Sample JSON for api/hosts calls.
 			"values": [
 				{
 					"timestamp": "1450810183.939569234",
-					"value": "-r -t -n"
+					"value": "-r -t -n",
+					"active": true
 				}
 			]
 		},
@@ -60,14 +61,17 @@ Sample JSON for api/hosts calls.
 				{
 					"timestamp": "1450812042.050224065",
 					"value": "579.000432200"
+					"active": true
 				},
 				{
 					"timestamp": "1450811980.899730682",
 					"value": "579.000167902"
+					"active": true
 				},
 				{
 					"timestamp": "1450811923.538924217",
 					"value": "579.000008265"
+					"active": true
 				}
 			}
 		}

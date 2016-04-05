@@ -98,7 +98,7 @@ func (a *ApplicationStatuses) ApplicationList() *ApplicationList {
 }
 
 // Update updates the status of a single application / endpoint.
-// This istance must have prior knowledge of e. That is, e must come from
+// This instance must have prior knowledge of e. That is, e must come from
 // a method such as ActiveEndpointIds(). Otherwise, this method panics.
 func (a *ApplicationStatuses) Update(
 	e *scotty.Endpoint, newState *scotty.State) {
@@ -107,6 +107,9 @@ func (a *ApplicationStatuses) Update(
 
 // MarkHostsActiveExclusively marks all applications / endpoints each host
 // within activeHosts as active while marking the rest inactive.
+// MarkHostsActiveExclusively marks all time series of any machines that just
+// became inactive as inactive by adding an inactive flag to each one with
+// given time stamp.
 // timestamp is seconds since Jan 1, 1970 GMT.
 func (a *ApplicationStatuses) MarkHostsActiveExclusively(
 	timestamp float64, activeHosts []string) {
@@ -115,7 +118,7 @@ func (a *ApplicationStatuses) MarkHostsActiveExclusively(
 
 // LogChangedMetricCount logs how many metrics changed for a given
 // application / endpoint.
-// This istance must have prior knowledge of e. That is, e must come from
+// This instance must have prior knowledge of e. That is, e must come from
 // a method such as ActiveEndpointIds(). Otherwise, this method panics.
 func (a *ApplicationStatuses) LogChangedMetricCount(
 	e *scotty.Endpoint, metricCount int) {

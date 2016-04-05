@@ -63,6 +63,24 @@ func (p *PageQueue) moveFromTo(pg Page, from, to *btree.BTree) {
 	insert(to, pageToMove)
 }
 
+func (p *PageQueue) _stats(stats *PageQueueStats) {
+	stats.HighPriorityCount = p.high.Len()
+	stats.LowPriorityCount = p.low.Len()
+	stats.EndSeqNo = p.nextSeqNo
+	lowNext := first(p.low)
+	highNext := first(p.high)
+	if lowNext == nil {
+		stats.NextLowPrioritySeqNo = 0
+	} else {
+		stats.NextLowPrioritySeqNo = lowNext.(Page).SeqNo()
+	}
+	if highNext == nil {
+		stats.NextHighPrioritySeqNo = 0
+	} else {
+		stats.NextHighPrioritySeqNo = highNext.(Page).SeqNo()
+	}
+}
+
 func insert(target *btree.BTree, item btree.Item) {
 	if target.ReplaceOrInsert(item) != nil {
 		panic("Insert failed. item already exists")

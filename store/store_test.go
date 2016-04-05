@@ -51,30 +51,33 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
-	aMetric := messages.Metric{
-		Path:        "/foo/bar",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
+	aMetric := [1]*messages.Metric{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
 
-	aMetric.Value = 1
-	aStore.Add(kEndpoint0, 100.0, &aMetric)
-	aMetric.Value = 2
-	aStore.Add(kEndpoint0, 107.0, &aMetric)
-	aMetric.Value = 3
-	aStore.Add(kEndpoint0, 114.0, &aMetric)
-	aMetric.Value = 4
-	aStore.Add(kEndpoint0, 121.0, &aMetric)
+	aMetric[0].Value = 1
+	aStore.AddBatch(kEndpoint0, 100.0, aMetric[:])
+	aMetric[0].Value = 2
+	aStore.AddBatch(kEndpoint0, 107.0, aMetric[:])
+	aMetric[0].Value = 3
+	aStore.AddBatch(kEndpoint0, 114.0, aMetric[:])
+	aMetric[0].Value = 4
+	aStore.AddBatch(kEndpoint0, 121.0, aMetric[:])
 
-	aMetric.Value = 11
-	aStore.Add(kEndpoint1, 100.0, &aMetric)
-	aMetric.Value = 12
-	aStore.Add(kEndpoint1, 107.0, &aMetric)
-	aMetric.Value = 13
-	aStore.Add(kEndpoint1, 114.0, &aMetric)
-	aMetric.Value = 14
-	aStore.Add(kEndpoint1, 121.0, &aMetric)
+	aMetric[0].Value = 11
+	aStore.AddBatch(kEndpoint1, 100.0, aMetric[:])
+	aMetric[0].Value = 12
+	aStore.AddBatch(kEndpoint1, 107.0, aMetric[:])
+	aMetric[0].Value = 13
+	aStore.AddBatch(kEndpoint1, 114.0, aMetric[:])
+	aMetric[0].Value = 14
+	aStore.AddBatch(kEndpoint1, 121.0, aMetric[:])
 
 	var total sumMetricsType
 
@@ -98,36 +101,42 @@ func TestIterator(t *testing.T) {
 	aStore := store.NewStore(2, 3) // Stores 2*3 + 1 values
 	aStore.RegisterEndpoint(kEndpoint0)
 
-	firstMetric := messages.Metric{
-		Path:        "/foo/bar",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
-	secondMetric := messages.Metric{
-		Path:        "/foo/baz",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
+	firstMetric := [1]*messages.Metric{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	secondMetric := [1]*messages.Metric{
+		{
+			Path:        "/foo/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
 
 	// Adding 8 values evicts first 2 values
-	firstMetric.Value = 1
-	add(t, aStore, kEndpoint0, 100.0, &firstMetric, true)
-	firstMetric.Value = 2
-	add(t, aStore, kEndpoint0, 110.0, &firstMetric, true)
-	firstMetric.Value = 3
-	add(t, aStore, kEndpoint0, 120.0, &firstMetric, true)
-	firstMetric.Value = 4
-	add(t, aStore, kEndpoint0, 130.0, &firstMetric, true)
-	firstMetric.Value = 5
-	add(t, aStore, kEndpoint0, 140.0, &firstMetric, true)
-	firstMetric.Value = 6
-	add(t, aStore, kEndpoint0, 150.0, &firstMetric, true)
-	firstMetric.Value = 7
-	add(t, aStore, kEndpoint0, 160.0, &firstMetric, true)
-	firstMetric.Value = 8
-	add(t, aStore, kEndpoint0, 170.0, &firstMetric, true)
+	firstMetric[0].Value = 1
+	addBatch(t, aStore, kEndpoint0, 100.0, firstMetric[:], 1)
+	firstMetric[0].Value = 2
+	addBatch(t, aStore, kEndpoint0, 110.0, firstMetric[:], 1)
+	firstMetric[0].Value = 3
+	addBatch(t, aStore, kEndpoint0, 120.0, firstMetric[:], 1)
+	firstMetric[0].Value = 4
+	addBatch(t, aStore, kEndpoint0, 130.0, firstMetric[:], 1)
+	firstMetric[0].Value = 5
+	addBatch(t, aStore, kEndpoint0, 140.0, firstMetric[:], 1)
+	firstMetric[0].Value = 6
+	addBatch(t, aStore, kEndpoint0, 150.0, firstMetric[:], 1)
+	firstMetric[0].Value = 7
+	addBatch(t, aStore, kEndpoint0, 160.0, firstMetric[:], 1)
+	firstMetric[0].Value = 8
+	addBatch(t, aStore, kEndpoint0, 170.0, firstMetric[:], 1)
 
 	iterators := aStore.Iterators(kEndpoint0)
 	assertValueEquals(t, 1, len(iterators))
@@ -246,8 +255,8 @@ func TestIterator(t *testing.T) {
 	assertValueEquals(t, nil, value)
 
 	// Now add a new value
-	firstMetric.Value = 9
-	add(t, aStore, kEndpoint0, 180.0, &firstMetric, true)
+	firstMetric[0].Value = 9
+	addBatch(t, aStore, kEndpoint0, 180.0, firstMetric[:], 1)
 
 	// Now there is one more value to consume
 	iterators = aStore.Iterators(kEndpoint0)
@@ -271,8 +280,8 @@ func TestIterator(t *testing.T) {
 	assertValueEquals(t, nil, value)
 
 	// Now add a new value
-	firstMetric.Value = 10
-	add(t, aStore, kEndpoint0, 190.0, &firstMetric, true)
+	firstMetric[0].Value = 10
+	addBatch(t, aStore, kEndpoint0, 190.0, firstMetric[:], 1)
 
 	// Now there is one more value to consume
 	iterators = aStore.Iterators(kEndpoint0)
@@ -296,8 +305,8 @@ func TestIterator(t *testing.T) {
 	assertValueEquals(t, nil, value)
 
 	// Add a different metric
-	secondMetric.Value = 1
-	add(t, aStore, kEndpoint0, 100.0, &secondMetric, true)
+	secondMetric[0].Value = 1
+	addBatch(t, aStore, kEndpoint0, 100.0, secondMetric[:], 1)
 
 	// We should have two iterators now
 	iterators = aStore.Iterators(kEndpoint0)
@@ -326,66 +335,85 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aStore.LatestByEndpoint(kEndpoint1, store.AppendTo(&result))
 	assertValueEquals(t, 0, len(result))
 
-	aMetric := messages.Metric{
-		Path:        "/foo/bar",
-		Description: "A description",
-		Unit:        units.None,
-		Kind:        types.Int64,
-		Bits:        64}
+	aMetric := [3]*messages.Metric{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        32,
+		},
+	}
 
 	// Add 6 unique values to each endpoint.
-	aMetric.Value = 0
-	add(t, aStore, kEndpoint0, 100.0, &aMetric, true)
-	aMetric.Value = 0
-	add(t, aStore, kEndpoint0, 106.0, &aMetric, false)
-	aMetric.Value = 4
-	add(t, aStore, kEndpoint0, 112.0, &aMetric, true)
-	aMetric.Value = 4
-	add(t, aStore, kEndpoint0, 118.0, &aMetric, false)
-	aMetric.Value = 8
-	add(t, aStore, kEndpoint0, 124.0, &aMetric, true)
-	aMetric.Value = 8
-	add(t, aStore, kEndpoint0, 130.0, &aMetric, false)
-	aMetric.Path = "/foo/baz"
-	aMetric.Value = 1
-	add(t, aStore, kEndpoint0, 103.0, &aMetric, true)
-	aMetric.Value = 1
-	add(t, aStore, kEndpoint0, 109.0, &aMetric, false)
-	aMetric.Value = 5
-	add(t, aStore, kEndpoint0, 115.0, &aMetric, true)
-	aMetric.Value = 5
-	add(t, aStore, kEndpoint0, 121.0, &aMetric, false)
-	aMetric.Value = 9
-	add(t, aStore, kEndpoint0, 127.0, &aMetric, true)
-	aMetric.Value = 9
-	add(t, aStore, kEndpoint0, 133.0, &aMetric, false)
+	aMetric[0].Value = 0
+	addBatch(t, aStore, kEndpoint0, 100.0, aMetric[:1], 1)
+	aMetric[0].Value = 0
+	addBatch(t, aStore, kEndpoint0, 106.0, aMetric[:1], 0)
+	aMetric[0].Value = 4
+	addBatch(t, aStore, kEndpoint0, 112.0, aMetric[:1], 1)
+	aMetric[0].Value = 4
+	addBatch(t, aStore, kEndpoint0, 118.0, aMetric[:1], 0)
+	aMetric[0].Value = 8
+	addBatch(t, aStore, kEndpoint0, 124.0, aMetric[:1], 1)
+	aMetric[0].Value = 8
+	addBatch(t, aStore, kEndpoint0, 130.0, aMetric[:1], 0)
+	aMetric[1].Value = 1
 
-	aMetric.Path = "/foo/bar"
-	aMetric.Value = 10
-	add(t, aStore, kEndpoint1, 200.0, &aMetric, true)
-	aMetric.Value = 10
-	add(t, aStore, kEndpoint1, 206.0, &aMetric, false)
-	aMetric.Value = 14
-	add(t, aStore, kEndpoint1, 212.0, &aMetric, true)
-	aMetric.Value = 14
-	add(t, aStore, kEndpoint1, 218.0, &aMetric, false)
-	aMetric.Value = 18
-	add(t, aStore, kEndpoint1, 224.0, &aMetric, true)
-	aMetric.Value = 18
-	add(t, aStore, kEndpoint1, 230.0, &aMetric, false)
-	aMetric.Path = "/foo/baz"
-	aMetric.Value = 11
-	add(t, aStore, kEndpoint1, 203.0, &aMetric, true)
-	aMetric.Value = 11
-	add(t, aStore, kEndpoint1, 209.0, &aMetric, false)
-	aMetric.Value = 15
-	add(t, aStore, kEndpoint1, 215.0, &aMetric, true)
-	aMetric.Value = 15
-	add(t, aStore, kEndpoint1, 221.0, &aMetric, false)
-	aMetric.Value = 19
-	add(t, aStore, kEndpoint1, 227.0, &aMetric, true)
-	aMetric.Value = 19
-	add(t, aStore, kEndpoint1, 233.0, &aMetric, false)
+	// We pass both metrics from now on just to keep /foo/bar
+	// in endpoint0 active.
+	addBatch(t, aStore, kEndpoint0, 103.0, aMetric[:2], 1)
+	aMetric[1].Value = 1
+	addBatch(t, aStore, kEndpoint0, 109.0, aMetric[:2], 0)
+	aMetric[1].Value = 5
+	addBatch(t, aStore, kEndpoint0, 115.0, aMetric[:2], 1)
+	aMetric[1].Value = 5
+	addBatch(t, aStore, kEndpoint0, 121.0, aMetric[:2], 0)
+	aMetric[1].Value = 9
+	addBatch(t, aStore, kEndpoint0, 127.0, aMetric[:2], 1)
+	aMetric[1].Value = 9
+	addBatch(t, aStore, kEndpoint0, 133.0, aMetric[:2], 0)
+
+	aMetric[0].Value = 10
+	addBatch(t, aStore, kEndpoint1, 200.0, aMetric[:1], 1)
+	aMetric[0].Value = 10
+	addBatch(t, aStore, kEndpoint1, 206.0, aMetric[:1], 0)
+	aMetric[0].Value = 14
+	addBatch(t, aStore, kEndpoint1, 212.0, aMetric[:1], 1)
+	aMetric[0].Value = 14
+	addBatch(t, aStore, kEndpoint1, 218.0, aMetric[:1], 0)
+	aMetric[0].Value = 18
+	addBatch(t, aStore, kEndpoint1, 224.0, aMetric[:1], 1)
+	aMetric[0].Value = 18
+	addBatch(t, aStore, kEndpoint1, 230.0, aMetric[:1], 0)
+	aMetric[1].Value = 11
+	// We pass both metrics from now on just to keep /foo/bar
+	// in endpoint1 active.
+	addBatch(t, aStore, kEndpoint1, 203.0, aMetric[:2], 1)
+	aMetric[1].Value = 11
+	addBatch(t, aStore, kEndpoint1, 209.0, aMetric[:2], 0)
+	aMetric[1].Value = 15
+	addBatch(t, aStore, kEndpoint1, 215.0, aMetric[:2], 1)
+	aMetric[1].Value = 15
+	addBatch(t, aStore, kEndpoint1, 221.0, aMetric[:2], 0)
+	aMetric[1].Value = 19
+	addBatch(t, aStore, kEndpoint1, 227.0, aMetric[:2], 1)
+	aMetric[1].Value = 19
+	addBatch(t, aStore, kEndpoint1, 233.0, aMetric[:2], 0)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -554,11 +582,12 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// there is no longer a 2 page minimum.
 	// t=124, value=8 for /foo/bar.
 	// t=103, value=1, t=115, value=5 and t=127, value=9 for /foo/baz
-	aMetric.Path = "/foo/baz"
-	aMetric.Value = 13
-	add(t, aStore, kEndpoint0, 139.0, &aMetric, true)
-	aMetric.Value = 15
-	add(t, aStore, kEndpoint0, 145.0, &aMetric, true)
+	aMetric[1].Value = 13
+	// Last value of endpoint0 /foo/bar needed to keep it active
+	aMetric[0].Value = 8
+	addBatch(t, aStore, kEndpoint0, 139.0, aMetric[:2], 1)
+	aMetric[1].Value = 15
+	addBatch(t, aStore, kEndpoint0, 145.0, aMetric[:2], 1)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -620,10 +649,9 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// Now add "foo/baz" values but change the "foo/baz" metric so
 	// that it is different. Because this is a new metric with just
 	// the latest value, no page eviction takes place.
-	aMetric.Path = "/foo/baz"
-	aMetric.Bits = 32
-	aMetric.Value = 29
-	add(t, aStore, kEndpoint0, 145.0, &aMetric, true)
+	// We also have to pass the other values to keep them active.
+	aMetric[2].Value = 29
+	addBatch(t, aStore, kEndpoint0, 145.0, aMetric[:3], 1)
 
 	// No eviction
 	result = nil
@@ -662,19 +690,15 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 10, result[2].Value)
 }
 
-func add(
+func addBatch(
 	t *testing.T,
 	astore *store.Store,
 	endpointId *scotty.Endpoint,
 	ts float64,
-	m *messages.Metric,
-	success bool) {
-	if astore.Add(endpointId, ts, m) != success {
-		if success {
-			t.Errorf("Expected %v to be added.", m.Value)
-		} else {
-			t.Errorf("Expected %v not to be added.", m.Value)
-		}
+	m messages.MetricList,
+	count int) {
+	if out := astore.AddBatch(endpointId, ts, m); out != count {
+		t.Errorf("Expected %d added, got %d.", count, out)
 	}
 }
 

@@ -135,15 +135,6 @@ func (s *Store) AddBatch(
 	return s.addBatch(endpointId, timestamp, metricList)
 }
 
-// TODO: Make so that Add does not change the priority of the pages of
-// the other time series.
-func (s *Store) Add(
-	endpointId interface{},
-	timestamp float64,
-	metric *trimessages.Metric) bool {
-	return s.addBatch(endpointId, timestamp, trimessages.MetricList{metric}) == 1
-}
-
 // ByNameAndEndpoint returns records for a metric by path and endpoint and
 // start and end times.
 // ByNameAndEndpoint will go back just before start when possible so that

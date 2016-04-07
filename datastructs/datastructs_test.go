@@ -2,7 +2,14 @@ package datastructs
 
 import (
 	"bytes"
+	"fmt"
+	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/types"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
+	"sort"
 	"testing"
 )
 
@@ -57,6 +64,188 @@ func TestConfigFile(t *testing.T) {
 	}
 }
 
+type activeInactiveListType struct {
+	Active      map[string]bool
+	Inactive    map[string]bool
+	activeFound bool
+}
+
+func newActiveInactiveLists() *activeInactiveListType {
+	return &activeInactiveListType{
+		Active:   make(map[string]bool),
+		Inactive: make(map[string]bool),
+	}
+}
+
+func (a *activeInactiveListType) Append(r *store.Record) {
+	if r.Active {
+		a.activeFound = true
+	}
+}
+
+func (a *activeInactiveListType) Visit(
+	s *store.Store, endpoint interface{}) error {
+	a.activeFound = false
+	s.LatestByEndpoint(endpoint, a)
+	scottyEndpoint := endpoint.(*scotty.Endpoint)
+	hostPortStr := fmt.Sprintf(
+		"%s:%d", scottyEndpoint.HostName(), scottyEndpoint.Port())
+	if a.activeFound {
+		a.Active[hostPortStr] = true
+	} else {
+		a.Inactive[hostPortStr] = true
+	}
+	return nil
+}
+
+func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
+	aMetric := [4]*messages.Metric{
+		{
+			Path:        "/foo/first",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/second",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/third",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/fourth",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	for i := range aMetric {
+		aMetric[i].Value = i
+	}
+	for i := range endpoints {
+		s.AddBatch(endpoints[i], 1.0, aMetric[:])
+	}
+}
+
+func TestMarkHostsActiveExclusively(t *testing.T) {
+	alBuilder := NewApplicationListBuilder()
+	alBuilder.Add(35, "AnApp")
+	alBuilder.Add(92, "AnotherApp")
+	appList := alBuilder.Build()
+	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 100))
+	appStatus.MarkHostsActiveExclusively(
+		92.5,
+		[]string{"host1", "host2", "host3"})
+	activateEndpoints(appStatus.ActiveEndpointIds())
+	astore := appStatus.Store()
+	visitor := newActiveInactiveLists()
+	astore.VisitAllEndpoints(visitor)
+	assertDeepEqual(
+		t,
+		map[string]bool{
+			"host1:35": true,
+			"host1:92": true,
+			"host2:35": true,
+			"host2:92": true,
+			"host3:35": true,
+			"host3:92": true,
+		},
+		visitor.Active)
+	assertDeepEqual(
+		t,
+		make(map[string]bool),
+		visitor.Inactive)
+	appStatus.MarkHostsActiveExclusively(61.7, []string{"host2", "host4"})
+	activateEndpoints(appStatus.ActiveEndpointIds())
+	astore = appStatus.Store()
+	visitor = newActiveInactiveLists()
+	astore.VisitAllEndpoints(visitor)
+	assertDeepEqual(
+		t,
+		map[string]bool{
+			"host2:35": true,
+			"host2:92": true,
+			"host4:35": true,
+			"host4:92": true,
+		},
+		visitor.Active)
+	assertDeepEqual(
+		t,
+		map[string]bool{
+			"host1:35": true,
+			"host1:92": true,
+			"host3:35": true,
+			"host3:92": true,
+		},
+		visitor.Inactive)
+	endpointId, _ := appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+	assertValueEquals(t, "host3", endpointId.HostName())
+	assertValueEquals(t, 35, endpointId.Port())
+	stats := appStatus.All()
+	sort.Sort(sortByHostPort(stats))
+	assertValueEquals(t, 8, len(stats))
+	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[0].Name)
+	assertValueEquals(t, false, stats[0].Active)
+
+	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[1].Name)
+	assertValueEquals(t, false, stats[1].Active)
+
+	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[2].Name)
+	assertValueEquals(t, true, stats[2].Active)
+
+	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[3].Name)
+	assertValueEquals(t, true, stats[3].Active)
+
+	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[4].Name)
+	assertValueEquals(t, false, stats[4].Active)
+
+	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[5].Name)
+	assertValueEquals(t, false, stats[5].Active)
+
+	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[6].Name)
+	assertValueEquals(t, true, stats[6].Active)
+
+	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[7].Name)
+	assertValueEquals(t, true, stats[7].Active)
+}
+
+func assertDeepEqual(
+	t *testing.T,
+	expected interface{},
+	actual interface{}) {
+	if !reflect.DeepEqual(expected, actual) {
+		t.Errorf("Expected %v, got %v", expected, actual)
+	}
+}
+
+func assertValueEquals(
+	t *testing.T,
+	expected interface{},
+	actual interface{}) {
+	if expected != actual {
+		t.Errorf("Expected %v, got %v", expected, actual)
+	}
+}
+
 func assertApplication(
 	t *testing.T, port int, name string, app *Application) {
 	if name != app.Name() {
@@ -65,4 +254,25 @@ func assertApplication(
 	if port != app.Port() {
 		t.Errorf("Expected '%d', got '%d'", port, app.Port())
 	}
+}
+
+type sortByHostPort []*ApplicationStatus
+
+func (s sortByHostPort) Len() int { return len(s) }
+
+func (s sortByHostPort) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s sortByHostPort) Less(i, j int) bool {
+	if s[i].EndpointId.HostName() < s[j].EndpointId.HostName() {
+		return true
+	}
+	if s[i].EndpointId.HostName() > s[j].EndpointId.HostName() {
+		return false
+	}
+	if s[i].EndpointId.Port() < s[j].EndpointId.Port() {
+		return true
+	}
+	return false
 }

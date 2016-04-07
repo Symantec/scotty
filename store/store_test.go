@@ -387,6 +387,91 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 	assertValueEquals(t, true, result[1].Active)
 }
 
+func TestMachineGoneInactive(t *testing.T) {
+	aStore := store.NewStore(1, 100)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aStore.RegisterEndpoint(kEndpoint1)
+	aMetric := [2]*messages.Metric{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+		{
+			Path:        "/foo/baz",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	aMetric[0].Value = 6
+	aMetric[1].Value = 8
+	aStore.AddBatch(kEndpoint0, 900, aMetric[:])
+	aMetric[0].Value = 16
+	aMetric[1].Value = 18
+	aStore.AddBatch(kEndpoint0, 910, aMetric[:])
+
+	aMetric[0].Value = 1
+	aMetric[1].Value = 2
+	aStore.AddBatch(kEndpoint1, 1900, aMetric[:])
+	aMetric[0].Value = 11
+	aMetric[1].Value = 12
+	aStore.AddBatch(kEndpoint1, 1910, aMetric[:])
+	aMetric[0].Value = 11
+	aMetric[1].Value = 22
+	aStore.AddBatch(kEndpoint1, 1920, aMetric[:])
+
+	aStore.MarkEndpointInactive(1915.0, kEndpoint1)
+
+	var result []*store.Record
+	aStore.ByNameAndEndpoint(
+		"/foo/bar", kEndpoint0, 900.0, 1000.0, store.AppendTo(&result))
+
+	assertValueEquals(t, 2, len(result))
+	assertValueEquals(t, 910.0, result[0].TimeStamp)
+	assertValueEquals(t, 16, result[0].Value)
+	assertValueEquals(t, true, result[0].Active)
+	assertValueEquals(t, 900.0, result[1].TimeStamp)
+	assertValueEquals(t, 6, result[1].Value)
+	assertValueEquals(t, true, result[1].Active)
+
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/bar", kEndpoint1, 1900.0, 2000.0, store.AppendTo(&result))
+
+	assertValueEquals(t, 3, len(result))
+	assertValueEquals(t, 1915.0, result[0].TimeStamp)
+	assertValueEquals(t, int64(0), result[0].Value)
+	assertValueEquals(t, false, result[0].Active)
+	assertValueEquals(t, 1910.0, result[1].TimeStamp)
+	assertValueEquals(t, 11, result[1].Value)
+	assertValueEquals(t, true, result[1].Active)
+	assertValueEquals(t, 1900.0, result[2].TimeStamp)
+	assertValueEquals(t, 1, result[2].Value)
+	assertValueEquals(t, true, result[2].Active)
+
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/baz", kEndpoint1, 1900.0, 2000.0, store.AppendTo(&result))
+
+	assertValueEquals(t, 4, len(result))
+	assertValueEquals(t, 1920.001, result[0].TimeStamp)
+	assertValueEquals(t, int64(0), result[0].Value)
+	assertValueEquals(t, false, result[0].Active)
+	assertValueEquals(t, 1920.0, result[1].TimeStamp)
+	assertValueEquals(t, 22, result[1].Value)
+	assertValueEquals(t, true, result[1].Active)
+	assertValueEquals(t, 1910.0, result[2].TimeStamp)
+	assertValueEquals(t, 12, result[2].Value)
+	assertValueEquals(t, true, result[2].Active)
+	assertValueEquals(t, 1900.0, result[3].TimeStamp)
+	assertValueEquals(t, 2, result[3].Value)
+	assertValueEquals(t, true, result[3].Active)
+}
+
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aStore := store.NewStore(1, 8)
 	aStore.RegisterEndpoint(kEndpoint0)

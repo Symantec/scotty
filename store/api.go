@@ -52,11 +52,6 @@ type Record struct {
 	Active        bool
 }
 
-// IsInactive returns true if given value indicates an inactive value
-func IsInactive(value interface{}) bool {
-	return value == gInactive
-}
-
 // Appender appends records fetched from a Store to this instance.
 type Appender interface {
 	// Append appends the contents record r to this instance.

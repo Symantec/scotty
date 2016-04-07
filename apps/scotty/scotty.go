@@ -87,6 +87,10 @@ var (
 		"logbufLines", 1024, "Number of lines to store in the log buffer")
 	fPidFile = flag.String(
 		"pidfile", "", "Name of file to write my PID to")
+	fThreshhold = flag.Float64(
+		"inactiveThreshhold", 0.1, "Percentage of inactive pages needed to begin purging inactive pages")
+	fDegree = flag.Int(
+		"degree", 10, "Degree of btree")
 )
 
 type byHostName messages.ErrorList
@@ -726,7 +730,7 @@ func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger) *datastructs.ApplicationStatuses {
 	fmt.Println("Initialization started.")
-	astore := store.NewStore((*fBytesPerPage)/24, computePageCount())
+	astore := store.NewStore((*fBytesPerPage)/24, computePageCount(), *fThreshhold, *fDegree)
 	if err := astore.RegisterMetrics(); err != nil {
 		log.Fatal(err)
 	}

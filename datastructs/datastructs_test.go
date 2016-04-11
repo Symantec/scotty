@@ -78,10 +78,12 @@ func newActiveInactiveLists() *activeInactiveListType {
 	}
 }
 
-func (a *activeInactiveListType) Append(r *store.Record) {
+func (a *activeInactiveListType) Append(r *store.Record) bool {
 	if r.Active {
 		a.activeFound = true
+		return false
 	}
+	return true
 }
 
 func (a *activeInactiveListType) Visit(

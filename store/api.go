@@ -45,11 +45,13 @@ func (m *MetricInfo) Bits() int {
 // Record represents one value for one particular metric at a particular
 // time.
 type Record struct {
-	ApplicationId interface{}
-	Info          *MetricInfo
-	TimeStamp     float64
-	Value         interface{}
-	Active        bool
+	EndpointId interface{}
+	Info       *MetricInfo
+	TimeStamp  float64
+	// The equivalent of 0 for inactive flags.
+	Value interface{}
+	// true if active, false if an inactive flag
+	Active bool
 }
 
 // Appender appends records fetched from a Store to this instance.
@@ -92,6 +94,7 @@ func (i *Iterator) Info() *MetricInfo {
 // of memory being reclaimed. Next returns (0, nil, 0) to indicates it has
 // no more values to emit. Next returning (0, nil, 0) does not necessarily
 // mean that it has reached the latest value in the store.
+// Inactive flags appear as a value equivalent to 0 or "".
 func (i *Iterator) Next() (timestamp float64, value interface{}, skipped int) {
 	return i.next()
 }
@@ -105,12 +108,21 @@ func (i *Iterator) Commit() {
 // Store is an in memory store of metrics.
 // Client must register all the endpoints with the Store
 // instance before storing any metrics.
+// Store instances may be safely used with multiple goroutines as long
+// they don't call RegisterEndpoint.
 type Store struct {
 	byApplication map[interface{}]*timeSeriesCollectionType
 	supplier      *pageQueueType
 	metrics       *storeMetricsType
 }
 
+// NewStore returns a new Store instance.
+// valueCountPerPage is how many values may be stored in a single page.
+// pageCount is the number of pages in this store and remains constant.
+// inactiveThreshhold is the minimum ratio (0-1) of pages that need to be
+// in the high priority queue before they are reclaimed before the other
+// pages.
+// degree is the degree of the btrees (see github.com/Symantec/btree)
 func NewStore(
 	valueCountPerPage,
 	pageCount int,
@@ -127,16 +139,29 @@ func NewStore(
 	}
 }
 
+// ShallowCopy returns a shallow copy of this store. In an environment with
+// multiple goroutines, a client can create a shallow copy to safely register
+// more endpoints without creating data races.
 func (s *Store) ShallowCopy() *Store {
 	return s.shallowCopy()
 }
 
+// RegisterEndpoint registers a new endpoint.
 func (s *Store) RegisterEndpoint(endpointId interface{}) {
 	s.registerEndpoint(endpointId)
 }
 
 // AddBatch adds metric values.
-// AddBatch returns the total number of metric values added.
+// AddBatch returns the total number of metric values added including any
+// inactive flags.
+// AddBatch uses timestamp for all new values in metricList.
+// timestamp is seconds since Jan 1, 1970 GMT.
+// If a time series already in the given endpoint does not have a new value
+// in metricList, then AddBatch marks that time series as inactive by adding
+// an inactive flag to it. That time series remains inactive until a
+// subsequent call to AddBatch gives it a new value.
+// The store may reuse pages used by an inactive time series more quickly
+// than other pages.
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
@@ -218,13 +243,17 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 }
 
 // RegisterMetrics registers metrics associated with this Store instance
-// Calling this covers any new store created by calling NewBuilder() on
+// Calling this covers any new store created by calling ShallowCopy on
 // this instance.
 func (s *Store) RegisterMetrics() error {
 	return s.registerMetrics()
 }
 
-// TODO: Needs a test
+// MarkEndpointInactive marks all time series for given endpint as inactive by
+// adding an inactive flag with given timestamp to each time series.
+// timestamp is seconds since Jan 1, 1970 GMT.
+// The store may reuse pages used by an inactive time series more quickly
+// than other pages.
 func (s *Store) MarkEndpointInactive(
 	timestamp float64, endpointId interface{}) {
 	s.markEndpointInactive(timestamp, endpointId)

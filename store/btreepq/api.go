@@ -16,6 +16,25 @@ type Page interface {
 	// Sets the sequence number of this page. Only PageQueue uses this.
 	// Clients must not call this directly.
 	SetSeqNo(i uint64)
+	// Returns the sequence number of this page.
+	SeqNo() uint64
+}
+
+// PageQueueStats represents statistics for a PageQueue
+type PageQueueStats struct {
+	LowPriorityCount      int
+	HighPriorityCount     int
+	NextLowPrioritySeqNo  uint64
+	NextHighPrioritySeqNo uint64
+	EndSeqNo              uint64
+}
+
+func (s *PageQueueStats) TotalCount() int {
+	return s.LowPriorityCount + s.HighPriorityCount
+}
+
+func (s *PageQueueStats) HighPriorityRatio() float64 {
+	return float64(s.HighPriorityCount) / float64(s.TotalCount())
 }
 
 // PageQueue represents the page queue for scotty.
@@ -66,4 +85,9 @@ func (p *PageQueue) ReclaimHigh(pg Page) {
 // If pg is already in the low priority queue, ReclaimLow is a no-op.
 func (p *PageQueue) ReclaimLow(pg Page) {
 	p.moveFromTo(pg, p.high, p.low)
+}
+
+// Stats gets the statistics for this instance
+func (p *PageQueue) Stats(stats *PageQueueStats) {
+	p._stats(stats)
 }

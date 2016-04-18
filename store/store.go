@@ -127,8 +127,8 @@ func (p pageType) Fetch(
 		firstIdx = 0
 	}
 	record := Record{
-		ApplicationId: applicationId,
-		Info:          id}
+		EndpointId: applicationId,
+		Info:       id}
 	for i := lastIdx - 1; i >= firstIdx; i-- {
 		record.TimeStamp = p[i].TimeStamp
 		record.setValue(p[i].Value)
@@ -149,7 +149,6 @@ func (p pageType) findGreater(ts float64) int {
 		func(idx int) bool { return p[idx].TimeStamp > ts })
 }
 
-// TODO: implement btree.Item
 type pageMetaDataType struct {
 	seqNo uint64
 	owner *timeSeriesType
@@ -157,6 +156,10 @@ type pageMetaDataType struct {
 
 func (m *pageMetaDataType) SetSeqNo(i uint64) {
 	m.seqNo = i
+}
+
+func (m *pageMetaDataType) SeqNo() uint64 {
+	return m.seqNo
 }
 
 type pageWithMetaDataType struct {
@@ -455,9 +458,9 @@ func (t *timeSeriesType) Fetch(
 	// Only include latest value if it comes before end timestamp.
 	if t.lastValue[0].TimeStamp < end {
 		record := Record{
-			ApplicationId: applicationId,
-			Info:          t.id,
-			TimeStamp:     t.lastValue[0].TimeStamp,
+			EndpointId: applicationId,
+			Info:       t.id,
+			TimeStamp:  t.lastValue[0].TimeStamp,
 		}
 		record.setValue(t.lastValue[0].Value)
 		result.Append(&record)
@@ -625,7 +628,6 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	return
 }
 
-// TODO add docs
 func (c *timeSeriesCollectionType) MarkInactive(
 	timestamp float64, supplier *pageQueueType) {
 	var reclaimHighList []*pageWithMetaDataType
@@ -720,11 +722,6 @@ func (c *timeSeriesCollectionType) Latest(result Appender) {
 	}
 }
 
-// TODO: 2 mutually exclusive btrees keyed by seqNo:
-// 1. high priority btree
-// 2. low priority btree
-// If len(highPriority) > 0.1*page_count pull from highPriority
-// Otherwise pull from btree with lowest seqNO
 type pageQueueType struct {
 	valueCountPerPage  int
 	pageCount          int
@@ -759,7 +756,66 @@ func (s *pageQueueType) MaxValuesPerPage() int {
 	return s.valueCountPerPage
 }
 
+func (s *pageQueueType) PageQueueStats(stats *btreepq.PageQueueStats) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.pq.Stats(stats)
+}
+
 func (s *pageQueueType) RegisterMetrics() (err error) {
+	var queueStats btreepq.PageQueueStats
+	queueRegion := tricorder.RegisterRegion(func() {
+		s.PageQueueStats(&queueStats)
+	})
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/highPriorityCount",
+		&queueStats.HighPriorityCount,
+		queueRegion,
+		units.None,
+		"Number of pages in high priority queue"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/lowPriorityCount",
+		&queueStats.LowPriorityCount,
+		queueRegion,
+		units.None,
+		"Number of pages in low priority queue"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/nextLowPrioritySeqNo",
+		&queueStats.NextLowPrioritySeqNo,
+		queueRegion,
+		units.None,
+		"Next seq no in low priority queue, 0 if empty"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/nextHighPrioritySeqNo",
+		&queueStats.NextHighPrioritySeqNo,
+		queueRegion,
+		units.None,
+		"Next seq no in high priority queue, 0 if empty"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/endSeqNo",
+		&queueStats.EndSeqNo,
+		queueRegion,
+		units.None,
+		"All seq no smaller than this. Marks end of both queues."); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInRegion(
+		"/store/highPriorityRatio",
+		queueStats.HighPriorityRatio,
+		queueRegion,
+		units.None,
+		"High priority page ratio"); err != nil {
+		return
+	}
+
 	if err = tricorder.RegisterMetric(
 		"/store/totalPages",
 		&s.pageCount,
@@ -785,7 +841,7 @@ func (s *pageQueueType) RegisterMetrics() (err error) {
 		"/store/btreeDegree",
 		&s.degree,
 		units.None,
-		"The ratio of inactive pages needed before they are reclaimed first"); err != nil {
+		"The degree of the btrees in the queue"); err != nil {
 		return
 	}
 	return
@@ -962,13 +1018,17 @@ func (s *Store) registerMetrics() (err error) {
 		"/store/leftToWritePerMetric",
 		metrics.LeftToWritePerMetricDist,
 		units.None,
-		"Number of pages to write to persistent store per metric"); err != nil {
+		"Number of values to write to persistent store per metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
 		"/store/pageUtilization",
 		func() float64 {
-			return float64(metrics.MetricValueCount.Get()) / metrics.PagesPerMetricDist.Sum() / float64(maxValuesPerPage)
+			metricValueCount := metrics.MetricValueCount.Get()
+			pagesInUseCount := metrics.PagesPerMetricDist.Sum()
+			metricCount := metrics.PagesPerMetricDist.Count()
+			extraValueCount := uint64(metricValueCount) - metricCount
+			return float64(extraValueCount) / pagesInUseCount / float64(maxValuesPerPage)
 		},
 		units.None,
 		"Page utilization 0.0 - 1.0"); err != nil {

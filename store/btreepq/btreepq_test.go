@@ -14,6 +14,10 @@ func (p *pageForTesting) SetSeqNo(i uint64) {
 	p.seq = i
 }
 
+func (p *pageForTesting) SeqNo() uint64 {
+	return p.seq
+}
+
 func (p *pageForTesting) Less(than btree.Item) bool {
 	pthan := than.(*pageForTesting)
 	return p.seq < pthan.seq

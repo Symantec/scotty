@@ -586,7 +586,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		"/foo/bar", kEndpoint0, 130.0, 131.0, store.AppendTo(&result))
 
 	assertValueEquals(t, 1, len(result))
-	assertValueEquals(t, kEndpoint0, result[0].ApplicationId)
+	assertValueEquals(t, kEndpoint0, result[0].EndpointId)
 	assertValueEquals(t, "/foo/bar", result[0].Info.Path())
 	assertValueEquals(t, 124.0, result[0].TimeStamp)
 	assertValueEquals(t, 8, result[0].Value)
@@ -618,8 +618,8 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aStore.ByPrefixAndEndpoint(
 		"/foo/ba", kEndpoint0, 124.0, 125.0, store.AppendTo(&result))
 	assertValueEquals(t, 2, len(result))
-	assertValueEquals(t, kEndpoint0, result[0].ApplicationId)
-	assertValueEquals(t, kEndpoint0, result[1].ApplicationId)
+	assertValueEquals(t, kEndpoint0, result[0].EndpointId)
+	assertValueEquals(t, kEndpoint0, result[1].EndpointId)
 	if !reflect.DeepEqual(
 		map[string]bool{"/foo/bar": true, "/foo/baz": true},
 		map[string]bool{

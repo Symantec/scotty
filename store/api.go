@@ -76,7 +76,8 @@ type Visitor interface {
 	Visit(store *Store, endpoint interface{}) error
 }
 
-// Iterator iterates over values in one time series.
+// Iterator iterates over all values in one time series including inaactive
+// flags.
 type Iterator struct {
 	timeSeries *timeSeriesType
 	values     []tsValueType
@@ -91,7 +92,10 @@ func (i *Iterator) Info() *MetricInfo {
 
 // Next returns the next timestamp and value in the series.
 // skipped indicates how many intermediate values had to be skipped because
-// of memory being reclaimed. Next returns (0, nil, 0) to indicates it has
+// of memory being reclaimed.
+// When Next encounters an inactive flag, it returns the equivalent of zero
+// for this time series.
+// Next returns (0, nil, 0) to indicate it has
 // no more values to emit. Next returning (0, nil, 0) does not necessarily
 // mean that it has reached the latest value in the store.
 // Inactive flags appear as a value equivalent to 0 or "".

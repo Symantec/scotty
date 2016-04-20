@@ -27,6 +27,19 @@ type inactiveType int
 
 var gInactive inactiveType
 
+type doneAppenderType struct {
+	Done    bool
+	Wrapped Appender
+}
+
+func (d *doneAppenderType) Append(r *Record) bool {
+	if !d.Wrapped.Append(r) {
+		d.Done = true
+		return false
+	}
+	return true
+}
+
 func (r *Record) setValue(value interface{}) {
 	if value == gInactive {
 		r.Active = false
@@ -132,7 +145,9 @@ func (p pageType) Fetch(
 	for i := lastIdx - 1; i >= firstIdx; i-- {
 		record.TimeStamp = p[i].TimeStamp
 		record.setValue(p[i].Value)
-		result.Append(&record)
+		if !result.Append(&record) {
+			return false
+		}
 	}
 	return
 }
@@ -478,7 +493,9 @@ func (t *timeSeriesType) Fetch(
 			TimeStamp:  t.lastValue[0].TimeStamp,
 		}
 		record.setValue(t.lastValue[0].Value)
-		result.Append(&record)
+		if !result.Append(&record) {
+			return
+		}
 	}
 	// If latest value has timestamp on or before start we are done.
 	if t.lastValue[0].TimeStamp <= start {
@@ -742,8 +759,12 @@ func (c *timeSeriesCollectionType) ByName(
 	if start >= end {
 		return
 	}
+	doneAppender := &doneAppenderType{Wrapped: result}
 	for _, timeSeries := range c.TsByName(name) {
-		timeSeries.Fetch(c.applicationId, start, end, result)
+		timeSeries.Fetch(c.applicationId, start, end, doneAppender)
+		if doneAppender.Done {
+			return
+		}
 	}
 }
 
@@ -753,14 +774,23 @@ func (c *timeSeriesCollectionType) ByPrefix(
 	if start >= end {
 		return
 	}
+	doneAppender := &doneAppenderType{Wrapped: result}
 	for _, timeSeries := range c.TsByPrefix(prefix) {
-		timeSeries.Fetch(c.applicationId, start, end, result)
+		timeSeries.Fetch(c.applicationId, start, end, doneAppender)
+		if doneAppender.Done {
+			return
+		}
 	}
 }
 
 func (c *timeSeriesCollectionType) Latest(result Appender) {
+	doneAppender := &doneAppenderType{Wrapped: result}
 	for _, timeSeries := range c.TsByPrefix("") {
-		timeSeries.Fetch(c.applicationId, kPlusInf, kPlusInf, result)
+		timeSeries.Fetch(
+			c.applicationId, kPlusInf, kPlusInf, doneAppender)
+		if doneAppender.Done {
+			return
+		}
 	}
 }
 
@@ -931,9 +961,10 @@ func (s *pageQueueType) ReclaimLow(
 
 type recordListType []*Record
 
-func (l *recordListType) Append(r *Record) {
+func (l *recordListType) Append(r *Record) bool {
 	recordCopy := *r
 	*l = append(*l, &recordCopy)
+	return true
 }
 
 type storeMetricsType struct {

@@ -20,10 +20,27 @@ var (
 	kError     = errors.New("An error")
 )
 
+type takeAppender struct {
+	ItemsToTake int
+	Wrapped     store.Appender
+}
+
+func (t *takeAppender) Append(r *store.Record) bool {
+	if !t.Wrapped.Append(r) {
+		return false
+	}
+	t.ItemsToTake--
+	if t.ItemsToTake <= 0 {
+		return false
+	}
+	return true
+}
+
 type sumMetricsType int
 
-func (s *sumMetricsType) Append(r *store.Record) {
+func (s *sumMetricsType) Append(r *store.Record) bool {
 	*s += sumMetricsType(r.Value.(int))
+	return true
 }
 
 func (s *sumMetricsType) Visit(
@@ -746,6 +763,17 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 200.0, result[2].TimeStamp)
 	assertValueEquals(t, 10, result[2].Value)
 
+	// Quickly test append not accepting more values
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/bar",
+		kEndpoint1,
+		0,
+		1000.0,
+		&takeAppender{ItemsToTake: 2, Wrapped: store.AppendTo(&result)})
+
+	assertValueEquals(t, 2, len(result))
+
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/baz", kEndpoint1, 0, 1000.0, store.AppendTo(&result))
@@ -863,6 +891,14 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 145.0, result[bazIdx].TimeStamp)
 	assertValueEquals(t, 15, result[bazIdx].Value)
 
+	// Test premature ending
+	result = nil
+	aStore.LatestByEndpoint(
+		kEndpoint0,
+		&takeAppender{
+			ItemsToTake: 1, Wrapped: store.AppendTo(&result)})
+	assertValueEquals(t, 1, len(result))
+
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/baz", kEndpoint0, 103.0, 104.0, store.AppendTo(&result))
@@ -899,6 +935,29 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 15, result[bits64+0].Value)
 	assertValueEquals(t, 139.0, result[bits64+1].TimeStamp)
 	assertValueEquals(t, 13, result[bits64+1].Value)
+
+	// Test premature ending
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"/foo/baz",
+		kEndpoint0,
+		144.0,
+		152.0,
+		&takeAppender{
+			ItemsToTake: 1,
+			Wrapped:     store.AppendTo(&result)})
+	assertValueEquals(t, 1, len(result))
+
+	result = nil
+	aStore.ByPrefixAndEndpoint(
+		"/foo/baz",
+		kEndpoint0,
+		144.0,
+		152.0,
+		&takeAppender{
+			ItemsToTake: 1,
+			Wrapped:     store.AppendTo(&result)})
+	assertValueEquals(t, 1, len(result))
 
 	result = nil
 	aStore.ByNameAndEndpoint(

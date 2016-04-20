@@ -499,7 +499,7 @@ func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMe
 	return &endpointMetricsAppender{endpointMetrics: result}
 }
 
-func (a *endpointMetricsAppender) Append(r *store.Record) {
+func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	if r.Info != a.lastInfo {
 		a.lastInfo = r.Info
 		_, jsonKind := trimessages.AsJson(nil, a.lastInfo.Kind(), a.lastInfo.Unit())
@@ -518,6 +518,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) {
 		Active:    r.Active,
 	}
 	a.lastMetric.Values = append(a.lastMetric.Values, newTimestampedValue)
+	return true
 }
 
 // gatherDataForEndpoint serves api/hosts pages.

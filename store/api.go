@@ -59,7 +59,8 @@ type Appender interface {
 	// Append appends the contents record r to this instance.
 	// Implementations must not hold onto r as the contents of r
 	// may change between calls to Append.
-	Append(r *Record)
+	// Append should return false when it is done accepting records.
+	Append(r *Record) bool
 }
 
 // AppendTo creates an Appender that appends Record instance pointers

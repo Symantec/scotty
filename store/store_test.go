@@ -525,6 +525,14 @@ func TestMachineGoneInactive(t *testing.T) {
 	assertValueEquals(t, 1900.0, result[3].TimeStamp)
 	assertValueEquals(t, 2, result[3].Value)
 	assertValueEquals(t, true, result[3].Active)
+
+	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, nil); ok {
+		t.Error("Expected AddBatch to fail")
+	}
+	aStore.MarkEndpointActive(kEndpoint1)
+	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, nil); !ok {
+		t.Error("Expected AddBatch to succeed")
+	}
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
@@ -958,7 +966,11 @@ func addBatch(
 	ts float64,
 	m messages.MetricList,
 	count int) {
-	if out := astore.AddBatch(endpointId, ts, m); out != count {
+	out, ok := astore.AddBatch(endpointId, ts, m)
+	if !ok {
+		t.Errorf("Expected AddBatch to succeed")
+	}
+	if out != count {
 		t.Errorf("Expected %d added, got %d.", count, out)
 	}
 }

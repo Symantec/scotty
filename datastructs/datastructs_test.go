@@ -189,10 +189,17 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 			"host3:92": true,
 		},
 		visitor.Inactive)
-	endpointId, _ := appStatus.EndpointIdByHostAndName(
+
+	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
 	assertValueEquals(t, "host3", endpointId.HostName())
 	assertValueEquals(t, 35, endpointId.Port())
+
+	// Trying to add to inactive endpoint should fail
+	if _, ok := aStore.AddBatch(endpointId, 9999.0, nil); ok {
+		t.Error("Adding to inactive endpoint should fail.")
+	}
+
 	stats := appStatus.All()
 	sort.Sort(sortByHostPort(stats))
 	assertValueEquals(t, 8, len(stats))
@@ -227,6 +234,52 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
 	assertValueEquals(t, "AnotherApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
+
+	appStatus.MarkHostsActiveExclusively(61.7, []string{"host2", "host3", "host4"})
+
+	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+		"host3", "AnApp")
+
+	// Trying to add to active endpoint should succeed
+	if _, ok := aStore.AddBatch(endpointId, 9999.0, nil); !ok {
+		t.Error("Adding to active endpoint should succeed.")
+	}
+
+	stats = appStatus.All()
+	sort.Sort(sortByHostPort(stats))
+	assertValueEquals(t, 8, len(stats))
+	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[0].Name)
+	assertValueEquals(t, false, stats[0].Active)
+
+	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[1].Name)
+	assertValueEquals(t, false, stats[1].Active)
+
+	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[2].Name)
+	assertValueEquals(t, true, stats[2].Active)
+
+	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[3].Name)
+	assertValueEquals(t, true, stats[3].Active)
+
+	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[4].Name)
+	assertValueEquals(t, true, stats[4].Active)
+
+	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[5].Name)
+	assertValueEquals(t, true, stats[5].Active)
+
+	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(t, "AnApp", stats[6].Name)
+	assertValueEquals(t, true, stats[6].Active)
+
+	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
+	assertValueEquals(t, "AnotherApp", stats[7].Name)
+	assertValueEquals(t, true, stats[7].Active)
+
 }
 
 func TestHighPriorityEviction(t *testing.T) {

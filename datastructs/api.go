@@ -56,10 +56,9 @@ func (a *ApplicationStatus) Staleness() time.Duration {
 type ApplicationStatuses struct {
 	appList *ApplicationList
 	// A function must hold this lock when changing the status
-	// (active vs. inactive) of the endpoints or when adding new
-	// endpoints to ensure that when it returns, all of the time series
-	// of each inactive endpoint are also inactive and that
-	// all endpoints in this instance are also in the current store.
+	// (active vs. inactive) of the endpoints to ensure that when it
+	// returns, the status of each endpoint matches the status of the
+	// corresponding time series collection in the current store.
 	// If this lock is acquired, it must be acquired before the normal
 	// lock for this instance.
 	statusChangeLock sync.Mutex

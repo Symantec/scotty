@@ -449,12 +449,14 @@ func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector
 func (l *loggerType) LogResponse(
 	e *collector.Endpoint, metrics trimessages.MetricList, state *collector.State) {
 	ts := trimessages.TimeToFloat(state.Timestamp())
-	added := l.Store.AddBatch(
+	added, ok := l.Store.AddBatch(
 		e,
 		ts,
 		metrics)
-	l.AppStats.LogChangedMetricCount(e, added)
-	l.ChangedMetricsDist.Add(float64(added))
+	if ok {
+		l.AppStats.LogChangedMetricCount(e, added)
+		l.ChangedMetricsDist.Add(float64(added))
+	}
 }
 
 type gzipResponseWriter struct {

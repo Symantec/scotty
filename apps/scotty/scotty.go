@@ -170,7 +170,7 @@ type pstoreHandlerData struct {
 type pstoreHandlerType struct {
 	writer                  pstore.Writer
 	appList                 *datastructs.ApplicationList
-	iteratorsBeingWritten   []*store.Iterator
+	iteratorsBeingWritten   []*store.OldIterator
 	toBeWritten             []pstore.Record
 	batchSize               int
 	skipped                 int
@@ -194,7 +194,7 @@ func newPStoreHandler(
 	return &pstoreHandlerType{
 		writer:                  w,
 		appList:                 appList,
-		iteratorsBeingWritten:   make([]*store.Iterator, batchSize),
+		iteratorsBeingWritten:   make([]*store.OldIterator, batchSize),
 		toBeWritten:             make([]pstore.Record, batchSize),
 		batchSize:               batchSize,
 		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),

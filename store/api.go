@@ -15,6 +15,7 @@ type MetricInfo struct {
 	unit        units.Unit
 	kind        types.Type
 	bits        int
+	groupId     int
 }
 
 // Path returns the path of the metric
@@ -42,6 +43,32 @@ func (m *MetricInfo) Bits() int {
 	return m.bits
 }
 
+// The group ID of this metric
+func (m *MetricInfo) GroupId() int {
+	return m.groupId
+}
+
+// MetricInfoBuilder creates a brand new MetricInfo instance from scratch.
+// Used for testing.
+type MetricInfoBuilder struct {
+	Path        string
+	Description string
+	Unit        units.Unit
+	Kind        types.Type
+	Bits        int
+	GroupId     int
+}
+
+func (m *MetricInfoBuilder) Build() *MetricInfo {
+	return &MetricInfo{
+		path:        m.Path,
+		description: m.Description,
+		unit:        m.Unit,
+		kind:        m.Kind,
+		bits:        m.Bits,
+		groupId:     m.GroupId}
+}
+
 // Record represents one value for one particular metric at a particular
 // time.
 type Record struct {
@@ -54,20 +81,48 @@ type Record struct {
 	Active bool
 }
 
+// Filterer filters metric values.
+type Filterer interface {
+	// Filter returns true to include passed metric value false otherwise.
+	Filter(*Record) bool
+}
+
+// FiltererFunc is an adapter allowing an ordinary function to be used as a
+// Filterer.
+type FiltererFunc func(*Record) bool
+
+func (f FiltererFunc) Filter(r *Record) bool {
+	return f(r)
+}
+
 // Appender appends records fetched from a Store to this instance.
 type Appender interface {
 	// Append appends the contents record r to this instance.
-	// Implementations must not hold onto r as the contents of r
-	// may change between calls to Append.
+	// Implementations must not hold onto the r pointer as the contents of
+	// r may change between calls to Append.
 	// Append should return false when it is done accepting records.
 	Append(r *Record) bool
 }
 
-// AppendTo creates an Appender that appends Record instance pointers
-// to result. The Append method of returned Appender stores a copy of
-// passed in Record.
-func AppendTo(result *[]*Record) Appender {
+// AppendTo returns an Appender that appends Record instances to result.
+func AppendTo(result *[]Record) Appender {
 	return (*recordListType)(result)
+}
+
+// AppenderFilterFunc returns an Appender that appends only when the filter
+// function returns true
+func AppenderFilterFunc(wrapped Appender, filter func(*Record) bool) Appender {
+	return &filterAppenderType{
+		filter: FiltererFunc(filter), wrapped: wrapped}
+}
+
+// AppenderLimit returns an Appender that appends at most limit items if
+// limit is positve. If limit is 0 or negative, returns wrapped.
+func AppenderLimit(wrapped Appender, limit int) Appender {
+	if limit > 0 {
+		return &limitAppenderType{limit: limit, wrapped: wrapped}
+	}
+	return wrapped
 }
 
 // Visitor visits endpoints registered with a Store instance.
@@ -77,37 +132,79 @@ type Visitor interface {
 	Visit(store *Store, endpoint interface{}) error
 }
 
-// Iterator iterates over all values in one time series including inaactive
-// flags.
-type Iterator struct {
-	timeSeries *timeSeriesType
-	values     []tsValueType
-	advances   int
-	skipped    int
+// Here for backward compatibilty to keep the code compiling.
+// TODO: remove
+type OldIterator struct {
 }
 
-// Info returns the metric info of the time series.
-func (i *Iterator) Info() *MetricInfo {
-	return i.timeSeries.id
+func (o *OldIterator) Info() *MetricInfo {
+	return nil
 }
 
-// Next returns the next timestamp and value in the series.
-// skipped indicates how many intermediate values had to be skipped because
-// of memory being reclaimed.
-// When Next encounters an inactive flag, it returns the equivalent of zero
-// for this time series.
-// Next returns (0, nil, 0) to indicate it has
-// no more values to emit. Next returning (0, nil, 0) does not necessarily
-// mean that it has reached the latest value in the store.
-// Inactive flags appear as a value equivalent to 0 or "".
-func (i *Iterator) Next() (timestamp float64, value interface{}, skipped int) {
-	return i.next()
+func (o *OldIterator) Next() (float64, interface{}, int) {
+	return 0.0, nil, 0
 }
 
-// Commit indicates that we are done using this iterator and that the next
-// Iterator for this time series should start where this one left off.
-func (i *Iterator) Commit() {
-	i.commit()
+func (o *OldIterator) Commit() {
+}
+
+// Iterator iterates over metric values stored in scotty.
+type Iterator interface {
+	// Next stores the next metric value at r and advances this instance.
+	// Next returns false if there are no more values.
+	Next(r *Record) bool
+}
+
+// IteratorFilterFunc returns an Iterator like the given one except
+// that it yields only metric values for which filter returns true.
+func IteratorFilterFunc(
+	iterator Iterator, filter func(*Record) bool) Iterator {
+	return &filterIteratorType{
+		filter:  FiltererFunc(filter),
+		wrapped: iterator}
+}
+
+// NamedIteratorFilterFunc returns an Iterator like the given one except
+// that it yields only metric values for which filter returns true.
+func NamedIteratorFilterFunc(
+	ni NamedIterator, filter func(*Record) bool) NamedIterator {
+	return &changedNamedIteratorType{
+		NamedIterator: ni,
+		change:        IteratorFilterFunc(ni, filter)}
+}
+
+// NamedIterator iterates over metric values stored in scotty.
+// It is safe to use NamedIterator while new values are being added to
+// scotty.
+//
+// NamedIterator may report no more values before finishing.
+// However, if the caller commits the progress, creating
+// a new iterator with the same name to iterate over the same items will
+// continue where the previous iterator left off. Put another way, the new
+// iterator will not visit any of the values that the previous iterator
+// visited.
+//
+// As the name is used to track progress, a caller should create at most one
+// NamedIterator with a particular name at a time to iterate over the same
+// group of items. If the caller creates multiple NamedIterator instances with
+// the same name to iterate over the same group of items and calls Commit on
+// all of them, the last iterator to save its progress wins overwriting the
+// progress of the others with its own.
+type NamedIterator interface {
+	// Name returns the name of the iterator.
+	Name() string
+	// Next stores the next metric value at r and advances this instance.
+	// Next returns false if either there are no more values or it is
+	// time to commit.
+	Next(r *Record) bool
+	// Commit permanently stores the progress of this instance so that
+	// creating an iterator with the same name to iterate over the same
+	// items will continue where this instance left off.
+	// If caller does not call commit and then creates another iterator
+	// with the same name to iterate over the same items, that new
+	// iterator will start in the same place as this iterator and
+	// attempt to visit the same values.
+	Commit()
 }
 
 // Store is an in memory store of metrics.
@@ -122,21 +219,41 @@ type Store struct {
 }
 
 // NewStore returns a new Store instance.
-// valueCountPerPage is how many values may be stored in a single page.
+// valueCount is how many timestamp value pairs can fit on a page.
 // pageCount is the number of pages in this store and remains constant.
 // inactiveThreshhold is the minimum ratio (0-1) of pages that need to be
 // in the high priority queue before they are reclaimed before the other
 // pages.
 // degree is the degree of the btrees (see github.com/Symantec/btree)
 func NewStore(
-	valueCountPerPage,
+	valueCount,
+	pageCount int,
+	inactiveThreshhold float64,
+	degree int) *Store {
+	return NewStoreBytesPerPage(
+		valueCount*gTsAndValueSize,
+		pageCount,
+		inactiveThreshhold,
+		degree)
+
+}
+
+// NewStoreBytesPerPage returns a new Store instance.
+// bytesPerPage is the size of a single page in bytes.
+// pageCount is the number of pages in this store and remains constant.
+// inactiveThreshhold is the minimum ratio (0-1) of pages that need to be
+// in the high priority queue before they are reclaimed before the other
+// pages.
+// degree is the degree of the btrees (see github.com/Symantec/btree)
+func NewStoreBytesPerPage(
+	bytesPerPage,
 	pageCount int,
 	inactiveThreshhold float64,
 	degree int) *Store {
 	return &Store{
 		byApplication: make(map[interface{}]*timeSeriesCollectionType),
 		supplier: newPageQueueType(
-			valueCountPerPage,
+			bytesPerPage,
 			pageCount,
 			inactiveThreshhold,
 			degree),
@@ -225,10 +342,22 @@ func (s *Store) ByEndpoint(
 	s.byEndpoint(endpointId, start, end, result)
 }
 
-// Iterators returns all the Iterators for all the time series for the
-// given endpoint.
-func (s *Store) Iterators(endpointId interface{}) []*Iterator {
-	return s.iterators(endpointId)
+// NamedIteratorForEndpoint returns an iterator for the given name that
+// iterates over metric values for all known timestamps for the given endpoint.
+// Although returned iterator iterates over values and timestamps in no
+// particular order, it will iterate over values of the same metric by
+// increasing timestamp.
+//
+// If maxFrames = 0, the returned iterator will make best effort to iterate
+// over all the metric values in the endpoint. A positive maxFrames hints to
+// the returned iterator that it should iterate over at most maxFrames values
+// per metric. Caller must commit progress and create a new iterator with the
+// same name for the same endpoint to see the rest of the values.
+func (s *Store) NamedIteratorForEndpoint(
+	name string,
+	endpointId interface{},
+	maxFrames int) NamedIterator {
+	return s.namedIteratorForEndpoint(name, endpointId, maxFrames)
 }
 
 // LatestByEndpoint returns the latest records for each metric for a
@@ -267,4 +396,11 @@ func (s *Store) MarkEndpointInactive(
 // MarkEndpointActive marks given endpoint as active.
 func (s *Store) MarkEndpointActive(endpointId interface{}) {
 	s.markEndpointActive(endpointId)
+}
+
+// Here to keep code compiling. Does not return any iterators. old code will
+// not write anything to LMM for now.
+// TODO: remove
+func (s *Store) Iterators(e interface{}) []*OldIterator {
+	return nil
 }

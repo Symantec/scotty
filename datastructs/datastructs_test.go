@@ -301,7 +301,7 @@ func TestHighPriorityEviction(t *testing.T) {
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
 
-	var result []*store.Record
+	var result []store.Record
 	aStore.ByNameAndEndpoint(
 		"/foo",
 		endpointId,

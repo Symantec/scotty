@@ -132,22 +132,6 @@ type Visitor interface {
 	Visit(store *Store, endpoint interface{}) error
 }
 
-// Here for backward compatibilty to keep the code compiling.
-// TODO: remove
-type OldIterator struct {
-}
-
-func (o *OldIterator) Info() *MetricInfo {
-	return nil
-}
-
-func (o *OldIterator) Next() (float64, interface{}, int) {
-	return 0.0, nil, 0
-}
-
-func (o *OldIterator) Commit() {
-}
-
 // Iterator iterates over metric values stored in scotty.
 type Iterator interface {
 	// Next stores the next metric value at r and advances this instance.
@@ -399,11 +383,4 @@ func (s *Store) MarkEndpointInactive(
 // MarkEndpointActive marks given endpoint as active.
 func (s *Store) MarkEndpointActive(endpointId interface{}) {
 	s.markEndpointActive(endpointId)
-}
-
-// Here to keep code compiling. Does not return any iterators. old code will
-// not write anything to LMM for now.
-// TODO: remove
-func (s *Store) Iterators(e interface{}) []*OldIterator {
-	return nil
 }

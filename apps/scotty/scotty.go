@@ -168,7 +168,7 @@ type pstoreHandlerData struct {
 // persistent storage includes at least fPStoreBatchSize metrics.
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
-	writer                  pstore.Writer
+	writer                  pstore.LimitedWriter
 	appList                 *datastructs.ApplicationList
 	iteratorsBeingWritten   []*store.OldIterator
 	toBeWritten             []pstore.Record
@@ -187,7 +187,7 @@ type pstoreHandlerType struct {
 }
 
 func newPStoreHandler(
-	w pstore.Writer,
+	w pstore.LimitedWriter,
 	appList *datastructs.ApplicationList,
 	batchSize int) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
@@ -682,7 +682,7 @@ func (s stallWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
-func newWriter() (result pstore.Writer, err error) {
+func newWriter() (result pstore.LimitedWriter, err error) {
 	if *fKafkaConfigFile == "" {
 		return stallWriter{}, nil
 	}

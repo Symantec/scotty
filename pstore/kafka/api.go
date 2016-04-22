@@ -7,7 +7,7 @@ import (
 )
 
 // NewWriter creates a new writer that writes to kafka endpoints.
-func NewWriter(config *Config) (pstore.Writer, error) {
+func NewWriter(config *Config) (pstore.LimitedWriter, error) {
 	return newWriter(config)
 }
 

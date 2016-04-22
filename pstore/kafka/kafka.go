@@ -149,7 +149,7 @@ type writer struct {
 }
 
 func newWriter(c *Config) (
-	result pstore.Writer, err error) {
+	result pstore.LimitedWriter, err error) {
 	var awriter writer
 	awriter.topic = c.Topic
 	awriter.serializer.TenantId = c.TenantId

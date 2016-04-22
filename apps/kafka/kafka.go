@@ -129,7 +129,7 @@ func initRecord(value *metricValue, timestamp time.Time, r *pstore.Record) {
 }
 
 func playCommands(
-	values []metricValue, timestamp time.Time, writer pstore.Writer) {
+	values []metricValue, timestamp time.Time, writer pstore.RecordWriter) {
 	records := make([]pstore.Record, len(values))
 	for i := range values {
 		initRecord(&values[i], timestamp, &records[i])
@@ -154,7 +154,7 @@ func readCommands(commands *[]metricCommand) {
 	}
 }
 
-func createKafkaWriter() (result pstore.Writer) {
+func createKafkaWriter() (result pstore.RecordWriter) {
 	if *fKafkaConfigFile == "" {
 		return kafka.NewFakeWriter()
 	}

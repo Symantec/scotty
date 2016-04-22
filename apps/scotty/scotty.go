@@ -168,7 +168,7 @@ type pstoreHandlerData struct {
 // persistent storage includes at least fPStoreBatchSize metrics.
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
-	writer                  pstore.LimitedWriter
+	writer                  pstore.LimitedRecordWriter
 	appList                 *datastructs.ApplicationList
 	iteratorsBeingWritten   []*store.OldIterator
 	toBeWritten             []pstore.Record
@@ -187,7 +187,7 @@ type pstoreHandlerType struct {
 }
 
 func newPStoreHandler(
-	w pstore.LimitedWriter,
+	w pstore.LimitedRecordWriter,
 	appList *datastructs.ApplicationList,
 	batchSize int) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
@@ -205,7 +205,7 @@ func newPStoreHandler(
 }
 
 func (p *pstoreHandlerType) StartVisit() {
-	p.ttWriter = &timeTakenWriter{Writer: p.writer}
+	p.ttWriter = &timeTakenWriter{RecordWriter: p.writer}
 	p.startTime = time.Now()
 }
 
@@ -650,13 +650,13 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type timeTakenWriter struct {
-	pstore.Writer
+	pstore.RecordWriter
 	TimeTaken time.Duration
 }
 
 func (t *timeTakenWriter) Write(records []pstore.Record) error {
 	start := time.Now()
-	result := t.Writer.Write(records)
+	result := t.RecordWriter.Write(records)
 	t.TimeTaken += time.Now().Sub(start)
 	return result
 }
@@ -682,7 +682,7 @@ func (s stallWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
-func newWriter() (result pstore.LimitedWriter, err error) {
+func newWriter() (result pstore.LimitedRecordWriter, err error) {
 	if *fKafkaConfigFile == "" {
 		return stallWriter{}, nil
 	}

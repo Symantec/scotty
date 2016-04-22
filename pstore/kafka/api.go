@@ -7,13 +7,13 @@ import (
 )
 
 // NewWriter creates a new writer that writes to kafka endpoints.
-func NewWriter(config *Config) (pstore.LimitedWriter, error) {
+func NewWriter(config *Config) (pstore.LimitedRecordWriter, error) {
 	return newWriter(config)
 }
 
 // NewFakeWriter creates a new writer that dumps the JSON to stdout.
 // The tenantId and apiKey are fake for security.
-func NewFakeWriter() pstore.Writer {
+func NewFakeWriter() pstore.RecordWriter {
 	return newFakeWriter()
 }
 

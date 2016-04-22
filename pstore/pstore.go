@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (w *WriterWithMetrics) write(records []Record) error {
+func (w *RecordWriterWithMetrics) write(records []Record) error {
 	ctime := time.Now()
 	result := w.W.Write(records)
 	timeTaken := time.Now().Sub(ctime)
@@ -20,13 +20,13 @@ func (w *WriterWithMetrics) write(records []Record) error {
 	return result
 }
 
-func (w *WriterWithMetrics) _metrics(m *WriterMetrics) {
+func (w *RecordWriterWithMetrics) _metrics(m *RecordWriterMetrics) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	*m = w.metrics
 }
 
-func (w *WriterWithMetrics) logWrite(
+func (w *RecordWriterWithMetrics) logWrite(
 	batchSize uint, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
 	w.lock.Lock()
@@ -34,7 +34,7 @@ func (w *WriterWithMetrics) logWrite(
 	w.metrics.logWrite(batchSize, timeTaken)
 }
 
-func (w *WriterWithMetrics) logWriteError(
+func (w *RecordWriterWithMetrics) logWriteError(
 	batchSize uint, err string, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
 	w.lock.Lock()
@@ -42,7 +42,7 @@ func (w *WriterWithMetrics) logWriteError(
 	w.metrics.logWriteError(err, timeTaken)
 }
 
-func (w *WriterWithMetrics) logDistributions(
+func (w *RecordWriterWithMetrics) logDistributions(
 	batchSize uint, timeTaken time.Duration) {
 	if w.PerMetricWriteTimes != nil {
 		w.PerMetricWriteTimes.Add(
@@ -53,7 +53,7 @@ func (w *WriterWithMetrics) logDistributions(
 	}
 }
 
-func (w *WriterMetrics) logWrite(
+func (w *RecordWriterMetrics) logWrite(
 	batchSize uint, timeTaken time.Duration) {
 	w.ValuesWritten += uint64(batchSize)
 	w.WriteAttempts += 1
@@ -61,13 +61,13 @@ func (w *WriterMetrics) logWrite(
 	w.TimeSpentWriting += timeTaken
 }
 
-func (w *WriterMetrics) logWriteError(err string, timeTaken time.Duration) {
+func (w *RecordWriterMetrics) logWriteError(err string, timeTaken time.Duration) {
 	w.WriteAttempts += 1
 	w.LastWriteError = err
 	w.TimeSpentWriting += timeTaken
 }
 
-func newConsumer(w Writer, bufferSize int) *Consumer {
+func newConsumer(w RecordWriter, bufferSize int) *Consumer {
 	return &Consumer{
 		w:             w,
 		buffer:        make([]Record, bufferSize),

@@ -37,24 +37,24 @@ type Record struct {
 	Timestamp time.Time
 }
 
-// Writer is the interface for writing to persistent store.
-// Implementations of Writer must be safe to use with multiple goroutines.
-type Writer interface {
+// RecordWriter is the interface for writing to persistent store.
+// Implementations of RecordWriter must be safe to use with multiple goroutines.
+type RecordWriter interface {
 	// Write writes given collection of records to persistent storage
 	Write(records []Record) error
 }
 
-// LimitedWriter is a Writer which provides information on what types of
-// values it can write.
-type LimitedWriter interface {
-	Writer
+// LimitedRecordWriter is a RecordWriter which provides information on what
+// types of values it can write.
+type LimitedRecordWriter interface {
+	RecordWriter
 	// IsTypeSupported returns true if this writer supports metrics
 	// of a particular kind.
 	IsTypeSupported(kind types.Type) bool
 }
 
-// WriterMetrics represents writing metrics
-type WriterMetrics struct {
+// RecordWriterMetrics represents writing metrics
+type RecordWriterMetrics struct {
 	ValuesWritten    uint64
 	WriteAttempts    uint64
 	SuccessfulWrites uint64
@@ -62,28 +62,28 @@ type WriterMetrics struct {
 	TimeSpentWriting time.Duration
 }
 
-func (w *WriterMetrics) SuccessfulWriteRatio() float64 {
+func (w *RecordWriterMetrics) SuccessfulWriteRatio() float64 {
 	return float64(w.SuccessfulWrites) / float64(w.WriteAttempts)
 }
 
-// WriterWithMetrics implements Writer and provides metrics
-type WriterWithMetrics struct {
+// RecordWriterWithMetrics implements RecordWriter and provides metrics
+type RecordWriterWithMetrics struct {
 	// Client must provide the underlying writer
-	W Writer
+	W RecordWriter
 	// Client populates this to collect write times per metric
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
 	// Client populates this to collect batch sizes
 	BatchSizes *tricorder.CumulativeDistribution
 	lock       sync.Mutex
-	metrics    WriterMetrics
+	metrics    RecordWriterMetrics
 }
 
-func (w *WriterWithMetrics) Write(records []Record) error {
+func (w *RecordWriterWithMetrics) Write(records []Record) error {
 	return w.write(records)
 }
 
 // Metrics stores the current metrics at m
-func (w *WriterWithMetrics) Metrics(m *WriterMetrics) {
+func (w *RecordWriterWithMetrics) Metrics(m *RecordWriterMetrics) {
 	w._metrics(m)
 }
 
@@ -94,7 +94,7 @@ func (w *WriterWithMetrics) Metrics(m *WriterMetrics) {
 // NamedIterator instances.
 // Multiple goroutines cannot share the same Consumer instance.
 type Consumer struct {
-	w             Writer
+	w             RecordWriter
 	buffer        []Record
 	toBeCommitted map[store.NamedIterator]bool
 	idx           int
@@ -102,7 +102,7 @@ type Consumer struct {
 
 // NewConsumer creates a new Consumer instance. w is the underlying writer.
 // bufferSize is how many values the buffer holds.
-func NewConsumer(w Writer, bufferSize int) *Consumer {
+func NewConsumer(w RecordWriter, bufferSize int) *Consumer {
 	return newConsumer(w, bufferSize)
 }
 
@@ -123,7 +123,7 @@ func NewConsumer(w Writer, bufferSize int) *Consumer {
 //
 // When the caller passes a NamedIterator instance to Write, this instance
 // holds onto that NamedIterator until either its values are written out to
-// the underlying Writer or an error happens. Therefore, the caller should
+// the underlying RecordWriter or an error happens. Therefore, the caller should
 // avoid creating and using another NamedIterator instance with the same name
 // iterating over the same values until it has called Flush on this instance.
 func (c *Consumer) Write(

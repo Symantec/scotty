@@ -73,7 +73,7 @@ func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
 // TODO: Remove once we know the grafana bug involving duplicate timestamps
 // is fixed.
 type uniqueMetricsWriter struct {
-	pstore.Writer
+	pstore.RecordWriter
 }
 
 // fixDuplicates is a workaround for a Grafana bug.
@@ -112,14 +112,14 @@ func fixDuplicates(records []pstore.Record) (result []pstore.Record) {
 // TODO: Remove once we know the grafana bug involving duplicate timestamps
 // is fixed.
 func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
-	return u.Writer.Write(fixDuplicates(records))
+	return u.RecordWriter.Write(fixDuplicates(records))
 }
 
 type fakeWriter struct {
 	serializer recordSerializerType
 }
 
-func newFakeWriter() pstore.Writer {
+func newFakeWriter() pstore.RecordWriter {
 	return kFakeWriter
 }
 
@@ -149,7 +149,7 @@ type writer struct {
 }
 
 func newWriter(c *Config) (
-	result pstore.LimitedWriter, err error) {
+	result pstore.LimitedRecordWriter, err error) {
 	var awriter writer
 	awriter.topic = c.Topic
 	awriter.serializer.TenantId = c.TenantId

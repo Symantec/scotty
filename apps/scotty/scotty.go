@@ -38,6 +38,12 @@ import (
 	"time"
 )
 
+const (
+	kPStoreIteratorName       = "pstore"
+	kCollectorIteratorName    = "collector"
+	kLookAheadWritingToPStore = 5
+)
+
 var (
 	fPort = flag.Int(
 		"portNum",
@@ -149,136 +155,133 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 	return
 }
 
+type pstoreForecasterType struct {
+	filter store.FiltererFunc
+	lock   sync.Mutex
+	count  uint64
+}
+
+func createPStoreForecaster(
+	typeFilter func(t types.Type) bool) *pstoreForecasterType {
+	f := func(r *store.Record) bool {
+		return typeFilter(r.Info.Kind()) && r.Active
+	}
+	return &pstoreForecasterType{filter: f}
+}
+
+func (p *pstoreForecasterType) Consume(iterator store.NamedIterator) {
+	filtered := p.Filter(iterator)
+	var r store.Record
+	var tempCount uint64
+	for filtered.Next(&r) {
+		tempCount++
+	}
+	filtered.Commit()
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.count += tempCount
+}
+
+func (p *pstoreForecasterType) Filter(
+	iterator store.NamedIterator) store.NamedIterator {
+	return store.NamedIteratorFilterFunc(iterator, p.filter)
+}
+
+func (p *pstoreForecasterType) Count() uint64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	return p.count
+}
+
+type pstoreCountAndFilterType interface {
+	Count() uint64
+	Filter(iterator store.NamedIterator) store.NamedIterator
+}
+
 // metrics for pstoreHandlerType instances
-type pstoreHandlerData struct {
-	MetricsWritten   int64
-	MetricsSkipped   int64
-	WriteAttempts    int64
-	SuccessfulWrites int64
-	LastWriteError   string
-	EndpointsVisited int64
+type pstoreHandlerMetricsType struct {
+	Writer pstore.RecordWriterMetrics
 }
 
 // pstoreHandlerType implements store.Visitor.
-// Its Visit method writes the latest value for each metric in the store to
-// persistent storage. It stores the last value for each endpoint and
-// metric it wrote to persistent storage so
-// that it can avoid writing the same value twice.
-// an pstoreHandlerType instance buffers writes so that each write to
-// persistent storage includes at least fPStoreBatchSize metrics.
+// Its Visit method writes the latest values for each endpoint to
+// persistent storage. It uses a pstore.Consumer to buffer writes to
+// persistnt storage and to avoid writing the same value twice.
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
-	writer                  pstore.LimitedRecordWriter
+	writerWithMetrics       *pstore.RecordWriterWithMetrics
+	consumer                *pstore.Consumer
 	appList                 *datastructs.ApplicationList
-	iteratorsBeingWritten   []*store.OldIterator
-	toBeWritten             []pstore.Record
-	batchSize               int
-	skipped                 int
-	idx                     int
-	timeSpentWritingDist    *tricorder.CumulativeDistribution
-	timeSpentCollectingDist *tricorder.CumulativeDistribution
-	totalTimeSpentDist      *tricorder.CumulativeDistribution
-	perMetricWriteDist      *tricorder.CumulativeDistribution
-	ttWriter                *timeTakenWriter
+	countAndFilter          pstoreCountAndFilterType
 	startTime               time.Time
-	// Protects all fields below
-	lock  sync.Mutex
-	stats pstoreHandlerData
+	startWritingTime        time.Duration
+	timeSpentCollectingDist *tricorder.CumulativeDistribution
+	timeSpentWritingDist    *tricorder.CumulativeDistribution
+	totalTimeSpentDist      *tricorder.CumulativeDistribution
 }
 
 func newPStoreHandler(
-	w pstore.LimitedRecordWriter,
+	w pstore.RecordWriter,
 	appList *datastructs.ApplicationList,
+	countAndFilter pstoreCountAndFilterType,
 	batchSize int) *pstoreHandlerType {
+	writerWithMetrics := &pstore.RecordWriterWithMetrics{}
+	writerWithMetrics.W = w
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
+	writerWithMetrics.PerMetricWriteTimes = bucketer.NewCumulativeDistribution()
+
 	return &pstoreHandlerType{
-		writer:                  w,
+		writerWithMetrics:       writerWithMetrics,
+		consumer:                pstore.NewConsumer(writerWithMetrics, batchSize),
 		appList:                 appList,
-		iteratorsBeingWritten:   make([]*store.OldIterator, batchSize),
-		toBeWritten:             make([]pstore.Record, batchSize),
-		batchSize:               batchSize,
-		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
+		countAndFilter:          countAndFilter,
 		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
+		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
 		totalTimeSpentDist:      bucketer.NewCumulativeDistribution(),
-		perMetricWriteDist:      bucketer.NewCumulativeDistribution(),
 	}
 }
 
 func (p *pstoreHandlerType) StartVisit() {
-	p.ttWriter = &timeTakenWriter{RecordWriter: p.writer}
 	p.startTime = time.Now()
+	var metrics pstore.RecordWriterMetrics
+	p.writerWithMetrics.Metrics(&metrics)
+	p.startWritingTime = metrics.TimeSpentWriting
 }
 
 func (p *pstoreHandlerType) EndVisit() {
-	p.flush()
-	totalTimeSpent := time.Now().Sub(p.startTime)
-	p.timeSpentWritingDist.Add(p.ttWriter.TimeTaken)
-	p.totalTimeSpentDist.Add(totalTimeSpent)
-	p.timeSpentCollectingDist.Add(totalTimeSpent - p.ttWriter.TimeTaken)
+	p.consumer.Flush()
+	totalTime := time.Now().Sub(p.startTime)
+	var metrics pstore.RecordWriterMetrics
+	p.writerWithMetrics.Metrics(&metrics)
+	timeSpentWriting := metrics.TimeSpentWriting - p.startWritingTime
+	p.totalTimeSpentDist.Add(totalTime)
+	p.timeSpentWritingDist.Add(timeSpentWriting)
+	p.timeSpentCollectingDist.Add(totalTime - timeSpentWriting)
 }
 
 func (p *pstoreHandlerType) Visit(
 	theStore *store.Store, endpointId interface{}) error {
-	iterators := theStore.Iterators(endpointId)
+	iterator := p.countAndFilter.Filter(
+		theStore.NamedIteratorForEndpoint(
+			kPStoreIteratorName,
+			endpointId,
+			kLookAheadWritingToPStore,
+		))
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
-
-	for i := range iterators {
-		info := iterators[i].Info()
-		// Skip over metrics that our store won't accept
-		if !p.writer.IsTypeSupported(info.Kind()) {
-			continue
-		}
-		ts, value, skipped := iterators[i].Next()
-		for ; value != nil; ts, value, skipped = iterators[i].Next() {
-			if p.isFull() {
-				p.flush()
-			}
-			p.iteratorsBeingWritten[p.idx] = iterators[i]
-			p.toBeWritten[p.idx] = pstore.Record{
-				HostName:  hostName,
-				Tags:      pstore.TagGroup{pstore.TagAppName: p.appList.ByPort(port).Name()},
-				Path:      strings.Replace(info.Path(), "/", "_", -1),
-				Kind:      info.Kind(),
-				Unit:      info.Unit(),
-				Value:     value,
-				Timestamp: trimessages.FloatToTime(ts)}
-			p.skipped += skipped
-			p.idx++
-		}
-	}
-	p.logVisit()
+	appName := p.appList.ByPort(port).Name()
+	p.consumer.Write(iterator, hostName, appName)
 	return nil
 }
 
-func (p *pstoreHandlerType) isFull() bool {
-	return p.idx == p.batchSize
-}
-
-func (p *pstoreHandlerType) flush() {
-	if p.idx == 0 {
-		return
-	}
-	startTime := time.Now()
-	err := p.ttWriter.Write(p.toBeWritten[:p.idx])
-	p.perMetricWriteDist.Add(time.Now().Sub(startTime) / time.Duration(p.idx))
-
-	if err != nil {
-		p.logWriteError(err)
-	} else {
-		p.logWrite(p.idx, p.skipped)
-		for i := 0; i < p.idx; i++ {
-			p.iteratorsBeingWritten[i].Commit()
-		}
-	}
-	p.skipped = 0
-	p.idx = 0
+func (p *pstoreHandlerType) Metrics(m *pstoreHandlerMetricsType) {
+	p.writerWithMetrics.Metrics(&m.Writer)
 }
 
 func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	if err = tricorder.RegisterMetric(
 		"writer/writeTimePerMetric",
-		p.perMetricWriteDist,
+		p.writerWithMetrics.PerMetricWriteTimes,
 		units.Millisecond,
 		"Time spent writing each metric"); err != nil {
 		return
@@ -304,118 +307,72 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		"total time spent per sweep"); err != nil {
 		return
 	}
-	var data pstoreHandlerData
-	region := tricorder.RegisterRegion(func() { p.collectData(&data) })
-	if err = tricorder.RegisterMetricInRegion(
-		"writer/metricsWritten",
-		&data.MetricsWritten,
-		region,
+	var data pstoreHandlerMetricsType
+	group := tricorder.NewGroup()
+	group.RegisterUpdateFunc(
+		func() time.Time {
+			p.Metrics(&data)
+			return time.Now()
+		})
+	if err = tricorder.RegisterMetricInGroup(
+		"writer/valuesWritten",
+		&data.Writer.ValuesWritten,
+		group,
 		units.None,
-		"Number of metrics written to persistent storage"); err != nil {
+		"Number of values written to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInRegion(
-		"writer/metricsSkipped",
-		&data.MetricsSkipped,
-		region,
+	if err = tricorder.RegisterMetricInGroup(
+		"writer/valuesNotWritten",
+		func() uint64 {
+			count := p.countAndFilter.Count()
+			if count < data.Writer.ValuesWritten {
+				return 0
+			}
+			return count - data.Writer.ValuesWritten
+		},
+		group,
 		units.None,
-		"Number of metrics skipped"); err != nil {
+		"Number of values not written to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInRegion(
+	if err = tricorder.RegisterMetricInGroup(
 		"writer/writeAttempts",
-		&data.WriteAttempts,
-		region,
+		&data.Writer.WriteAttempts,
+		group,
 		units.None,
 		"Number of attempts to write to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInRegion(
+	if err = tricorder.RegisterMetricInGroup(
 		"writer/successfulWrites",
-		&data.SuccessfulWrites,
-		region,
+		&data.Writer.SuccessfulWrites,
+		group,
 		units.None,
 		"Number of successful writes to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInRegion(
+	if err = tricorder.RegisterMetricInGroup(
 		"writer/successfulWriteRatio",
-		func() float64 {
-			return float64(data.SuccessfulWrites) / float64(data.WriteAttempts)
-		},
-		region,
+		data.Writer.SuccessfulWriteRatio,
+		group,
 		units.None,
 		"Ratio of successful writes to write attempts"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInRegion(
+	if err = tricorder.RegisterMetricInGroup(
 		"writer/lastWriteError",
-		&data.LastWriteError,
-		region,
+		&data.Writer.LastWriteError,
+		group,
 		units.None,
 		"Last write error"); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetricInRegion(
-		"writer/endpointsVisited",
-		&data.EndpointsVisited,
-		region,
-		units.None,
-		"Number of endpoints visited"); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetricInRegion(
-		"writer/averageMetricsPerEndpoint",
-		func() float64 {
-			return float64(data.MetricsWritten) / float64(data.EndpointsVisited)
-		},
-		region,
-		units.None,
-		"Average metrics written per endpoint per cycle."); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetricInRegion(
-		"writer/averageMetricsPerBatch",
-		func() float64 {
-			return float64(data.MetricsWritten) / float64(data.SuccessfulWrites)
-		},
-		region,
-		units.None,
-		"Average metrics written per batch."); err != nil {
 		return
 	}
 	return
 }
 
-func (p *pstoreHandlerType) logWrite(numWritten, numSkipped int) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	p.stats.MetricsWritten += int64(numWritten)
-	p.stats.MetricsSkipped += int64(numSkipped)
-	p.stats.WriteAttempts++
-	p.stats.SuccessfulWrites++
-}
-
-func (p *pstoreHandlerType) logWriteError(err error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	p.stats.WriteAttempts++
-	p.stats.LastWriteError = err.Error()
-}
-
-func (p *pstoreHandlerType) logVisit() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	p.stats.EndpointsVisited++
-}
-
-// collectData collects metrics about this instance.
-// Although pstoreHandlerType instances are not threadsafe, the collectData
-// method is threadsafe.
-func (p *pstoreHandlerType) collectData(data *pstoreHandlerData) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	*data = p.stats
+type namedIteratorConsumerType interface {
+	Consume(iterator store.NamedIterator)
 }
 
 // logger implements the scotty.Logger interface
@@ -427,6 +384,7 @@ type loggerType struct {
 	ConnectionErrors    *connectionErrorsType
 	CollectionTimesDist *tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
+	newValuesConsumer   namedIteratorConsumerType
 }
 
 func (l *loggerType) LogStateChange(
@@ -456,6 +414,11 @@ func (l *loggerType) LogResponse(
 	if ok {
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
+		if l.newValuesConsumer != nil {
+			namedIterator := l.Store.NamedIteratorForEndpoint(
+				kCollectorIteratorName, e, 0)
+			l.newValuesConsumer.Consume(namedIterator)
+		}
 	}
 }
 
@@ -649,18 +612,6 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
-type timeTakenWriter struct {
-	pstore.RecordWriter
-	TimeTaken time.Duration
-}
-
-func (t *timeTakenWriter) Write(records []pstore.Record) error {
-	start := time.Now()
-	result := t.RecordWriter.Write(records)
-	t.TimeTaken += time.Now().Sub(start)
-	return result
-}
-
 var (
 	aWriteError = errors.New("A bad write error.")
 )
@@ -682,7 +633,7 @@ func (s stallWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
-func newWriter() (result pstore.LimitedRecordWriter, err error) {
+func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
 	if *fKafkaConfigFile == "" {
 		return stallWriter{}, nil
 	}
@@ -734,7 +685,8 @@ func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger) *datastructs.ApplicationStatuses {
 	fmt.Println("Initialization started.")
-	astore := store.NewStore((*fBytesPerPage)/24, computePageCount(), *fThreshhold, *fDegree)
+	astore := store.NewStoreBytesPerPage(
+		*fBytesPerPage, computePageCount(), *fThreshhold, *fDegree)
 	if err := astore.RegisterMetrics(); err != nil {
 		log.Fatal(err)
 	}
@@ -759,7 +711,8 @@ func createApplicationStats(
 
 func startCollector(
 	appStats *datastructs.ApplicationStatuses,
-	connectionErrors *connectionErrorsType) {
+	connectionErrors *connectionErrorsType,
+	newValuesConsumer namedIteratorConsumerType) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -800,7 +753,9 @@ func startCollector(
 				AppStats:            appStats,
 				ConnectionErrors:    connectionErrors,
 				CollectionTimesDist: collectionTimesDist,
-				ChangedMetricsDist:  changedMetricsPerEndpointDist}
+				ChangedMetricsDist:  changedMetricsPerEndpointDist,
+				newValuesConsumer:   newValuesConsumer,
+			}
 			sweepTime := time.Now()
 			for _, endpoint := range endpoints {
 				endpoint.Poll(sweepTime, logger)
@@ -816,15 +771,15 @@ func startCollector(
 
 func startPStoreLoop(
 	stats *datastructs.ApplicationStatuses,
+	writer pstore.RecordWriter,
+	countAndFilter pstoreCountAndFilterType,
 	logger *log.Logger) {
 	go func() {
-		writer, err := newWriter()
-		if err != nil {
-			logger.Println(err)
-			return
-		}
 		pstoreHandler := newPStoreHandler(
-			writer, stats.ApplicationList(), *fPStoreBatchSize)
+			writer,
+			stats.ApplicationList(),
+			countAndFilter,
+			*fPStoreBatchSize)
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}
@@ -888,8 +843,23 @@ func main() {
 	applicationStats := createApplicationStats(
 		createApplicationList(), logger)
 	connectionErrors := newConnectionErrorsType()
-	startCollector(applicationStats, connectionErrors)
-	startPStoreLoop(applicationStats, logger)
+	writer, err := newPStoreWriter()
+	var pstoreForecaster *pstoreForecasterType
+	if err != nil {
+		logger.Println(err)
+	} else {
+		pstoreForecaster = createPStoreForecaster(
+			writer.IsTypeSupported)
+	}
+	if writer != nil {
+		startCollector(
+			applicationStats, connectionErrors, pstoreForecaster)
+		startPStoreLoop(
+			applicationStats, writer, pstoreForecaster, logger)
+	} else {
+		startCollector(
+			applicationStats, connectionErrors, nil)
+	}
 
 	http.Handle(
 		"/",

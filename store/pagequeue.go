@@ -4,22 +4,11 @@ import (
 	"github.com/Symantec/scotty/store/btreepq"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
-	"reflect"
 	"sync"
 	"time"
-	"unsafe"
 )
 
 // This file contains all the code related to the page queue.
-
-var (
-	gTsAndValueSize = tsAndValueSize()
-)
-
-func tsAndValueSize() int {
-	var p pageType
-	return int(reflect.TypeOf(p).Elem().Size())
-}
 
 type pageQueueType struct {
 	valueCountPerPage  int
@@ -28,20 +17,6 @@ type pageQueueType struct {
 	degree             int
 	lock               sync.Mutex
 	pq                 *btreepq.PageQueue
-}
-
-func makeUnionSlice(raw []byte) (p pageType, t tsPageType) {
-	sizeInBytes := len(raw)
-	rawPtr := (*reflect.SliceHeader)(unsafe.Pointer(&raw)).Data
-	pHeader := (*reflect.SliceHeader)(unsafe.Pointer(&p))
-	tHeader := (*reflect.SliceHeader)(unsafe.Pointer(&t))
-	pHeader.Data = rawPtr
-	pHeader.Len = 0
-	pHeader.Cap = sizeInBytes / int(reflect.TypeOf(p).Elem().Size())
-	tHeader.Data = rawPtr
-	tHeader.Len = 0
-	tHeader.Cap = sizeInBytes / int(reflect.TypeOf(t).Elem().Size())
-	return
 }
 
 func newPageQueueType(

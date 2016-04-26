@@ -15,6 +15,7 @@ import (
 	"github.com/Symantec/scotty/apps/scotty/splash"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/messages"
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/scotty/store"
@@ -405,12 +406,12 @@ func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector
 }
 
 func (l *loggerType) LogResponse(
-	e *collector.Endpoint, metrics trimessages.MetricList, state *collector.State) {
+	e *collector.Endpoint, list metrics.List, state *collector.State) {
 	ts := trimessages.TimeToFloat(state.Timestamp())
 	added, ok := l.Store.AddBatch(
 		e,
 		ts,
-		metrics)
+		list)
 	if ok {
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))

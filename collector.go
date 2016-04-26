@@ -1,12 +1,9 @@
 package scotty
 
 import (
-	"fmt"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
-	"github.com/Symantec/tricorder/go/tricorder/types"
-	"net/rpc"
+	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/sources"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -101,10 +98,11 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 }
 
 func newEndpoint(
-	host string, port int) *Endpoint {
+	host string, port int, connector sources.Connector) *Endpoint {
 	return &Endpoint{
 		host:           host,
 		port:           port,
+		connector:      connector,
 		onePollAtATime: make(chan bool, 1),
 	}
 }
@@ -124,7 +122,7 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 			}()
 			state = state.goToConnecting(time.Now())
 			e.logState(state, logger)
-			conn, err := e.connect()
+			conn, err := e.connector.Connect(e.host, e.port)
 			if err != nil {
 				state = state.goToFailedToConnect(time.Now())
 				e.logError(err, state, logger)
@@ -139,7 +137,7 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 			}()
 			state = state.goToPolling(time.Now())
 			e.logState(state, logger)
-			metrics, err := e._poll(conn)
+			metrics, err := conn.Poll()
 			if err != nil {
 				state = state.goToFailedToPoll(time.Now())
 				e.logError(err, state, logger)
@@ -153,36 +151,6 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 	}
 }
 
-func (e *Endpoint) connect() (conn *rpc.Client, err error) {
-	hostname := strings.SplitN(e.host, "*", 2)[0]
-	return rpc.DialHTTP(
-		"tcp",
-		fmt.Sprintf("%s:%d", hostname, e.port))
-}
-
-// TODO: Delete once all apps link with new tricorder
-func fixupKind(k types.Type) types.Type {
-	switch k {
-	case "int":
-		return types.Int64
-	case "uint":
-		return types.Uint64
-	case "float":
-		return types.Float64
-	default:
-		return k
-	}
-}
-
-func (e *Endpoint) _poll(conn *rpc.Client) (
-	metrics messages.MetricList, err error) {
-	err = conn.Call("MetricsServer.ListMetrics", "", &metrics)
-	for i := range metrics {
-		metrics[i].Kind = fixupKind(metrics[i].Kind)
-	}
-	return
-}
-
 func (e *Endpoint) logState(state *State, logger Logger) {
 	oldState := e._logState(state)
 	if logger != nil {
@@ -190,7 +158,7 @@ func (e *Endpoint) logState(state *State, logger Logger) {
 	}
 }
 
-func (e *Endpoint) logMetrics(metrics messages.MetricList, state *State, logger Logger) {
+func (e *Endpoint) logMetrics(metrics metrics.List, state *State, logger Logger) {
 	oldState, hadError := e._setError(state, false)
 	if logger != nil {
 		logger.LogStateChange(e, oldState, state)

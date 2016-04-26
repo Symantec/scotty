@@ -1,11 +1,11 @@
 package store
 
 import (
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"sync"
-	"time"
 )
 
 // This file contains the code for keeping a collection of series per
@@ -24,7 +24,7 @@ func (m *metricInfoStoreType) Init() {
 
 // Register returns the correct MetricInfo instance from the pool for
 // passed in metric. Register will always return a non nil value.
-func (m *metricInfoStoreType) Register(metric *messages.Metric) (
+func (m *metricInfoStoreType) Register(metric *metrics.Value) (
 	result *MetricInfo) {
 	infoStruct := MetricInfo{
 		path:        metric.Path,
@@ -170,7 +170,7 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 // ok is true if metrics can be added to this instance or false if this
 // instance is inactive and closed for new metrics.
 func (c *timeSeriesCollectionType) LookupBatch(
-	timestamp float64, metrics messages.MetricList) (
+	timestamp float64, mlist metrics.List) (
 	fetched map[*timeSeriesType]interface{},
 	newOnes, notFetched []*timeSeriesType,
 	fetchedTimeStamps map[*timestampSeriesType]float64,
@@ -188,17 +188,20 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	fetched = make(map[*timeSeriesType]interface{})
 	fetchedTimeStamps = make(map[*timestampSeriesType]float64)
 	newTimeStampsByGroupId = make(map[int]float64)
-	for i := range metrics {
+	mlen := mlist.Len()
+	for i := 0; i < mlen; i++ {
+		var avalue metrics.Value
+		mlist.Index(i, &avalue)
 		// TODO: Allow distribution metrics later.
-		if metrics[i].Kind == types.Dist {
+		if avalue.Kind == types.Dist {
 			continue
 		}
-		id := c.metricInfoStore.Register(metrics[i])
-		valueByMetric[id] = metrics[i].Value
-		if metrics[i].TimeStamp == nil {
+		id := c.metricInfoStore.Register(&avalue)
+		valueByMetric[id] = avalue.Value
+		if avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = timestamp
 		} else {
-			timestampByGroupId[id.GroupId()] = messages.TimeToFloat(metrics[i].TimeStamp.(time.Time))
+			timestampByGroupId[id.GroupId()] = messages.TimeToFloat(avalue.TimeStamp)
 		}
 	}
 	// populate notFetched
@@ -288,12 +291,12 @@ func (c *timeSeriesCollectionType) MarkInactive(
 // timestamp is the timestamp of scotty.
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
-	metrics messages.MetricList,
+	mlist metrics.List,
 	supplier *pageQueueType) (result int, ok bool) {
 	var reclaimLowList, reclaimHighList []pageListType
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
-	fetched, newOnes, notFetched, tsFetched, timestamps, tsNotFetched, ok := c.LookupBatch(timestamp, metrics)
+	fetched, newOnes, notFetched, tsFetched, timestamps, tsNotFetched, ok := c.LookupBatch(timestamp, mlist)
 	if !ok {
 		return
 	}

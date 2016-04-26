@@ -1,8 +1,8 @@
 package store
 
 import (
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"time"
 )
@@ -45,7 +45,7 @@ func (s *Store) shallowCopy() *Store {
 func (s *Store) addBatch(
 	endpointId interface{},
 	timestamp float64,
-	mlist messages.MetricList) (int, bool) {
+	mlist metrics.List) (int, bool) {
 	return s.byApplication[endpointId].AddBatch(
 		timestamp, mlist, s.supplier)
 }

@@ -2,10 +2,20 @@ package store
 
 import (
 	"github.com/google/btree"
+	"reflect"
 	"sort"
 )
 
 // This file contains all the code related to an individual page in scotty
+
+var (
+	gTsAndValueSize = tsAndValueSize()
+)
+
+func tsAndValueSize() int {
+	var p pageType
+	return int(reflect.TypeOf(p).Elem().Size())
+}
 
 // basicPageType is the interface that all page data must implement
 type basicPageType interface {
@@ -17,8 +27,16 @@ type basicPageType interface {
 	StoreIndexToRecord(idx int, record *Record)
 }
 
+// We use this same struct for storing timestamp value pairs and for
+// storing just timestamps so that we can use a given page for either data
+// structure without needing to use the "unsafe" package.
+type tsValueType struct {
+	TimeStamp float64
+	Value     interface{} // Wasted when we store only timestamps.
+}
+
 // a single page of timestamps
-type tsPageType []float64
+type tsPageType []tsValueType
 
 func (p tsPageType) IsFull() bool {
 	return len(p) == cap(p)
@@ -35,28 +53,23 @@ func (p tsPageType) Len() int {
 func (p *tsPageType) Add(ts float64) {
 	length := len(*p)
 	*p = (*p)[0 : length+1]
-	(*p)[length] = ts
+	(*p)[length].TimeStamp = ts
 }
 
 func (p tsPageType) StoreIndexToRecord(idx int, record *Record) {
-	record.TimeStamp = p[idx]
+	record.TimeStamp = p[idx].TimeStamp
 }
 
 func (p tsPageType) FindGreaterOrEqual(ts float64) int {
 	return sort.Search(
 		len(p),
-		func(idx int) bool { return p[idx] >= ts })
+		func(idx int) bool { return p[idx].TimeStamp >= ts })
 }
 
 func (p tsPageType) FindGreater(ts float64) int {
 	return sort.Search(
 		len(p),
-		func(idx int) bool { return p[idx] > ts })
-}
-
-type tsValueType struct {
-	TimeStamp float64
-	Value     interface{}
+		func(idx int) bool { return p[idx].TimeStamp > ts })
 }
 
 // single page of timestamps with values
@@ -118,26 +131,22 @@ type pageWithMetaDataType struct {
 	// page queue lock protects this.
 	pageMetaDataType
 	// Lock of current page owner protects these.
-	raw        []byte
-	values     pageType
-	timestamps tsPageType
+	values []tsValueType
 }
 
 func newPageWithMetaDataType(bytesPerPage int) *pageWithMetaDataType {
-	raw := make([]byte, bytesPerPage)
-	values, timestamps := makeUnionSlice(raw)
 	return &pageWithMetaDataType{
-		raw: raw, values: values, timestamps: timestamps}
+		values: make(pageType, 0, bytesPerPage/gTsAndValueSize)}
 }
 
 // As timestamp value pairs
 func (p *pageWithMetaDataType) Values() *pageType {
-	return &p.values
+	return (*pageType)(&p.values)
 }
 
 // As timestamps
 func (p *pageWithMetaDataType) Times() *tsPageType {
-	return &p.timestamps
+	return (*tsPageType)(&p.values)
 }
 
 // As timestamp value pairs

@@ -112,7 +112,7 @@ func TestVisitorError(t *testing.T) {
 }
 
 func TestAggregateAppenderAndVisitor(t *testing.T) {
-	aStore := store.NewStore(1, 8, 1.0, 10)
+	aStore := store.NewStore(2, 20, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -744,7 +744,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// paged values per endpoint = 8 - 2 = 6
 	// paged timestamps per endpoint = 5 - 1 = 4
 	// total: 6*2 = 12 paged values and 4*2 = 8 paged timestamps
-	// Need 12 / 2 = 6 pages for values and 8 / 6 = 2 pages for timestamps
+	// Need 12 / 2 = 6 pages for values and 8 / 4 = 2 pages for timestamps
 	aMetric[0].Value = 0
 	aMetric[1].Value = 1
 	addBatch(t, aStore, kEndpoint0, 100.0, aMetric[:2], 2)
@@ -977,9 +977,16 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, 105.0, result[barIdx+1].TimeStamp)
 	assertValueEquals(t, 5, result[barIdx+1].Value)
 
-	// Now add 3 more values. Doing this should evict one page
-	// from endpoint0 containing two values. The third value
-	// being added is for a new time series so it needs no page space.
+	// Now add 3 more values. All the value pages as well as the timestamp
+	// pages are full at this point. We need a new page for
+	// aMetric[0] and a new page for aMetric[1] and a new page for
+	// timestamp 155. aMetric[2] is a new time series so it needs no
+	// page space.
+	//
+	// The result is that we need 3 new pages. aMetric[0] for endpoint0
+	// will give up a page, the timestamps for endpoint0 will give up
+	// a page, finally aMetric[1] for endpoint0 will give up its page.
+	// So the values for endpoint0 will give up a total of two pages.
 	aMetric[0].Value = 55
 	aMetric[1].Value = 56
 	aMetric[2].Value = 57
@@ -995,8 +1002,8 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aStore.ByEndpoint(
 		kEndpoint0, 0.0, 1000.0, store.AppendTo(&result))
 
-	// 6 not 8
-	assertValueEquals(t, 6, len(result))
+	// 4 not 8 = giving up 2 pages
+	assertValueEquals(t, 4, len(result))
 
 	// Now test get latest metrics.
 	result = nil

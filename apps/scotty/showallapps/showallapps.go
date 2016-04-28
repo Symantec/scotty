@@ -3,8 +3,10 @@ package showallapps
 import (
 	"fmt"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/httputil"
 	"html/template"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -35,7 +37,7 @@ const (
 	  <tr>
 	    <td>{{.EndpointId.HostName}}</td>
 	    <td>{{.EndpointId.Port}}</td>
-	    <td>{{.Name}}</td>
+	    <td><a href="{{$top.Link .}}">{{.Name}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
 	    <td>{{.Status}}</td>
@@ -76,6 +78,15 @@ type view struct {
 
 func (v *view) Float32(x float64) float32 {
 	return float32(x)
+}
+
+func (v *view) Link(app *datastructs.ApplicationStatus) *url.URL {
+	return httputil.NewUrl(
+		fmt.Sprintf(
+			"/api/hosts/%s/%s",
+			app.EndpointId.HostName(),
+			app.Name),
+		"format", "text")
 }
 
 type EndpointSummary struct {

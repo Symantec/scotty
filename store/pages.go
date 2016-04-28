@@ -9,7 +9,7 @@ import (
 // This file contains all the code related to an individual page in scotty
 
 var (
-	gTsAndValueSize = tsAndValueSize()
+	kTsAndValueSize = tsAndValueSize()
 )
 
 func tsAndValueSize() int {
@@ -136,7 +136,7 @@ type pageWithMetaDataType struct {
 
 func newPageWithMetaDataType(bytesPerPage int) *pageWithMetaDataType {
 	return &pageWithMetaDataType{
-		values: make(pageType, 0, bytesPerPage/gTsAndValueSize)}
+		values: make(pageType, 0, bytesPerPage/kTsAndValueSize)}
 }
 
 // As timestamp value pairs

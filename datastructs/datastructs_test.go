@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/sources/snmpsource"
+	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -18,10 +20,15 @@ const (
 	kConfigFile = `
 - port: 6910
   name: Health Metrics
+  protocol: tricorder
 - port: 6970
   name: Dominator
+  protocol: snmp
+  params:
+    community: Groovy
 - port: 2222
   name: An application
+  protocol: tricorder
 `
 	kSomeBadPort = 9876
 	kSomeBadName = "A bad name"
@@ -34,13 +41,39 @@ func TestConfigFile(t *testing.T) {
 		t.Fatal("Got error reading config file", err)
 	}
 	applicationList := builder.Build()
-	assertApplication(t, 6910, "Health Metrics", applicationList.ByPort(6910))
-	assertApplication(t, 6970, "Dominator", applicationList.ByPort(6970))
-	assertApplication(t, 2222, "An application", applicationList.ByPort(2222))
+	assertApplication(
+		t,
+		6910,
+		"Health Metrics",
+		"tricorder",
+		applicationList.ByPort(6910))
+	assertApplication(
+		t, 6970, "Dominator", "snmp", applicationList.ByPort(6970))
+	assertApplication(
+		t,
+		2222,
+		"An application",
+		"tricorder",
+		applicationList.ByPort(2222))
 
-	assertApplication(t, 6910, "Health Metrics", applicationList.ByName("Health Metrics"))
-	assertApplication(t, 6970, "Dominator", applicationList.ByName("Dominator"))
-	assertApplication(t, 2222, "An application", applicationList.ByName("An application"))
+	assertApplication(
+		t,
+		6910,
+		"Health Metrics",
+		"tricorder",
+		applicationList.ByName("Health Metrics"))
+	assertApplication(
+		t,
+		6970,
+		"Dominator",
+		"snmp",
+		applicationList.ByName("Dominator"))
+	assertApplication(
+		t,
+		2222,
+		"An application",
+		"tricorder",
+		applicationList.ByName("An application"))
 	if applicationList.ByPort(kSomeBadPort) != nil {
 		t.Error("Expected no application at given port.")
 	}
@@ -142,8 +175,8 @@ func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
 
 func TestMarkHostsActiveExclusively(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
-	alBuilder.Add(35, "AnApp")
-	alBuilder.Add(92, "AnotherApp")
+	alBuilder.Add(35, "AnApp", trisource.GetConnector())
+	alBuilder.Add(92, "AnotherApp", snmpsource.NewConnector("community"))
 	appList := alBuilder.Build()
 	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 100, 1.0, 10))
 	appStatus.MarkHostsActiveExclusively(
@@ -169,8 +202,9 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 		make(map[string]bool),
 		visitor.Inactive)
 	appStatus.MarkHostsActiveExclusively(61.7, []string{"host2", "host4"})
-	activateEndpoints(appStatus.ActiveEndpointIds())
-	astore = appStatus.Store()
+	activeEndpointIds, astore := appStatus.ActiveEndpointIds()
+	assertValueEquals(t, 4, len(activeEndpointIds))
+	activateEndpoints(activeEndpointIds, astore)
 	visitor = newActiveInactiveLists()
 	astore.VisitAllEndpoints(visitor)
 	assertDeepEqual(
@@ -206,34 +240,50 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	sort.Sort(sortByHostPort(stats))
 	assertValueEquals(t, 8, len(stats))
 	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[0].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[0].Name)
 	assertValueEquals(t, false, stats[0].Active)
 
 	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[1].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[1].Name)
 	assertValueEquals(t, false, stats[1].Active)
 
 	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[2].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[2].Name)
 	assertValueEquals(t, true, stats[2].Active)
 
 	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[3].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[3].Name)
 	assertValueEquals(t, true, stats[3].Active)
 
 	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[4].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[4].Name)
 	assertValueEquals(t, false, stats[4].Active)
 
 	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[5].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[5].Name)
 	assertValueEquals(t, false, stats[5].Active)
 
 	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[6].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[6].Name)
 	assertValueEquals(t, true, stats[6].Active)
 
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[7].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
 
@@ -253,34 +303,50 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	sort.Sort(sortByHostPort(stats))
 	assertValueEquals(t, 8, len(stats))
 	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[0].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[0].Name)
 	assertValueEquals(t, false, stats[0].Active)
 
 	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[1].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[1].Name)
 	assertValueEquals(t, false, stats[1].Active)
 
 	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[2].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[2].Name)
 	assertValueEquals(t, true, stats[2].Active)
 
 	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[3].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[3].Name)
 	assertValueEquals(t, true, stats[3].Active)
 
 	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[4].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[4].Name)
 	assertValueEquals(t, true, stats[4].Active)
 
 	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[5].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[5].Name)
 	assertValueEquals(t, true, stats[5].Active)
 
 	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(
+		t, "tricorder", stats[6].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnApp", stats[6].Name)
 	assertValueEquals(t, true, stats[6].Active)
 
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[7].EndpointId.Connector().Name())
 	assertValueEquals(t, "AnotherApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
 
@@ -288,7 +354,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 
 func TestHighPriorityEviction(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
-	alBuilder.Add(37, "AnApp")
+	alBuilder.Add(37, "AnApp", trisource.GetConnector())
 	appList := alBuilder.Build()
 	// 9 values
 	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 6, 1.0, 10))
@@ -430,12 +496,22 @@ func assertValueEquals(
 }
 
 func assertApplication(
-	t *testing.T, port int, name string, app *Application) {
+	t *testing.T,
+	port int,
+	name string,
+	protocol string,
+	app *Application) {
 	if name != app.Name() {
 		t.Errorf("Expected '%s', got '%s'", name, app.Name())
 	}
 	if port != app.Port() {
 		t.Errorf("Expected '%d', got '%d'", port, app.Port())
+	}
+	if protocol != app.Connector().Name() {
+		t.Errorf(
+			"Expected '%s', got '%s'",
+			protocol,
+			app.Connector().Name())
 	}
 }
 

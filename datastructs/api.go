@@ -3,6 +3,7 @@ package datastructs
 
 import (
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/store"
 	"io"
 	"sync"
@@ -148,13 +149,19 @@ func (a *ApplicationStatuses) ActiveEndpointIds() (
 // Application represents a particular application in the fleet.
 // Application instances are immutable.
 type Application struct {
-	name string
-	port int
+	name      string
+	connector sources.Connector
+	port      int
 }
 
 // Name returns the name of application
 func (a *Application) Name() string {
 	return a.name
+}
+
+// Connector returns the connector for the application
+func (a *Application) Connector() sources.Connector {
+	return a.connector
 }
 
 // Port returns the port number of the application
@@ -197,8 +204,9 @@ func NewApplicationListBuilder() *ApplicationListBuilder {
 }
 
 // Add adds an application.
-func (a *ApplicationListBuilder) Add(port int, applicationName string) {
-	a.add(port, applicationName)
+func (a *ApplicationListBuilder) Add(
+	port int, applicationName string, connector sources.Connector) {
+	a.add(port, applicationName, connector)
 }
 
 // Read application names and ports from a config file into this builder.

@@ -215,7 +215,7 @@ func NewStore(
 	inactiveThreshhold float64,
 	degree int) *Store {
 	return NewStoreBytesPerPage(
-		valueCount*gTsAndValueSize,
+		valueCount*kTsAndValueSize,
 		pageCount,
 		inactiveThreshhold,
 		degree)

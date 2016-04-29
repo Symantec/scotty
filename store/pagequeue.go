@@ -32,7 +32,7 @@ func newPageQueueType(
 			return newPageWithMetaDataType(bytesPerPage)
 		})
 	return &pageQueueType{
-		valueCountPerPage:  bytesPerPage / gTsAndValueSize,
+		valueCountPerPage:  bytesPerPage / kTsAndValueSize,
 		pageCount:          pageCount,
 		inactiveThreshhold: inactiveThreshhold,
 		degree:             degree,

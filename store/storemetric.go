@@ -9,7 +9,7 @@ import (
 
 var (
 	// 1 up to 1,000,000 bucketer
-	gBucketer = tricorder.NewGeometricBucketer(1.0, 1e6)
+	kBucketer = tricorder.NewGeometricBucketer(1.0, 1e6)
 )
 
 type storePrimitiveMetricsType struct {
@@ -82,6 +82,6 @@ func (s *storeMetricsType) AddUniqueValues(count int) {
 
 func newStoreMetricsType() *storeMetricsType {
 	return &storeMetricsType{
-		PagesPerMetricDist: gBucketer.NewNonCumulativeDistribution(),
+		PagesPerMetricDist: kBucketer.NewNonCumulativeDistribution(),
 	}
 }

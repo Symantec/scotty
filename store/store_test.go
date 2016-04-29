@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -116,7 +117,7 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
-	aMetric := [1]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
@@ -256,7 +257,7 @@ func floatToTime(f float64) time.Time {
 func TestIterator(t *testing.T) {
 	aStore := store.NewStore(2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
-	aMetric := [4]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "Alice",
 			Description: "A description",
@@ -353,7 +354,8 @@ func TestIterator(t *testing.T) {
 	aMetric[1].TimeStamp = floatToTime(800.0)
 	aMetric[2].TimeStamp = floatToTime(802.0)
 	aMetric[3].TimeStamp = floatToTime(802.0)
-	tempMetric := aMetric
+	tempMetric := make(metrics.SimpleList, len(aMetric))
+	copy(tempMetric, aMetric)
 	tempMetric[1], tempMetric[0] = tempMetric[0], tempMetric[1]
 	aStore.AddBatch(kEndpoint0, 1070, tempMetric[1:])
 
@@ -529,7 +531,7 @@ func TestIterator(t *testing.T) {
 func TestIndivMetricGoneInactive(t *testing.T) {
 	aStore := store.NewStore(1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
-	aMetric := [3]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
@@ -604,7 +606,7 @@ func TestMachineGoneInactive(t *testing.T) {
 	aStore := store.NewStore(1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
-	aMetric := [2]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
@@ -684,11 +686,13 @@ func TestMachineGoneInactive(t *testing.T) {
 	assertValueEquals(t, 2, result[3].Value)
 	assertValueEquals(t, true, result[3].Active)
 
-	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, nil); ok {
+	var noMetrics metrics.SimpleList
+
+	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); ok {
 		t.Error("Expected AddBatch to fail")
 	}
 	aStore.MarkEndpointActive(kEndpoint1)
-	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, nil); !ok {
+	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); !ok {
 		t.Error("Expected AddBatch to succeed")
 	}
 }
@@ -715,7 +719,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aStore.LatestByEndpoint(kEndpoint1, store.AppendTo(&result))
 	assertValueEquals(t, 0, len(result))
 
-	aMetric := [3]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
@@ -1110,7 +1114,7 @@ func addBatch(
 	astore *store.Store,
 	endpointId *scotty.Endpoint,
 	ts float64,
-	m messages.MetricList,
+	m metrics.List,
 	count int) {
 	out, ok := astore.AddBatch(endpointId, ts, m)
 	if !ok {
@@ -1130,7 +1134,7 @@ func assertValueEquals(t *testing.T, expected, actual interface{}) {
 // 3 values to /foo, /bar, /baz
 // 4th value to /foo and /bar only on endpoint 0
 func addDataForHighPriorityEvictionTest(s *store.Store) {
-	aMetric := [3]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo",
 			Description: "A description",

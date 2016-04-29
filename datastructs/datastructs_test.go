@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
@@ -102,7 +102,7 @@ func (a *activeInactiveListType) Visit(
 }
 
 func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
-	aMetric := [4]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo/first",
 			Description: "A description",
@@ -242,8 +242,10 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
 
+	var noMetrics metrics.SimpleList
+
 	// Trying to add to active endpoint should succeed
-	if _, ok := aStore.AddBatch(endpointId, 9999.0, nil); !ok {
+	if _, ok := aStore.AddBatch(endpointId, 9999.0, noMetrics); !ok {
 		t.Error("Adding to active endpoint should succeed.")
 	}
 
@@ -343,7 +345,7 @@ func TestHighPriorityEviction(t *testing.T) {
 }
 
 func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
-	aMetric := [1]*messages.Metric{
+	aMetric := metrics.SimpleList{
 		{
 			Path:        "/foo",
 			Description: "A description",

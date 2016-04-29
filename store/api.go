@@ -2,7 +2,7 @@
 package store
 
 import (
-	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 )
@@ -274,7 +274,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
-	metricList trimessages.MetricList) (numAdded int, ok bool) {
+	metricList metrics.List) (numAdded int, ok bool) {
 	return s.addBatch(endpointId, timestamp, metricList)
 }
 

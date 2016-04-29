@@ -2,7 +2,9 @@
 package scotty
 
 import (
-	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/sources"
+	"github.com/Symantec/scotty/sources/trisource"
 	"time"
 )
 
@@ -104,7 +106,7 @@ func (s *State) Status() Status {
 // Logger instances must be safe to use among multiple goroutines.
 type Logger interface {
 	// Called when new metrics come in from a given endpoint
-	LogResponse(e *Endpoint, response messages.MetricList, state *State)
+	LogResponse(e *Endpoint, response metrics.List, state *State)
 	// Called when error happens collecting metrics from a given
 	// endpoint.
 	// Also called when an error clears. In such a case both err and
@@ -119,15 +121,23 @@ type Logger interface {
 type Endpoint struct {
 	host           string
 	port           int
+	connector      sources.Connector
 	onePollAtATime chan bool
 	state          *State
 	errored        bool
 }
 
-// NewEndpoint creates a new endpoint.
+// NewEndpoint is deprecated. See NewEndpointWithConnector.
 func NewEndpoint(
 	hostname string, port int) *Endpoint {
-	return newEndpoint(hostname, port)
+	return newEndpoint(hostname, port, trisource.GetConnector())
+}
+
+// NewEndpointWithConnector creates a new endpoint for given host, port
+// and connector.
+func NewEndpointWithConnector(
+	hostname string, port int, connector sources.Connector) *Endpoint {
+	return newEndpoint(hostname, port, connector)
 }
 
 // HostName returns the host name of the endpoint.
@@ -138,6 +148,11 @@ func (e *Endpoint) HostName() string {
 // Port returns the port to collect metrics.
 func (e *Endpoint) Port() int {
 	return e.port
+}
+
+// Connector returns the connector of this endpoint.
+func (e *Endpoint) Connector() sources.Connector {
+	return e.connector
 }
 
 // Poll polls for metrics for this endpoint asynchronously.

@@ -248,6 +248,105 @@ func (e *expectedTsValuesType) VerifyDone(t *testing.T) {
 	}
 }
 
+type iteratorPageEvictionTestType struct {
+	MinTimeStamp float64
+	MaxTimeStamp float64
+	Count        int
+}
+
+func (t *iteratorPageEvictionTestType) Iterate(iter store.Iterator) {
+	*t = iteratorPageEvictionTestType{}
+	var r store.Record
+	for iter.Next(&r) {
+		t.Count++
+		if t.MinTimeStamp == 0 || r.TimeStamp < t.MinTimeStamp {
+			t.MinTimeStamp = r.TimeStamp
+		}
+		if r.TimeStamp > t.MaxTimeStamp {
+			t.MaxTimeStamp = r.TimeStamp
+		}
+	}
+}
+
+func TestIteratorPageEviction(t *testing.T) {
+	var consumer iteratorPageEvictionTestType
+	// max 13 pages. 2 records per page. Specially crafted so that when
+	// store contains timestamps 350 <= ts < 500, there will be
+	// 7 pages for timestamps 350, 360, 370, ..., 490
+	// 3 pages for values 36, 38, 40, ..., 48
+	// 3 pages for values 37, 39, 41, ..., 49
+	aStore := store.NewStore(2, 13, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Alice",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+			GroupId:     0,
+		},
+		{
+			Path:        "Bob",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+			GroupId:     0,
+		},
+	}
+	// 2 endpoints 5 distinct values per endpoint = 2 * 2 = 4 pages
+	// 10 timestamps = 5 pages
+	for ts := 100; ts < 200; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+
+	iterator := aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+	assertValueEquals(t, 20, consumer.Count)
+
+	iterator.Commit()
+
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+	assertValueEquals(t, 0, consumer.Count)
+
+	for ts := 200; ts < 300; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 5)
+	consumer.Iterate(iterator)
+	// 2 time series * max 5 value, timestamp pairs each
+	assertValueEquals(t, 10, consumer.Count)
+	// We only get to timestamp 240
+	assertValueEquals(t, 240.0, consumer.MaxTimeStamp)
+
+	iterator.Commit()
+
+	// Insert lots of new values to evict some pages
+	for ts := 300; ts < 500; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+
+	// We should skip to timestamp 360 over evicted pages.
+	assertValueEquals(t, 360.0, consumer.MinTimeStamp)
+	// 14 values from each of the two endpoints
+	assertValueEquals(t, 28, consumer.Count)
+}
+
 func floatToTime(f float64) time.Time {
 	return messages.FloatToTime(f)
 }

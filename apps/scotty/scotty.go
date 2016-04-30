@@ -384,6 +384,7 @@ type loggerType struct {
 	AppStats            *datastructs.ApplicationStatuses
 	ConnectionErrors    *connectionErrorsType
 	CollectionTimesDist *tricorder.CumulativeDistribution
+	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
 	newValuesConsumer   namedIteratorConsumerType
 }
@@ -391,8 +392,15 @@ type loggerType struct {
 func (l *loggerType) LogStateChange(
 	e *collector.Endpoint, oldS, newS *collector.State) {
 	if newS.Status() == collector.Synced {
-		l.CollectionTimesDist.Add(
-			newS.TimeSpentConnecting() + newS.TimeSpentPolling() + newS.TimeSpentWaitingToConnect() + newS.TimeSpentWaitingToPoll())
+		timeTaken := newS.TimeSpentConnecting()
+		timeTaken += newS.TimeSpentPolling()
+		timeTaken += newS.TimeSpentWaitingToConnect()
+		timeTaken += newS.TimeSpentWaitingToPoll()
+		l.CollectionTimesDist.Add(timeTaken)
+		dist := l.ByProtocolDist[e.Connector().Name()]
+		if dist != nil {
+			dist.Add(timeTaken)
+		}
 	}
 	l.AppStats.Update(e, newS)
 }
@@ -718,7 +726,10 @@ func startCollector(
 	collector.SetConcurrentConnects(*fConnectionCount)
 
 	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-	collectionTimesDist := tricorder.NewGeometricBucketer(1e-4, 100.0).NewCumulativeDistribution()
+	collectionBucketer := tricorder.NewGeometricBucketer(1e-4, 100.0)
+	collectionTimesDist := collectionBucketer.NewCumulativeDistribution()
+	tricorderCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
+	snmpCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	changedMetricsPerEndpointDist := tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
 
 	tricorder.RegisterMetric(
@@ -726,6 +737,16 @@ func startCollector(
 		collectionTimesDist,
 		units.Second,
 		"Collection Times")
+	tricorder.RegisterMetric(
+		"collector/collectionTimes_tricorder",
+		tricorderCollectionTimesDist,
+		units.Second,
+		"Tricorder Collection Times")
+	tricorder.RegisterMetric(
+		"collector/collectionTimes_snmp",
+		snmpCollectionTimesDist,
+		units.Second,
+		"SNMP Collection Times")
 	tricorder.RegisterMetric(
 		"collector/changedMetricsPerEndpoint",
 		changedMetricsPerEndpointDist,
@@ -745,6 +766,11 @@ func startCollector(
 		units.Second,
 		"elapsed time")
 
+	byProtocolDist := map[string]*tricorder.CumulativeDistribution{
+		"tricorder": tricorderCollectionTimesDist,
+		"snmp":      snmpCollectionTimesDist,
+	}
+
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
 		for {
@@ -754,6 +780,7 @@ func startCollector(
 				AppStats:            appStats,
 				ConnectionErrors:    connectionErrors,
 				CollectionTimesDist: collectionTimesDist,
+				ByProtocolDist:      byProtocolDist,
 				ChangedMetricsDist:  changedMetricsPerEndpointDist,
 				newValuesConsumer:   newValuesConsumer,
 			}

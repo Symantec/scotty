@@ -3,11 +3,36 @@ package datastructs
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/sources"
+	"github.com/Symantec/scotty/sources/snmpsource"
+	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"gopkg.in/yaml.v2"
 	"io"
 	"time"
+)
+
+type protocolType func(map[string]string) (sources.Connector, error)
+
+func newTricorder(unused map[string]string) (sources.Connector, error) {
+	return trisource.GetConnector(), nil
+}
+
+func newSnmp(params map[string]string) (sources.Connector, error) {
+	community := params["community"]
+	if community == "" {
+		return nil, errors.New("parameter 'community' required for SNMP")
+	}
+	return snmpsource.NewConnector(community), nil
+}
+
+var (
+	kProtocols = map[string]protocolType{
+		"tricorder": newTricorder,
+		"snmp":      newSnmp,
+	}
 )
 
 type hostAndPort struct {
@@ -89,8 +114,8 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 
 			// If new endpoint
 			if activeEndpoint == nil {
-				activeEndpoint = scotty.NewEndpoint(
-					hp.Host, hp.Port)
+				activeEndpoint = scotty.NewEndpointWithConnector(
+					hp.Host, hp.Port, apps[j].Connector())
 				a.byHostPort[hp] = activeEndpoint
 				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(activeEndpoint)
 				if storeCopy == a.currentStore {
@@ -201,11 +226,13 @@ func newApplicationListBuilder() *ApplicationListBuilder {
 	return &ApplicationListBuilder{listPtr: &list}
 }
 
-func (a *ApplicationListBuilder) add(port int, applicationName string) {
+func (a *ApplicationListBuilder) add(
+	port int, applicationName string, connector sources.Connector) {
 	if (*a.listPtr).byPort[port] != nil || (*a.listPtr).byName[applicationName] != nil {
 		panic("Both name and port must be unique.")
 	}
-	app := &Application{name: applicationName, port: port}
+	app := &Application{
+		name: applicationName, port: port, connector: connector}
 	(*a.listPtr).byPort[port] = app
 	(*a.listPtr).byName[applicationName] = app
 }
@@ -216,9 +243,11 @@ func (a *ApplicationListBuilder) build() *ApplicationList {
 	return result
 }
 
-type nameAndPortType struct {
-	Name string
-	Port int
+type configLineType struct {
+	Name     string
+	Protocol string
+	Port     int
+	Params   map[string]string
 }
 
 func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
@@ -226,16 +255,30 @@ func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
 	if _, err := content.ReadFrom(r); err != nil {
 		return err
 	}
-	var nameAndPorts []nameAndPortType
-	if err := yaml.Unmarshal(content.Bytes(), &nameAndPorts); err != nil {
+	var configLines []configLineType
+	if err := yaml.Unmarshal(content.Bytes(), &configLines); err != nil {
 		return err
 	}
-	for _, nameAndPort := range nameAndPorts {
-		if nameAndPort.Name == "" || nameAndPort.Port == 0 {
+	for _, configLine := range configLines {
+		if configLine.Name == "" || configLine.Port == 0 {
 			return errors.New(
 				"Both name and port required for each application")
 		}
-		a.Add(nameAndPort.Port, nameAndPort.Name)
+		protocol := kProtocols[configLine.Protocol]
+		if protocol == nil {
+			return errors.New(
+				fmt.Sprintf(
+					"Unrecognized protocol '%s'",
+					configLine.Protocol))
+		}
+		connector, err := protocol(configLine.Params)
+		if err != nil {
+			return err
+		}
+		a.Add(
+			configLine.Port,
+			configLine.Name,
+			connector)
 	}
 	return nil
 }

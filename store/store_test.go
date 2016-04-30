@@ -168,21 +168,27 @@ type nameAndTsType struct {
 	Ts   float64
 }
 
+type interfaceAndActiveType struct {
+	Value  interface{}
+	Active bool
+}
+
 type expectedTsValuesType struct {
 	lastTsMap map[string]float64
-	values    map[nameAndTsType]interface{}
+	values    map[nameAndTsType]interfaceAndActiveType
 }
 
 func newExpectedTsValues() *expectedTsValuesType {
 	return &expectedTsValuesType{
 		lastTsMap: make(map[string]float64),
-		values:    make(map[nameAndTsType]interface{}),
+		values:    make(map[nameAndTsType]interfaceAndActiveType),
 	}
 }
 
 func (e *expectedTsValuesType) copyTo(dest *expectedTsValuesType) {
 	dest.lastTsMap = make(map[string]float64, len(e.lastTsMap))
-	dest.values = make(map[nameAndTsType]interface{}, len(e.values))
+	dest.values = make(
+		map[nameAndTsType]interfaceAndActiveType, len(e.values))
 	for k, v := range e.lastTsMap {
 		dest.lastTsMap[k] = v
 	}
@@ -202,8 +208,16 @@ func (e *expectedTsValuesType) Restore(checkpoint interface{}) {
 	source.copyTo(e)
 }
 
-func (e *expectedTsValuesType) Add(name string, ts float64, value interface{}) {
-	e.values[nameAndTsType{name, ts}] = value
+func (e *expectedTsValuesType) Add(
+	name string, ts float64, value interface{}) {
+	e.values[nameAndTsType{name, ts}] = interfaceAndActiveType{
+		Value: value, Active: true}
+}
+
+func (e *expectedTsValuesType) AddInactive(
+	name string, ts float64, value interface{}) {
+	e.values[nameAndTsType{name, ts}] = interfaceAndActiveType{
+		Value: value, Active: false}
 }
 
 func (e *expectedTsValuesType) Iterate(
@@ -215,6 +229,7 @@ func (e *expectedTsValuesType) Iterate(
 		ts := r.TimeStamp
 		nameTs := nameAndTsType{name, ts}
 		value := r.Value
+		active := r.Active
 		lastTs := e.lastTsMap[name]
 		e.lastTsMap[name] = ts
 		if ts <= lastTs {
@@ -228,13 +243,27 @@ func (e *expectedTsValuesType) Iterate(
 		if !ok {
 			t.Errorf("(%s, %f) not expected", name, ts)
 		} else {
-			if value != expectedVal {
+			if value != expectedVal.Value {
 				t.Errorf(
 					"Expected %v for (%s, %f) got %v",
-					expectedVal,
+					expectedVal.Value,
 					name,
 					ts,
 					value)
+			}
+			if active != expectedVal.Active {
+				if expectedVal.Active {
+					t.Errorf(
+						"Expected active for (%s, %f)",
+						name,
+						ts)
+				} else {
+					t.Errorf(
+						"Expected inactive for (%s, %f)",
+						name,
+						ts)
+				}
+
 			}
 			delete(e.values, nameTs)
 		}
@@ -244,16 +273,113 @@ func (e *expectedTsValuesType) Iterate(
 
 func (e *expectedTsValuesType) VerifyDone(t *testing.T) {
 	for nameTs, val := range e.values {
-		t.Errorf("Expected (%s, %f) = %v", nameTs.Name, nameTs.Ts, val)
+		t.Errorf("Expected (%s, %f) = %v", nameTs.Name, nameTs.Ts, val.Value)
 	}
+}
+
+type iteratorPageEvictionTestType struct {
+	MinTimeStamp float64
+	MaxTimeStamp float64
+	Count        int
+}
+
+func (t *iteratorPageEvictionTestType) Iterate(iter store.Iterator) {
+	*t = iteratorPageEvictionTestType{}
+	var r store.Record
+	for iter.Next(&r) {
+		t.Count++
+		if t.MinTimeStamp == 0 || r.TimeStamp < t.MinTimeStamp {
+			t.MinTimeStamp = r.TimeStamp
+		}
+		if r.TimeStamp > t.MaxTimeStamp {
+			t.MaxTimeStamp = r.TimeStamp
+		}
+	}
+}
+
+func TestIteratorPageEviction(t *testing.T) {
+	var consumer iteratorPageEvictionTestType
+	// max 13 pages. 2 records per page. Specially crafted so that when
+	// store contains timestamps 350 <= ts < 500, there will be
+	// 7 pages for timestamps 350, 360, 370, ..., 490
+	// 3 pages for values 36, 38, 40, ..., 48
+	// 3 pages for values 37, 39, 41, ..., 49
+	aStore := store.NewStore(2, 13, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Alice",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+			GroupId:     0,
+		},
+		{
+			Path:        "Bob",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+			GroupId:     0,
+		},
+	}
+	// 2 endpoints 5 distinct values per endpoint = 2 * 2 = 4 pages
+	// 10 timestamps = 5 pages
+	for ts := 100; ts < 200; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+
+	iterator := aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+	assertValueEquals(t, 20, consumer.Count)
+
+	iterator.Commit()
+
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+	assertValueEquals(t, 0, consumer.Count)
+
+	for ts := 200; ts < 300; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 5)
+	consumer.Iterate(iterator)
+	// 2 time series * max 5 value, timestamp pairs each
+	assertValueEquals(t, 10, consumer.Count)
+	// We only get to timestamp 240
+	assertValueEquals(t, 240.0, consumer.MaxTimeStamp)
+
+	iterator.Commit()
+
+	// Insert lots of new values to evict some pages
+	for ts := 300; ts < 500; ts += 10 {
+		aMetric[0].Value = int64(2 * (ts / 20))
+		aMetric[1].Value = int64(2*(ts/20) + 1)
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+	}
+	iterator = aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	consumer.Iterate(iterator)
+
+	// We should skip to timestamp 360 over evicted pages.
+	assertValueEquals(t, 360.0, consumer.MinTimeStamp)
+	// 14 values from each of the two endpoints
+	assertValueEquals(t, 28, consumer.Count)
 }
 
 func floatToTime(f float64) time.Time {
 	return messages.FloatToTime(f)
 }
 
-// TODO: Test iterator with inactive values. This is low priority as right now
-// we don't write the inactive values to LMM. We filter them out.
 func TestIterator(t *testing.T) {
 	aStore := store.NewStore(2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -407,7 +533,7 @@ func TestIterator(t *testing.T) {
 	expected.Add("FoxTrot", 602.0, 503)
 
 	// Even though alice goes missing, we don't log a missing value
-	// because the we already have value 400 for alice at the same
+	// because we already have value 400 for alice at the same
 	// timestamp
 	expected.Add("Alice", 500.0, 400)
 	expected.Add("Bob", 500.0, 401)
@@ -415,26 +541,26 @@ func TestIterator(t *testing.T) {
 	expected.Add("FoxTrot", 702.0, 603)
 
 	expected.Add("Alice", 800.0, 700)
-	expected.Add("Bob", 800.0, int64(0))
+	expected.AddInactive("Bob", 800.0, int64(0))
 	expected.Add("Charlie", 802.0, 402)
 	expected.Add("FoxTrot", 802.0, 703)
 
-	expected.Add("Alice", 800.001, int64(0))
+	expected.AddInactive("Alice", 800.001, int64(0))
 	// The Iterator is simple and does not try to filter consecutive
 	// missing flags.
-	expected.Add("Bob", 800.001, int64(0))
+	expected.AddInactive("Bob", 800.001, int64(0))
 	expected.Add("Charlie", 902.0, 402)
 	expected.Add("FoxTrot", 902.0, 803)
 
 	expected.Add("Alice", 1000.0, 900)
 	expected.Add("Bob", 1000.0, 901)
-	expected.Add("Charlie", 902.001, int32(0))
-	expected.Add("FoxTrot", 902.001, int64(0))
+	expected.AddInactive("Charlie", 902.001, int32(0))
+	expected.AddInactive("FoxTrot", 902.001, int64(0))
 
-	expected.Add("Alice", 1000.001, int64(0))
-	expected.Add("Bob", 1000.001, int64(0))
-	expected.Add("Charlie", 902.001, int32(0))
-	expected.Add("FoxTrot", 902.001, int64(0))
+	expected.AddInactive("Alice", 1000.001, int64(0))
+	expected.AddInactive("Bob", 1000.001, int64(0))
+	expected.AddInactive("Charlie", 902.001, int32(0))
+	expected.AddInactive("FoxTrot", 902.001, int64(0))
 
 	beginning := expected.Checkpoint()
 

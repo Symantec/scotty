@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -98,6 +99,14 @@ var (
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fDegree = flag.Int(
 		"degree", 10, "Degree of btree")
+	fPStoreDebugRegex = flag.String(
+		"pstoreDebugRegex",
+		"",
+		"Regex for metrics to be shown in pstore debug file.")
+	fPStoreDebugFile = flag.String(
+		"pstoreDebugFile",
+		"pstoremetrics.txt",
+		"Path of pstore debug file")
 )
 
 type byHostName messages.ErrorList
@@ -642,6 +651,45 @@ func (s stallWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
+type filterWriter struct {
+	pstore.LimitedRecordWriter
+	Filter func(path string) bool
+}
+
+func (f *filterWriter) Write(records []pstore.Record) error {
+	var filtered []pstore.Record
+	for i := range records {
+		if f.Filter(records[i].Path) {
+			filtered = append(filtered, records[i])
+		}
+	}
+	// Don't write empty arrays.
+	if filtered == nil {
+		return nil
+	}
+	return f.LimitedRecordWriter.Write(filtered)
+}
+
+type multiLimitedWriter []pstore.LimitedRecordWriter
+
+func (m multiLimitedWriter) Write(records []pstore.Record) error {
+	for _, v := range m {
+		if err := v.Write(records); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m multiLimitedWriter) IsTypeSupported(kind types.Type) bool {
+	for _, v := range m {
+		if !v.IsTypeSupported(kind) {
+			return false
+		}
+	}
+	return true
+}
+
 func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
 	if *fKafkaConfigFile == "" {
 		return stallWriter{}, nil
@@ -655,7 +703,26 @@ func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
 	if err = config.Read(f); err != nil {
 		return
 	}
-	return kafka.NewWriter(&config)
+	writer, err := kafka.NewWriter(&config)
+	if err != nil {
+		return
+	}
+	if *fPStoreDebugRegex != "" {
+		var fakeWriter pstore.LimitedRecordWriter
+		fakeWriter, err = kafka.NewFakeWriterToPath(*fPStoreDebugFile)
+		if err != nil {
+			return
+		}
+		regex := regexp.MustCompile(*fPStoreDebugRegex)
+		filterWriter := &filterWriter{
+			LimitedRecordWriter: fakeWriter,
+			Filter:              regex.MatchString,
+		}
+		result = multiLimitedWriter{writer, filterWriter}
+	} else {
+		result = writer
+	}
+	return
 }
 
 func createApplicationList() *datastructs.ApplicationList {
@@ -868,10 +935,10 @@ func main() {
 	circularBuffer := logbuf.New(*fLogBufLines)
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
+	writer, err := newPStoreWriter()
 	applicationStats := createApplicationStats(
 		createApplicationList(), logger)
 	connectionErrors := newConnectionErrorsType()
-	writer, err := newPStoreWriter()
 	var pstoreForecaster *pstoreForecasterType
 	if err != nil {
 		logger.Println(err)

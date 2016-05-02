@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"github.com/Symantec/scotty/pstore"
@@ -9,6 +10,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
+	"os"
 	"time"
 )
 
@@ -49,10 +51,13 @@ var (
 )
 
 var (
+	kFakeSerializer = &recordSerializerType{
+		TenantId: "aTenantId",
+		ApiKey:   "anApiKey",
+	}
 	kFakeWriter = &fakeWriter{
-		recordSerializerType{
-			TenantId: "aTenantId",
-			ApiKey:   "anApiKey"}}
+		serializer: kFakeSerializer,
+	}
 )
 
 // TODO: Remove once we know the grafana bug involving duplicate timestamps
@@ -116,11 +121,25 @@ func (u uniqueMetricsWriter) Write(records []pstore.Record) (err error) {
 }
 
 type fakeWriter struct {
-	serializer recordSerializerType
+	serializer *recordSerializerType
+	file       *os.File
+	buffer     *bufio.Writer
 }
 
-func newFakeWriter() pstore.RecordWriter {
+func newFakeWriter() pstore.LimitedRecordWriter {
 	return kFakeWriter
+}
+
+func newFakeWriterToPath(path string) (pstore.LimitedRecordWriter, error) {
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	return &fakeWriter{
+		serializer: kFakeSerializer,
+		file:       file,
+		buffer:     bufio.NewWriter(file),
+	}, nil
 }
 
 func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
@@ -134,11 +153,21 @@ func (f *fakeWriter) Write(records []pstore.Record) (err error) {
 		if err != nil {
 			return
 		}
-		fmt.Println(string(payload))
-		fmt.Println()
+		f.printLine(string(payload))
+		f.printLine()
 	}
-	fmt.Println()
+	f.printLine()
 	return
+}
+
+func (f *fakeWriter) printLine(args ...interface{}) {
+	if f.buffer == nil {
+		fmt.Println(args...)
+	} else {
+		fmt.Fprintln(f.buffer, args...)
+		f.buffer.Flush()
+		f.file.Sync()
+	}
 }
 
 type writer struct {

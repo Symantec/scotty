@@ -99,14 +99,22 @@ var (
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fDegree = flag.Int(
 		"degree", 10, "Degree of btree")
-	fPStoreDebugRegex = flag.String(
-		"pstoreDebugRegex",
+	fPStoreDebugMetricRegex = flag.String(
+		"pstoreDebugMetricRegex",
 		"",
 		"Regex for metrics to be shown in pstore debug file.")
+	fPStoreDebugHostRegex = flag.String(
+		"pstoreDebugHostRegex",
+		"",
+		"Regex for hosts to be shown in pstore debug file.")
 	fPStoreDebugFile = flag.String(
 		"pstoreDebugFile",
 		"pstoremetrics.txt",
 		"Path of pstore debug file")
+	fPStoreThrottle = flag.Int(
+		"pstoreThrottle",
+		0,
+		"If positive, the number of values written to persistent store per minute.")
 )
 
 type byHostName messages.ErrorList
@@ -651,15 +659,32 @@ func (s stallWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
+type throttleWriter struct {
+	pstore.LimitedRecordWriter
+	RecordsPerMinute int
+}
+
+func (t *throttleWriter) Write(records []pstore.Record) error {
+	now := time.Now()
+	result := t.LimitedRecordWriter.Write(records)
+	throttleDuration := time.Minute * time.Duration(len(records)) / time.Duration(t.RecordsPerMinute)
+	timeToBeDone := now.Add(throttleDuration)
+	now = time.Now()
+	if now.Before(timeToBeDone) {
+		time.Sleep(timeToBeDone.Sub(now))
+	}
+	return result
+}
+
 type filterWriter struct {
 	pstore.LimitedRecordWriter
-	Filter func(path string) bool
+	Filter func(r *pstore.Record) bool
 }
 
 func (f *filterWriter) Write(records []pstore.Record) error {
 	var filtered []pstore.Record
 	for i := range records {
-		if f.Filter(records[i].Path) {
+		if f.Filter(&records[i]) {
 			filtered = append(filtered, records[i])
 		}
 	}
@@ -707,16 +732,36 @@ func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
 	if err != nil {
 		return
 	}
-	if *fPStoreDebugRegex != "" {
+	if *fPStoreThrottle > 0 {
+		writer = &throttleWriter{
+			LimitedRecordWriter: writer,
+			RecordsPerMinute:    *fPStoreThrottle}
+	}
+	if *fPStoreDebugMetricRegex != "" || *fPStoreDebugHostRegex != "" {
 		var fakeWriter pstore.LimitedRecordWriter
 		fakeWriter, err = kafka.NewFakeWriterToPath(*fPStoreDebugFile)
 		if err != nil {
 			return
 		}
-		regex := regexp.MustCompile(*fPStoreDebugRegex)
+		var metricRegex, hostRegex *regexp.Regexp
+		if *fPStoreDebugMetricRegex != "" {
+			metricRegex = regexp.MustCompile(*fPStoreDebugMetricRegex)
+		}
+		if *fPStoreDebugHostRegex != "" {
+			hostRegex = regexp.MustCompile(*fPStoreDebugHostRegex)
+		}
+		afilter := func(r *pstore.Record) bool {
+			if metricRegex != nil && !metricRegex.MatchString(r.Path) {
+				return false
+			}
+			if hostRegex != nil && !hostRegex.MatchString(r.HostName) {
+				return false
+			}
+			return true
+		}
 		filterWriter := &filterWriter{
 			LimitedRecordWriter: fakeWriter,
-			Filter:              regex.MatchString,
+			Filter:              afilter,
 		}
 		result = multiLimitedWriter{writer, filterWriter}
 	} else {

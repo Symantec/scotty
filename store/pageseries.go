@@ -228,6 +228,14 @@ func (t *timestampSeriesType) GroupId() int {
 	return t.groupId
 }
 
+// Latest returns the latest timestamp in this series as seconds since
+// Jan 1, 1970 GMT.
+func (t *timestampSeriesType) Latest() float64 {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.lastTs
+}
+
 // PageList returns the pages this series owns.
 func (t *timestampSeriesType) PageList() pageListType {
 	t.lock.Lock()
@@ -310,12 +318,15 @@ func (t *timestampSeriesType) Inactivate() (
 		return
 	}
 	neededToAdd = true
-	lastPage, _ := t.pages.LastPageMustHaveSpace(nil)
+	lastPage, isNew := t.pages.LastPageMustHaveSpace(nil)
 	if lastPage == nil {
 		return
 	}
 	addSuccessful = true
 	t.active = false
+	if isNew {
+		t.metrics.AddEmptyTimeStampPage()
+	}
 	latestPage := lastPage.Times()
 	latestPage.Add(t.lastTs)
 	t.lastTs = incTs(t.lastTs)

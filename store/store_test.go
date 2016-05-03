@@ -765,6 +765,9 @@ func TestMachineGoneInactive(t *testing.T) {
 	aMetric[1].Value = 22
 	aStore.AddBatch(kEndpoint1, 1920, aMetric[:])
 
+	// The timestamp here doesn't matter.
+	// To be consistent with individual metrics going inactive we just
+	// add 1ms to last known timestamp.
 	aStore.MarkEndpointInactive(1915.0, kEndpoint1)
 
 	var result []store.Record
@@ -783,34 +786,51 @@ func TestMachineGoneInactive(t *testing.T) {
 	aStore.ByNameAndEndpoint(
 		"/foo/bar", kEndpoint1, 1900.0, 2000.0, store.AppendTo(&result))
 
-	assertValueEquals(t, 3, len(result))
-	assertValueEquals(t, 1915.0, result[0].TimeStamp)
-	assertValueEquals(t, int64(0), result[0].Value)
-	assertValueEquals(t, false, result[0].Active)
-	assertValueEquals(t, 1910.0, result[1].TimeStamp)
-	assertValueEquals(t, 11, result[1].Value)
-	assertValueEquals(t, true, result[1].Active)
-	assertValueEquals(t, 1900.0, result[2].TimeStamp)
-	assertValueEquals(t, 1, result[2].Value)
-	assertValueEquals(t, true, result[2].Active)
+	if assertValueEquals(t, 3, len(result)) {
+		assertValueEquals(t, 1920.001, result[0].TimeStamp)
+		assertValueEquals(t, int64(0), result[0].Value)
+		assertValueEquals(t, false, result[0].Active)
+		assertValueEquals(t, 1910.0, result[1].TimeStamp)
+		assertValueEquals(t, 11, result[1].Value)
+		assertValueEquals(t, true, result[1].Active)
+		assertValueEquals(t, 1900.0, result[2].TimeStamp)
+		assertValueEquals(t, 1, result[2].Value)
+		assertValueEquals(t, true, result[2].Active)
+	}
 
 	result = nil
 	aStore.ByNameAndEndpoint(
 		"/foo/baz", kEndpoint1, 1900.0, 2000.0, store.AppendTo(&result))
 
-	assertValueEquals(t, 4, len(result))
-	assertValueEquals(t, 1920.001, result[0].TimeStamp)
-	assertValueEquals(t, int64(0), result[0].Value)
-	assertValueEquals(t, false, result[0].Active)
-	assertValueEquals(t, 1920.0, result[1].TimeStamp)
-	assertValueEquals(t, 22, result[1].Value)
-	assertValueEquals(t, true, result[1].Active)
-	assertValueEquals(t, 1910.0, result[2].TimeStamp)
-	assertValueEquals(t, 12, result[2].Value)
-	assertValueEquals(t, true, result[2].Active)
-	assertValueEquals(t, 1900.0, result[3].TimeStamp)
-	assertValueEquals(t, 2, result[3].Value)
-	assertValueEquals(t, true, result[3].Active)
+	if assertValueEquals(t, 4, len(result)) {
+		assertValueEquals(t, 1920.001, result[0].TimeStamp)
+		assertValueEquals(t, int64(0), result[0].Value)
+		assertValueEquals(t, false, result[0].Active)
+		assertValueEquals(t, 1920.0, result[1].TimeStamp)
+		assertValueEquals(t, 22, result[1].Value)
+		assertValueEquals(t, true, result[1].Active)
+		assertValueEquals(t, 1910.0, result[2].TimeStamp)
+		assertValueEquals(t, 12, result[2].Value)
+		assertValueEquals(t, true, result[2].Active)
+		assertValueEquals(t, 1900.0, result[3].TimeStamp)
+		assertValueEquals(t, 2, result[3].Value)
+		assertValueEquals(t, true, result[3].Active)
+	}
+
+	expectedTsValues := newExpectedTsValues()
+	expectedTsValues.Add("/foo/bar", 1900.0, 1)
+	expectedTsValues.Add("/foo/bar", 1910.0, 11)
+	expectedTsValues.Add("/foo/bar", 1920.0, 11)
+	expectedTsValues.AddInactive("/foo/bar", 1920.001, int64(0))
+	expectedTsValues.Add("/foo/baz", 1900.0, 2)
+	expectedTsValues.Add("/foo/baz", 1910.0, 12)
+	expectedTsValues.Add("/foo/baz", 1920.0, 22)
+	expectedTsValues.AddInactive("/foo/baz", 1920.001, int64(0))
+
+	iterator := aStore.NamedIteratorForEndpoint("aname", kEndpoint1, 0)
+
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
 
 	var noMetrics metrics.SimpleList
 
@@ -1251,10 +1271,12 @@ func addBatch(
 	}
 }
 
-func assertValueEquals(t *testing.T, expected, actual interface{}) {
+func assertValueEquals(t *testing.T, expected, actual interface{}) bool {
 	if expected != actual {
 		t.Errorf("Expected %v, got %v", expected, actual)
+		return false
 	}
+	return true
 }
 
 // 3 values to /foo, /bar, /baz

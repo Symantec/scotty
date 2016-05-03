@@ -13,8 +13,14 @@ func NewWriter(config *Config) (pstore.LimitedRecordWriter, error) {
 
 // NewFakeWriter creates a new writer that dumps the JSON to stdout.
 // The tenantId and apiKey are fake for security.
-func NewFakeWriter() pstore.RecordWriter {
+func NewFakeWriter() pstore.LimitedRecordWriter {
 	return newFakeWriter()
+}
+
+// NewFakeWriterToPath creates a new writer that dumps the JSON to a file
+// with given path. The tenantId and apiKey are fake for security.
+func NewFakeWriterToPath(path string) (pstore.LimitedRecordWriter, error) {
+	return newFakeWriterToPath(path)
 }
 
 // Config represents the configuration of kafka.

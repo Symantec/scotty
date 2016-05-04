@@ -129,11 +129,16 @@ func (c *timeSeriesCollectionType) tsAllTimeStamps() (
 }
 
 func (c *timeSeriesCollectionType) TsAllAndTimeStampsMarkingInactive() (
-	[]*timeSeriesType, []*timestampSeriesType) {
+	valueSeries []*timeSeriesType,
+	timestampSeries []*timestampSeriesType,
+	markedInactive bool) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if !c.active {
+		return
+	}
 	c.active = false
-	return c.tsAll(), c.tsAllTimeStamps()
+	return c.tsAll(), c.tsAllTimeStamps(), true
 }
 
 func (c *timeSeriesCollectionType) TsByName(name string) (
@@ -174,7 +179,7 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	fetched map[*timeSeriesType]interface{},
 	newOnes, notFetched []*timeSeriesType,
 	fetchedTimeStamps map[*timestampSeriesType]float64,
-	newTimeStampsByGroupId map[int]float64,
+	newTs []*timestampSeriesType,
 	notFetchedTimeStamps []*timestampSeriesType,
 	ok bool) {
 	c.lock.Lock()
@@ -187,7 +192,6 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	timestampByGroupId := make(map[int]float64)
 	fetched = make(map[*timeSeriesType]interface{})
 	fetchedTimeStamps = make(map[*timestampSeriesType]float64)
-	newTimeStampsByGroupId = make(map[int]float64)
 	mlen := mlist.Len()
 	for i := 0; i < mlen; i++ {
 		var avalue metrics.Value
@@ -228,12 +232,12 @@ func (c *timeSeriesCollectionType) LookupBatch(
 				notFetchedTimeStamps, series)
 		}
 	}
-	// populate fetchedTimeStamps and newTimeStampsByGroupId
+	// populate fetchedTimeStamps and newTs
 	for groupId, ts := range timestampByGroupId {
 		if c.timestampSeries[groupId] == nil {
 			c.timestampSeries[groupId] = newTimeStampSeriesType(
 				groupId, ts, c.metrics)
-			newTimeStampsByGroupId[groupId] = ts
+			newTs = append(newTs, c.timestampSeries[groupId])
 		} else {
 			fetchedTimeStamps[c.timestampSeries[groupId]] = ts
 		}
@@ -247,60 +251,22 @@ func (c *timeSeriesCollectionType) MarkActive() {
 	c.active = true
 }
 
-// Marks this instance inactive.
-// timestamp is the timestamp of scotty.
-// supplier is the page queue.
-func (c *timeSeriesCollectionType) MarkInactive(
-	timestamp float64, supplier *pageQueueType) {
-	var reclaimHighList []pageListType
-	c.statusChangeLock.Lock()
-	defer c.statusChangeLock.Unlock()
-	timeSeriesList, timestampSeriesList := c.TsAllAndTimeStampsMarkingInactive()
-	var inactiveCount int
-	for i := range timeSeriesList {
-		// If it was active
-		if inactivateTimeSeries(
-			timeSeriesList[i], timestamp, supplier) {
-			reclaimHighList = append(
-				reclaimHighList,
-				timeSeriesList[i].PageList())
-			inactiveCount++
-		}
-	}
-	for i := range timestampSeriesList {
-		justInactivated, _ := inactivateTimeStampSeries(
-			timestampSeriesList[i], supplier)
-		// If it was active
-		if justInactivated {
-			reclaimHighList = append(
-				reclaimHighList,
-				timestampSeriesList[i].PageList())
-		}
-	}
-
-	// reclaimHighList has all the page lists that should be reclaimed with
-	// high priority
-	supplier.ReclaimHigh(reclaimHighList)
-
-	c.metrics.AddUniqueValues(inactiveCount)
-
-	return
-}
-
-// Add batch of values.
-// timestamp is the timestamp of scotty.
-func (c *timeSeriesCollectionType) AddBatch(
-	timestamp float64,
-	mlist metrics.List,
-	supplier *pageQueueType) (result int, ok bool) {
+func (c *timeSeriesCollectionType) updateTimeStampSeriesAndTimeSeries(
+	newOnes []*timeSeriesType,
+	fetched map[*timeSeriesType]interface{},
+	notFetched []*timeSeriesType,
+	newTs []*timestampSeriesType,
+	tsFetched map[*timestampSeriesType]float64,
+	tsNotFetched []*timestampSeriesType,
+	supplier *pageQueueType) (result int) {
 	var reclaimLowList, reclaimHighList []pageListType
-	c.statusChangeLock.Lock()
-	defer c.statusChangeLock.Unlock()
-	fetched, newOnes, notFetched, tsFetched, timestamps, tsNotFetched, ok := c.LookupBatch(timestamp, mlist)
-	if !ok {
-		return
-	}
 	addedCount := len(newOnes)
+	timestamps := make(
+		map[int]float64,
+		len(newTs)+len(tsFetched)+len(tsNotFetched))
+	for i := range newTs {
+		timestamps[newTs[i].GroupId()] = newTs[i].Latest()
+	}
 
 	// Do a dry run of adding timestamps so that we can finish
 	// populating the timestamps map. We don't actually add the
@@ -391,6 +357,42 @@ func (c *timeSeriesCollectionType) AddBatch(
 
 	result = inactiveCount + addedCount
 	c.metrics.AddUniqueValues(result)
+	return
+
+}
+
+// Marks this instance inactive.
+// timestamp is the timestamp of scotty and is currently unused.
+// supplier is the page queue.
+func (c *timeSeriesCollectionType) MarkInactive(
+	unusedTimestamp float64, supplier *pageQueueType) {
+	c.statusChangeLock.Lock()
+	defer c.statusChangeLock.Unlock()
+	timeSeriesList, timestampSeriesList, ok := c.TsAllAndTimeStampsMarkingInactive()
+	if ok {
+		c.updateTimeStampSeriesAndTimeSeries(
+			nil, nil, timeSeriesList,
+			nil, nil, timestampSeriesList,
+			supplier)
+	}
+}
+
+// Add batch of values.
+// timestamp is the timestamp of scotty.
+func (c *timeSeriesCollectionType) AddBatch(
+	timestamp float64,
+	mlist metrics.List,
+	supplier *pageQueueType) (result int, ok bool) {
+	c.statusChangeLock.Lock()
+	defer c.statusChangeLock.Unlock()
+	fetched, newOnes, notFetched, tsFetched, newTs, tsNotFetched, ok := c.LookupBatch(timestamp, mlist)
+	if !ok {
+		return
+	}
+	result = c.updateTimeStampSeriesAndTimeSeries(
+		newOnes, fetched, notFetched,
+		newTs, tsFetched, tsNotFetched,
+		supplier)
 	return
 }
 

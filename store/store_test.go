@@ -163,6 +163,43 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	assertValueEquals(t, 14, int(total))
 }
 
+type sanityCheckerType struct {
+	lastTsMap map[string]float64
+}
+
+func newSanityChecker() *sanityCheckerType {
+	var result sanityCheckerType
+	result.Init()
+	return &result
+}
+
+func (c *sanityCheckerType) Init() {
+	c.lastTsMap = make(map[string]float64)
+}
+
+func (c *sanityCheckerType) copyTo(dest *sanityCheckerType) {
+	dest.lastTsMap = make(map[string]float64, len(c.lastTsMap))
+	for k, v := range c.lastTsMap {
+		dest.lastTsMap[k] = v
+	}
+}
+
+func (c *sanityCheckerType) Check(
+	t *testing.T, r *store.Record) (lastTs float64, ok bool) {
+	name := r.Info.Path()
+	ts := r.TimeStamp
+	lastTs, ok = c.lastTsMap[name]
+	c.lastTsMap[name] = ts
+	if ok && ts <= lastTs {
+		t.Errorf(
+			"(%s %f) does not come after %f",
+			name,
+			ts,
+			lastTs)
+	}
+	return
+}
+
 type nameAndTsType struct {
 	Name string
 	Ts   float64
@@ -174,24 +211,22 @@ type interfaceAndActiveType struct {
 }
 
 type expectedTsValuesType struct {
-	lastTsMap map[string]float64
-	values    map[nameAndTsType]interfaceAndActiveType
+	sanityChecker sanityCheckerType
+	values        map[nameAndTsType]interfaceAndActiveType
 }
 
 func newExpectedTsValues() *expectedTsValuesType {
-	return &expectedTsValuesType{
-		lastTsMap: make(map[string]float64),
-		values:    make(map[nameAndTsType]interfaceAndActiveType),
+	result := &expectedTsValuesType{
+		values: make(map[nameAndTsType]interfaceAndActiveType),
 	}
+	result.sanityChecker.Init()
+	return result
 }
 
 func (e *expectedTsValuesType) copyTo(dest *expectedTsValuesType) {
-	dest.lastTsMap = make(map[string]float64, len(e.lastTsMap))
+	e.sanityChecker.copyTo(&dest.sanityChecker)
 	dest.values = make(
 		map[nameAndTsType]interfaceAndActiveType, len(e.values))
-	for k, v := range e.lastTsMap {
-		dest.lastTsMap[k] = v
-	}
 	for k, v := range e.values {
 		dest.values[k] = v
 	}
@@ -224,21 +259,13 @@ func (e *expectedTsValuesType) Iterate(
 	t *testing.T, iterator store.Iterator) (count int) {
 	var r store.Record
 	for iterator.Next(&r) {
+		e.sanityChecker.Check(t, &r)
 		count++
 		name := r.Info.Path()
 		ts := r.TimeStamp
 		nameTs := nameAndTsType{name, ts}
 		value := r.Value
 		active := r.Active
-		lastTs := e.lastTsMap[name]
-		e.lastTsMap[name] = ts
-		if ts <= lastTs {
-			t.Errorf(
-				"(%s %f) does not come after %f",
-				name,
-				ts,
-				lastTs)
-		}
 		expectedVal, ok := e.values[nameTs]
 		if !ok {
 			t.Errorf("(%s, %f) not expected", name, ts)
@@ -283,27 +310,51 @@ type iteratorPageEvictionTestType struct {
 	Count        int
 }
 
-func (t *iteratorPageEvictionTestType) Iterate(iter store.Iterator) {
-	*t = iteratorPageEvictionTestType{}
+func (c *iteratorPageEvictionTestType) Iterate(
+	t *testing.T, iter store.Iterator) {
+	*c = iteratorPageEvictionTestType{}
+	sanityChecker := newSanityChecker()
 	var r store.Record
 	for iter.Next(&r) {
-		t.Count++
-		if t.MinTimeStamp == 0 || r.TimeStamp < t.MinTimeStamp {
-			t.MinTimeStamp = r.TimeStamp
+		lastTs, ok := sanityChecker.Check(t, &r)
+		if ok && r.TimeStamp-lastTs != 10.0 {
+			t.Error("Expected no gaps in timestamps")
 		}
-		if r.TimeStamp > t.MaxTimeStamp {
-			t.MaxTimeStamp = r.TimeStamp
+		var expectedValue interface{}
+		if r.Info.Path() == "Alice" {
+			expectedValue = 2 * (int64(r.TimeStamp) / 20)
+		} else if r.Info.Path() == "Bob" {
+			expectedValue = 2*(int64(r.TimeStamp)/20) + 1
+		} else {
+			t.Fatalf("Unexpected name %s encountered", r.Info.Path())
+		}
+		if r.Value != expectedValue {
+			t.Errorf(
+				"Expected %v, got %v for (%s %f)",
+				expectedValue,
+				r.Value,
+				r.Info.Path(),
+				r.TimeStamp,
+			)
+		}
+		c.Count++
+		if c.MinTimeStamp == 0 || r.TimeStamp < c.MinTimeStamp {
+			c.MinTimeStamp = r.TimeStamp
+		}
+		if r.TimeStamp > c.MaxTimeStamp {
+			c.MaxTimeStamp = r.TimeStamp
 		}
 	}
 }
 
 func TestIteratorPageEviction(t *testing.T) {
 	var consumer iteratorPageEvictionTestType
-	// max 13 pages. 2 records per page. Specially crafted so that when
-	// store contains timestamps 350 <= ts < 500, there will be
-	// 7 pages for timestamps 350, 360, 370, ..., 490
-	// 3 pages for values 36, 38, 40, ..., 48
-	// 3 pages for values 37, 39, 41, ..., 49
+	// max 13 pages. 2 records per page. What this will hold is hard
+	// to predict, but we expect it to hold 6 to 7 unique values for
+	// each metric along with with 12 to 14 timestamps.
+	// (3 pages for values for each metric) * (2 metrics) = 6 pages
+	// plus 7 pages for 14 timestamps) = 7 pages
+	// 6 pages + 7 pages = 13 pages
 	aStore := store.NewStore(2, 13, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
@@ -331,17 +382,16 @@ func TestIteratorPageEviction(t *testing.T) {
 		aMetric[1].Value = int64(2*(ts/20) + 1)
 		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
 	}
-
 	iterator := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
-	consumer.Iterate(iterator)
+	consumer.Iterate(t, iterator)
 	assertValueEquals(t, 20, consumer.Count)
 
 	iterator.Commit()
 
 	iterator = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
-	consumer.Iterate(iterator)
+	consumer.Iterate(t, iterator)
 	assertValueEquals(t, 0, consumer.Count)
 
 	for ts := 200; ts < 300; ts += 10 {
@@ -352,7 +402,7 @@ func TestIteratorPageEviction(t *testing.T) {
 
 	iterator = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 5)
-	consumer.Iterate(iterator)
+	consumer.Iterate(t, iterator)
 	// 2 time series * max 5 value, timestamp pairs each
 	assertValueEquals(t, 10, consumer.Count)
 	// We only get to timestamp 240
@@ -368,12 +418,17 @@ func TestIteratorPageEviction(t *testing.T) {
 	}
 	iterator = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
-	consumer.Iterate(iterator)
-
-	// We should skip to timestamp 360 over evicted pages.
-	assertValueEquals(t, 360.0, consumer.MinTimeStamp)
-	// 14 values from each of the two endpoints
-	assertValueEquals(t, 28, consumer.Count)
+	consumer.Iterate(t, iterator)
+	if consumer.MinTimeStamp < 360.0 { // max 14 timestamps
+		t.Error("Expected some values to be skipped.")
+	}
+	if consumer.MinTimeStamp > 380.0 { // at least 12 timestamps
+		t.Error("Expected at least 12 timestamps")
+	}
+	assertValueEquals(t, 490.0, consumer.MaxTimeStamp)
+	if consumer.Count < 24 { // at least 12*2 values
+		t.Error("Expected at least 24 values")
+	}
 }
 
 func floatToTime(f float64) time.Time {
@@ -841,6 +896,58 @@ func TestMachineGoneInactive(t *testing.T) {
 	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); !ok {
 		t.Error("Expected AddBatch to succeed")
 	}
+}
+
+func TestLMMDropOffEarlyTimestamps(t *testing.T) {
+	// Four pages 2 values/timestamps each.
+	// We create 1 metric and give it 5 distinct values so that 2 pages go
+	// to the values and 2 pages go to the timestamps.
+	// We then re-add the 5th value with a newer timestamp. This will
+	// force a new timestamp page and evict the oldest value page.
+	// The result will be that the timestamps go earlier than the values.
+	// We want to be sure that the iterator starts at the earliest value
+	// not the earliest timestamp.
+	aStore := store.NewStore(2, 4, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+		},
+	}
+	aMetric[0].Value = 12
+	aStore.AddBatch(kEndpoint0, 1200.0, aMetric[:])
+	aMetric[0].Value = 13
+	aStore.AddBatch(kEndpoint0, 1300.0, aMetric[:])
+	aMetric[0].Value = 14
+	aStore.AddBatch(kEndpoint0, 1400.0, aMetric[:])
+	aMetric[0].Value = 15
+	aStore.AddBatch(kEndpoint0, 1500.0, aMetric[:])
+	aMetric[0].Value = 16
+	aStore.AddBatch(kEndpoint0, 1600.0, aMetric[:])
+	// Re-add 5th value. Oldest value now 14, not 12.
+	aStore.AddBatch(kEndpoint0, 1700.0, aMetric[:])
+
+	expectedTsValues := newExpectedTsValues()
+
+	// Even though we request 2 values per metric, we get nothing
+	// because the first 2 timestamps don't match any value.
+	iterator := aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 2)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
+
+	expectedTsValues = newExpectedTsValues()
+	expectedTsValues.Add("/foo/bar", 1400.0, 14)
+	expectedTsValues.Add("/foo/bar", 1500.0, 15)
+	expectedTsValues.Add("/foo/bar", 1600.0, 16)
+	expectedTsValues.Add("/foo/bar", 1700.0, 16)
+
+	iterator = aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {

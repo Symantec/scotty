@@ -338,7 +338,9 @@ func (s *Store) ByEndpoint(
 // If maxFrames = 0, the returned iterator will make best effort to iterate
 // over all the metric values in the endpoint. A positive maxFrames hints to
 // the returned iterator that it should iterate over at most maxFrames values
-// per metric. Caller must commit progress and create a new iterator with the
+// per metric. Returned iterator is free to iterate over fewer than maxFrames
+// values for a metric even if that metric has additional values.
+// Caller must commit progress and create a new iterator with the
 // same name for the same endpoint to see the rest of the values.
 func (s *Store) NamedIteratorForEndpoint(
 	name string,

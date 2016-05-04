@@ -68,16 +68,16 @@ type mergeWithTimestampsType struct {
 // result.
 //
 // This appender will emit each value it accepts 0 or more times to result
-// depending on how many timestamps in the timestamps array fall on it or
+// depending on how many timestamps in the timestamps slice fall on it or
 // immediately after it. For example, if this appender accepts value A
 // with timestamp 1000 and value B with timestamp 1004 and value C with
-// timestamp 1007 and the timestamp array contains:
+// timestamp 1007 and the timestamp slice contains:
 // ..., 1000, 1002, 1003, 1008,... then this appender will emit:
 // ...; A, 1000; A, 1002; A, 1003; C, 1008; ... to result
 // Note that no B is emitted to result as there is no timestamp that falls
 // on 1004 or immediately after 1004 but not before C's timestamp of 1007.
 //
-// The timestamps array must be sorted in ascending order and the returned
+// The timestamps slice must be sorted in ascending order and the returned
 // appender must accept value-timestamp records in ascending order by
 // timestamp.
 func newMergeWithTimestamps(
@@ -104,7 +104,7 @@ func (m *mergeWithTimestampsType) Append(r *Record) bool {
 			}
 			m.timestampIdx++
 		}
-		// If we reached end of timestamp array, let caller know we
+		// If we reached end of timestamp slice, let caller know we
 		// are done accepting values.
 		return false
 	}
@@ -130,7 +130,7 @@ func (m *mergeWithTimestampsType) Append(r *Record) bool {
 		}
 		m.timestampIdx++
 	}
-	// If we reached end ot timestamps, tell caller we are done accepting
+	// If we reached end of timestamps, tell caller we are done accepting
 	// values.
 	return false
 }

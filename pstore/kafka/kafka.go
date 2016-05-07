@@ -60,6 +60,49 @@ var (
 	}
 )
 
+func isTypeSupported(t types.Type) bool {
+	return supportedTypes[t]
+}
+
+func asFloat64(r *pstore.Record) float64 {
+	switch r.Kind {
+	case types.Bool:
+		if r.Value.(bool) {
+			return 1.0
+		}
+		return 0.0
+	case types.Int8:
+		return float64(r.Value.(int8))
+	case types.Int16:
+		return float64(r.Value.(int16))
+	case types.Int32:
+		return float64(r.Value.(int32))
+	case types.Int64:
+		return float64(r.Value.(int64))
+	case types.Uint8:
+		return float64(r.Value.(uint8))
+	case types.Uint16:
+		return float64(r.Value.(uint16))
+	case types.Uint32:
+		return float64(r.Value.(uint32))
+	case types.Uint64:
+		return float64(r.Value.(uint64))
+	case types.Float32:
+		return float64(r.Value.(float32))
+	case types.Float64:
+		return r.Value.(float64)
+	case types.GoTime:
+		return messages.TimeToFloat(r.Value.(time.Time))
+	case types.GoDuration:
+		return messages.DurationToFloat(
+			r.Value.(time.Duration)) * units.FromSeconds(
+			r.Unit)
+	default:
+		panic("Unsupported type")
+
+	}
+}
+
 // TODO: Remove once we know the grafana bug involving duplicate timestamps
 // is fixed.
 type pathAndMillisType struct {
@@ -143,7 +186,7 @@ func newFakeWriterToPath(path string) (pstore.LimitedRecordWriter, error) {
 }
 
 func (f *fakeWriter) IsTypeSupported(t types.Type) bool {
-	return supportedTypes[t]
+	return IsTypeSupported(t)
 }
 
 func (f *fakeWriter) Write(records []pstore.Record) (err error) {
@@ -179,6 +222,9 @@ type writer struct {
 
 func newWriter(c *Config) (
 	result pstore.LimitedRecordWriter, err error) {
+	if err = c.checkRequiredFields(); err != nil {
+		panic(err)
+	}
 	var awriter writer
 	awriter.topic = c.Topic
 	awriter.serializer.TenantId = c.TenantId
@@ -201,7 +247,7 @@ func newWriter(c *Config) (
 }
 
 func (w *writer) IsTypeSupported(t types.Type) bool {
-	return supportedTypes[t]
+	return IsTypeSupported(t)
 }
 
 func (w *writer) Write(records []pstore.Record) (err error) {
@@ -225,53 +271,14 @@ type recordSerializerType struct {
 }
 
 func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
-	if !supportedTypes[r.Kind] {
-		panic("Cannot record given kind.")
-	}
 	record := map[string]interface{}{
 		kVersion:   kVersionNum,
 		kTenantId:  s.TenantId,
 		kApiKey:    s.ApiKey,
 		kTimestamp: r.Timestamp.Format(kTimeFormat),
 		kName:      r.Path,
-		kHost:      r.HostName}
-	switch r.Kind {
-	case types.Bool:
-		if r.Value.(bool) {
-			record[kValue] = 1.0
-		} else {
-			record[kValue] = 0.0
-		}
-	case types.Int8:
-		record[kValue] = float64(r.Value.(int8))
-	case types.Int16:
-		record[kValue] = float64(r.Value.(int16))
-	case types.Int32:
-		record[kValue] = float64(r.Value.(int32))
-	case types.Int64:
-		record[kValue] = float64(r.Value.(int64))
-	case types.Uint8:
-		record[kValue] = float64(r.Value.(uint8))
-	case types.Uint16:
-		record[kValue] = float64(r.Value.(uint16))
-	case types.Uint32:
-		record[kValue] = float64(r.Value.(uint32))
-	case types.Uint64:
-		record[kValue] = float64(r.Value.(uint64))
-	case types.Float32:
-		record[kValue] = float64(r.Value.(float32))
-	case types.Float64:
-		record[kValue] = r.Value
-	case types.GoTime:
-		record[kValue] = messages.TimeToFloat(r.Value.(time.Time))
-	case types.GoDuration:
-		record[kValue] = messages.DurationToFloat(
-			r.Value.(time.Duration)) * units.FromSeconds(
-			r.Unit)
-	default:
-		panic("Unsupported type")
-
-	}
+		kHost:      r.HostName,
+		kValue:     ToFloat64(r)}
 	for k, v := range r.Tags {
 		record[k] = v
 	}

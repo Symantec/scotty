@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"github.com/Symantec/scotty/pstore"
+	"github.com/Symantec/scotty/pstore/influx"
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -19,6 +20,10 @@ var (
 		"kafka_config_file",
 		"",
 		"kafka configuration file")
+	fInfluxConfigFile = flag.String(
+		"influx_config_file",
+		"",
+		"influx configuration file")
 	fCommandFile = flag.String(
 		"command_file",
 		"",
@@ -155,20 +160,16 @@ func readCommands(commands *[]metricCommand) {
 }
 
 func createKafkaWriter() (result pstore.RecordWriter) {
-	if *fKafkaConfigFile == "" {
+	var err error
+	if *fKafkaConfigFile != "" {
+		result, err = kafka.FromFile(*fKafkaConfigFile)
+	} else if *fInfluxConfigFile != "" {
+		result, err = influx.FromFile(*fInfluxConfigFile)
+	} else {
 		return kafka.NewFakeWriter()
 	}
-	f, err := os.Open(*fKafkaConfigFile)
 	if err != nil {
-		panic(err)
-	}
-	defer f.Close()
-	var config kafka.Config
-	if err = config.Read(f); err != nil {
-		panic(err)
-	}
-	if result, err = kafka.NewWriter(&config); err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	return
 }

@@ -3,12 +3,22 @@ package kafka
 
 import (
 	"github.com/Symantec/scotty/pstore"
+	"github.com/Symantec/scotty/pstore/config"
 	"io"
 )
 
 // NewWriter creates a new writer that writes to kafka endpoints.
-func NewWriter(config *Config) (pstore.LimitedRecordWriter, error) {
-	return newWriter(config)
+func NewWriter(config Config) (pstore.LimitedRecordWriter, error) {
+	return newWriter(&config)
+}
+
+// FromFile creates a new writer from a configuration file.
+func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
+	var c Config
+	if err = config.Read(filename, &c); err != nil {
+		return
+	}
+	return NewWriter(c)
 }
 
 // NewFakeWriter creates a new writer that dumps the JSON to stdout.

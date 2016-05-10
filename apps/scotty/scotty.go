@@ -17,6 +17,7 @@ import (
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/pstore"
+	"github.com/Symantec/scotty/pstore/influx"
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/sysmemory"
@@ -27,7 +28,6 @@ import (
 	"io"
 	"log"
 	"math"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -91,6 +91,10 @@ var (
 		"kafka_config_file",
 		"",
 		"kafka configuration file")
+	fInfluxConfigFile = flag.String(
+		"influx_config_file",
+		"",
+		"influx configuration file")
 	fLogBufLines = flag.Uint(
 		"logbufLines", 1024, "Number of lines to store in the log buffer")
 	fPidFile = flag.String(
@@ -642,20 +646,14 @@ var (
 	aWriteError = errors.New("A bad write error.")
 )
 
-// A fake pstore.Writer implementation. This fake simply stalls 50ms with each
-// write.
-type stallWriter struct {
+type nilWriter struct {
 }
 
-func (s stallWriter) IsTypeSupported(kind types.Type) bool {
+func (n nilWriter) IsTypeSupported(kind types.Type) bool {
 	return true
 }
 
-func (s stallWriter) Write(records []pstore.Record) error {
-	time.Sleep(50 * time.Millisecond)
-	if rand.Float64() < 0.01 {
-		return aWriteError
-	}
+func (n nilWriter) Write(records []pstore.Record) error {
 	return nil
 }
 
@@ -676,15 +674,17 @@ func (t *throttleWriter) Write(records []pstore.Record) error {
 	return result
 }
 
+// filterWriter supports all types, but silently drops any values that
+// don't match Filter or that Wrapped does not support.
 type filterWriter struct {
-	pstore.LimitedRecordWriter
-	Filter func(r *pstore.Record) bool
+	Wrapped pstore.LimitedRecordWriter
+	Filter  func(r *pstore.Record) bool
 }
 
 func (f *filterWriter) Write(records []pstore.Record) error {
 	var filtered []pstore.Record
 	for i := range records {
-		if f.Filter(&records[i]) {
+		if f.Filter(&records[i]) && f.Wrapped.IsTypeSupported(records[i].Kind) {
 			filtered = append(filtered, records[i])
 		}
 	}
@@ -692,7 +692,11 @@ func (f *filterWriter) Write(records []pstore.Record) error {
 	if filtered == nil {
 		return nil
 	}
-	return f.LimitedRecordWriter.Write(filtered)
+	return f.Wrapped.Write(filtered)
+}
+
+func (f *filterWriter) IsTypeSupported(kind types.Type) bool {
+	return true
 }
 
 type multiLimitedWriter []pstore.LimitedRecordWriter
@@ -716,19 +720,14 @@ func (m multiLimitedWriter) IsTypeSupported(kind types.Type) bool {
 }
 
 func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
-	if *fKafkaConfigFile == "" {
-		return stallWriter{}, nil
+	var writer pstore.LimitedRecordWriter
+	if *fKafkaConfigFile != "" {
+		writer, err = kafka.FromFile(*fKafkaConfigFile)
+	} else if *fInfluxConfigFile != "" {
+		writer, err = influx.FromFile(*fInfluxConfigFile)
+	} else {
+		writer = nilWriter{}
 	}
-	f, err := os.Open(*fKafkaConfigFile)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	var config kafka.Config
-	if err = config.Read(f); err != nil {
-		return
-	}
-	writer, err := kafka.NewWriter(&config)
 	if err != nil {
 		return
 	}
@@ -760,8 +759,8 @@ func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
 			return true
 		}
 		filterWriter := &filterWriter{
-			LimitedRecordWriter: fakeWriter,
-			Filter:              afilter,
+			Wrapped: fakeWriter,
+			Filter:  afilter,
 		}
 		result = multiLimitedWriter{writer, filterWriter}
 	} else {

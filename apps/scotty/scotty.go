@@ -87,6 +87,10 @@ var (
 		"pstore_batch_size",
 		1000,
 		"Batch to write at least this many records to persistent storage")
+	fPStoreConcurrency = flag.Int(
+		"pstore_concurrency",
+		1,
+		"Number of goroutines writing to persistent storage")
 	fKafkaConfigFile = flag.String(
 		"kafka_config_file",
 		"",
@@ -232,7 +236,7 @@ type pstoreHandlerMetricsType struct {
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
 	writerWithMetrics       *pstore.RecordWriterWithMetrics
-	consumer                *pstore.Consumer
+	consumer                *pstore.AsyncConsumer
 	appList                 *datastructs.ApplicationList
 	countAndFilter          pstoreCountAndFilterType
 	startTime               time.Time
@@ -246,15 +250,16 @@ func newPStoreHandler(
 	w pstore.RecordWriter,
 	appList *datastructs.ApplicationList,
 	countAndFilter pstoreCountAndFilterType,
-	batchSize int) *pstoreHandlerType {
+	batchSize, concurrency int) *pstoreHandlerType {
 	writerWithMetrics := &pstore.RecordWriterWithMetrics{}
 	writerWithMetrics.W = w
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	writerWithMetrics.PerMetricWriteTimes = bucketer.NewCumulativeDistribution()
 
 	return &pstoreHandlerType{
-		writerWithMetrics:       writerWithMetrics,
-		consumer:                pstore.NewConsumer(writerWithMetrics, batchSize),
+		writerWithMetrics: writerWithMetrics,
+		consumer: pstore.NewAsyncConsumer(
+			writerWithMetrics, batchSize, concurrency),
 		appList:                 appList,
 		countAndFilter:          countAndFilter,
 		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
@@ -292,7 +297,7 @@ func (p *pstoreHandlerType) Visit(
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
-	p.consumer.Write(iterator, hostName, appName)
+	p.consumer.WriteAsync(iterator, hostName, appName)
 	return nil
 }
 
@@ -918,7 +923,8 @@ func startPStoreLoop(
 			writer,
 			stats.ApplicationList(),
 			countAndFilter,
-			*fPStoreBatchSize)
+			*fPStoreBatchSize,
+			*fPStoreConcurrency)
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}

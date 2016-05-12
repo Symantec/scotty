@@ -87,6 +87,47 @@ func (w *RecordWriterWithMetrics) Metrics(m *RecordWriterMetrics) {
 	w._metrics(m)
 }
 
+// AsyncConsumer works like Consumer but does the work asynchronously.
+//
+// Although AsyncConsumer may be used with multiple goroutines, we do not
+// recommend doing so to ensure a clear happens before relationship between
+// calls to WriteAsync and Flush.
+type AsyncConsumer struct {
+	requests     chan consumerRequestType
+	flushBarrier *barrier
+	concurrency  int
+}
+
+// NewAsyncConsumer creates a new AsyncConsumer instance.
+// w is the underlying writer.
+// concurrency is the count of goroutines doing the consuming.
+// bufferSize is the size of each buffer. Each goroutine gets its own buffer.
+func NewAsyncConsumer(
+	w RecordWriter, bufferSize, concurrency int) *AsyncConsumer {
+	return newAsyncConsumer(w, bufferSize, concurrency)
+}
+
+// WriteAsync works like the Consumer.Write except that it returns immediately.
+// Sometime in the future, a separate goroutine does the work of consuming
+// values from n, writing them to the underlying RecordWriter and committing
+// progress on n.
+//
+// Like Consumer.Write, caller must avoid creating and using another
+// NamedIterator instance with the same name iterating over the same values
+// until it has called Flush on this instance.
+func (a *AsyncConsumer) WriteAsync(
+	n store.NamedIterator, host, appName string) {
+	a.writeAsync(n, host, appName)
+}
+
+// Flush works like Consumer.Flush plus Flush waits until every
+// call to WriteAsync that happened before resolves before flushing the
+// buffers. Flush blocks the caller until it has completed flushing all the
+// buffers and committing all necessary NamedIterators.
+func (a *AsyncConsumer) Flush() {
+	a.flush()
+}
+
 // Consumer writes values from NamedIterator instances to persistent storage.
 // Consumer buffers values to be written. Whenever the buffer becomes full,
 // the Consumer instance clears the buffer, writes the values out to the

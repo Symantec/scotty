@@ -67,6 +67,111 @@ func (w *RecordWriterMetrics) logWriteError(err string, timeTaken time.Duration)
 	w.TimeSpentWriting += timeTaken
 }
 
+type consumerRequestType struct {
+	Iterator store.NamedIterator
+	HostName string
+	AppName  string
+}
+
+// barrier releases callers in groups of N and makes callers wait until
+// there are N callers to release.
+//
+// If a caller happens to come in while the barrier is already releasing a
+// group N callers, that caller waits until the barrier releases the next
+// group of N callers.
+type barrier struct {
+	inCh  chan bool
+	outCh chan bool
+}
+
+// newBarrier creates a new barrier. count is N.
+func newBarrier(count int) *barrier {
+	result := &barrier{inCh: make(chan bool), outCh: make(chan bool)}
+	go result.loop(count)
+	return result
+}
+
+// Await blocks the caller until there are N callers to release.
+func (b *barrier) Await() {
+	b.inCh <- true
+	<-b.outCh
+}
+
+func (b *barrier) loop(count int) {
+	for {
+		for i := 0; i < count; i++ {
+			<-b.inCh
+		}
+		for i := 0; i < count; i++ {
+			b.outCh <- true
+		}
+	}
+}
+
+func newAsyncConsumer(
+	w RecordWriter, bufferSize, concurrency int) *AsyncConsumer {
+	result := &AsyncConsumer{
+		requests: make(chan consumerRequestType, concurrency),
+		// Flush barrier to accomodate each goroutine plus the
+		// one caller to Flush.
+		flushBarrier: newBarrier(concurrency + 1),
+		concurrency:  concurrency,
+	}
+	for i := 0; i < concurrency; i++ {
+		go result.loop(w, bufferSize)
+	}
+	return result
+}
+
+func (a *AsyncConsumer) loop(w RecordWriter, bufferSize int) {
+	consumer := newConsumer(w, bufferSize)
+	for {
+		request := <-a.requests
+		if request.Iterator != nil {
+			consumer.Write(
+				request.Iterator,
+				request.HostName,
+				request.AppName)
+		} else {
+			consumer.Flush()
+
+			// Wait here untl all goroutines have processed their
+			// flush.
+			a.flushBarrier.Await()
+		}
+	}
+}
+
+func (a *AsyncConsumer) writeAsync(
+	n store.NamedIterator, hostName, appName string) {
+	// nil signals a flush request, so we don't allow it here.
+	if n == nil {
+		panic("Got nil NamedIterator")
+	}
+	a.requests <- consumerRequestType{
+		Iterator: n,
+		HostName: hostName,
+		AppName:  appName}
+}
+
+func (a *AsyncConsumer) flush() {
+	// Send a flush request for each goroutine. Since each goroutine
+	// waits on the others to process their flush, we are guaranteed that
+	// each goroutine will get one and only one flush request.
+	//
+	// If two goroutines were to call flush at the same time, all of this
+	// instance's goroutines would all block on the flush barrier before
+	// either calling goroutine finished sending all of its flush requests
+	// resulting in deadlock. This is why AsyncConsumer is NOT safe to use
+	// with multiple goroutines.
+	for i := 0; i < a.concurrency; i++ {
+		a.requests <- consumerRequestType{}
+	}
+	// Block caller until all goroutines have processed their flush. Then
+	// release the goroutines and the caller.
+	a.flushBarrier.Await()
+}
+
 func newConsumer(w RecordWriter, bufferSize int) *Consumer {
 	return &Consumer{
 		w:             w,

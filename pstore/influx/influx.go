@@ -1,6 +1,7 @@
 package influx
 
 import (
+	"errors"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -16,28 +17,27 @@ const (
 )
 
 type writer struct {
-	clients     []client.Client
+	client      client.Client
 	batchConfig client.BatchPointsConfig
 }
 
-func newWriter(c *Config) (
+func newWriter(c Config) (
 	result pstore.LimitedRecordWriter, err error) {
-	if err = c.checkRequiredFields(); err != nil {
-		panic(err)
+	if c.HostAndPort == "" || c.Database == "" {
+		err = errors.New(
+			"HostAndPort and Database fields required.")
+		return
 	}
-	clients := make([]client.Client, len(c.Endpoints))
 	var config client.HTTPConfig
-	for i := range c.Endpoints {
-		config.Addr = c.Endpoints[i].HostAndPort
-		config.Username = c.Endpoints[i].UserName
-		config.Password = c.Endpoints[i].Password
-		clients[i], err = client.NewHTTPClient(config)
-		if err != nil {
-			return
-		}
+	config.Addr = c.HostAndPort
+	config.Username = c.UserName
+	config.Password = c.Password
+	aClient, err := client.NewHTTPClient(config)
+	if err != nil {
+		return
 	}
 	w := &writer{
-		clients: clients,
+		client: aClient,
 		batchConfig: client.BatchPointsConfig{
 			Database: c.Database,
 		},
@@ -58,10 +58,8 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 	if err = addPoints(records, batchPoints); err != nil {
 		return
 	}
-	for i := range w.clients {
-		if err = w.clients[i].Write(batchPoints); err != nil {
-			return
-		}
+	if err = w.client.Write(batchPoints); err != nil {
+		return
 	}
 	return
 }

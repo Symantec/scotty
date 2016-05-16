@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/logbuf"
@@ -23,7 +22,6 @@ import (
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
-	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
 	"log"
@@ -31,7 +29,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -103,22 +100,6 @@ var (
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fDegree = flag.Int(
 		"degree", 10, "Degree of btree")
-	fPStoreDebugMetricRegex = flag.String(
-		"pstoreDebugMetricRegex",
-		"",
-		"Regex for metrics to be shown in pstore debug file.")
-	fPStoreDebugHostRegex = flag.String(
-		"pstoreDebugHostRegex",
-		"",
-		"Regex for hosts to be shown in pstore debug file.")
-	fPStoreDebugFile = flag.String(
-		"pstoreDebugFile",
-		"pstoremetrics.txt",
-		"Path of pstore debug file")
-	fPStoreThrottle = flag.Int(
-		"pstoreThrottle",
-		0,
-		"If positive, the number of values written to persistent store per minute.")
 )
 
 type byHostName messages.ErrorList
@@ -177,52 +158,9 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 	return
 }
 
-type pstoreForecasterType struct {
-	filter store.FiltererFunc
-	lock   sync.Mutex
-	count  uint64
-}
-
-func createPStoreForecaster(
-	typeFilter func(t types.Type) bool) *pstoreForecasterType {
-	f := func(r *store.Record) bool {
-		return typeFilter(r.Info.Kind()) && r.Active
-	}
-	return &pstoreForecasterType{filter: f}
-}
-
-func (p *pstoreForecasterType) Consume(iterator store.NamedIterator) {
-	filtered := p.Filter(iterator)
-	var r store.Record
-	var tempCount uint64
-	for filtered.Next(&r) {
-		tempCount++
-	}
-	filtered.Commit()
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	p.count += tempCount
-}
-
-func (p *pstoreForecasterType) Filter(
-	iterator store.NamedIterator) store.NamedIterator {
-	return store.NamedIteratorFilterFunc(iterator, p.filter)
-}
-
-func (p *pstoreForecasterType) Count() uint64 {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-	return p.count
-}
-
-type pstoreCountAndFilterType interface {
-	Count() uint64
-	Filter(iterator store.NamedIterator) store.NamedIterator
-}
-
 // metrics for pstoreHandlerType instances
 type pstoreHandlerMetricsType struct {
-	Writer pstore.RecordWriterMetrics
+	pstore.ConsumerMetrics
 }
 
 // pstoreHandlerType implements store.Visitor.
@@ -231,104 +169,64 @@ type pstoreHandlerMetricsType struct {
 // persistnt storage and to avoid writing the same value twice.
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
-	writerWithMetrics       *pstore.RecordWriterWithMetrics
-	consumer                *pstore.Consumer
-	appList                 *datastructs.ApplicationList
-	countAndFilter          pstoreCountAndFilterType
-	startTime               time.Time
-	startWritingTime        time.Duration
-	timeSpentCollectingDist *tricorder.CumulativeDistribution
-	timeSpentWritingDist    *tricorder.CumulativeDistribution
-	totalTimeSpentDist      *tricorder.CumulativeDistribution
+	name                string
+	consumer            *pstore.ConsumerWithMetrics
+	appList             *datastructs.ApplicationList
+	startTime           time.Time
+	totalTimeSpentDist  *tricorder.CumulativeDistribution
+	perMetricWriteTimes *tricorder.CumulativeDistribution
 }
 
 func newPStoreHandler(
-	w pstore.RecordWriter,
+	name string,
 	appList *datastructs.ApplicationList,
-	countAndFilter pstoreCountAndFilterType,
-	batchSize int) *pstoreHandlerType {
-	writerWithMetrics := &pstore.RecordWriterWithMetrics{}
-	writerWithMetrics.W = w
+	consumer *pstore.ConsumerWithMetricsBuilder) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
-	writerWithMetrics.PerMetricWriteTimes = bucketer.NewCumulativeDistribution()
-
+	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
+	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
 	return &pstoreHandlerType{
-		writerWithMetrics:       writerWithMetrics,
-		consumer:                pstore.NewConsumer(writerWithMetrics, batchSize),
-		appList:                 appList,
-		countAndFilter:          countAndFilter,
-		timeSpentCollectingDist: bucketer.NewCumulativeDistribution(),
-		timeSpentWritingDist:    bucketer.NewCumulativeDistribution(),
-		totalTimeSpentDist:      bucketer.NewCumulativeDistribution(),
+		name:                name,
+		consumer:            consumer.Build(),
+		appList:             appList,
+		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
+		perMetricWriteTimes: perMetricWriteTimes,
 	}
 }
 
 func (p *pstoreHandlerType) StartVisit() {
 	p.startTime = time.Now()
-	var metrics pstore.RecordWriterMetrics
-	p.writerWithMetrics.Metrics(&metrics)
-	p.startWritingTime = metrics.TimeSpentWriting
 }
 
 func (p *pstoreHandlerType) EndVisit() {
 	p.consumer.Flush()
 	totalTime := time.Now().Sub(p.startTime)
-	var metrics pstore.RecordWriterMetrics
-	p.writerWithMetrics.Metrics(&metrics)
-	timeSpentWriting := metrics.TimeSpentWriting - p.startWritingTime
 	p.totalTimeSpentDist.Add(totalTime)
-	p.timeSpentWritingDist.Add(timeSpentWriting)
-	p.timeSpentCollectingDist.Add(totalTime - timeSpentWriting)
 }
 
 func (p *pstoreHandlerType) Visit(
 	theStore *store.Store, endpointId interface{}) error {
-	iterator := p.countAndFilter.Filter(
-		theStore.NamedIteratorForEndpoint(
-			kPStoreIteratorName,
-			endpointId,
-			kLookAheadWritingToPStore,
-		))
+
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
+	iterator := theStore.NamedIteratorForEndpoint(
+		fmt.Sprintf("%s/%s", kPStoreIteratorName, p.name),
+		endpointId,
+		kLookAheadWritingToPStore,
+	)
 	p.consumer.Write(iterator, hostName, appName)
 	return nil
 }
 
 func (p *pstoreHandlerType) Metrics(m *pstoreHandlerMetricsType) {
-	p.writerWithMetrics.Metrics(&m.Writer)
+	p.consumer.MetricsStore().Metrics(&m.ConsumerMetrics)
+}
+
+func (p *pstoreHandlerType) ConsumerMetricsStore() *pstore.ConsumerMetricsStore {
+	return p.consumer.MetricsStore()
 }
 
 func (p *pstoreHandlerType) RegisterMetrics() (err error) {
-	if err = tricorder.RegisterMetric(
-		"writer/writeTimePerMetric",
-		p.writerWithMetrics.PerMetricWriteTimes,
-		units.Millisecond,
-		"Time spent writing each metric"); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"writer/timeSpentCollecting",
-		p.timeSpentCollectingDist,
-		units.Second,
-		"Time spent collecting metrics to write to persistent storage per sweep"); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"writer/timeSpentWriting",
-		p.timeSpentWritingDist,
-		units.Second,
-		"Time spent writing metrics to persistent storage per sweep"); err != nil {
-		return
-	}
-	if err = tricorder.RegisterMetric(
-		"writer/totalTimeSpent",
-		p.totalTimeSpentDist,
-		units.Second,
-		"total time spent per sweep"); err != nil {
-		return
-	}
 	var data pstoreHandlerMetricsType
 	group := tricorder.NewGroup()
 	group.RegisterUpdateFunc(
@@ -336,65 +234,69 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 			p.Metrics(&data)
 			return time.Now()
 		})
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/totalTimeSpent", p.name),
+		p.totalTimeSpentDist,
+		units.Second,
+		"total time spent per sweep"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/writeTimePerMetric", p.name),
+		p.perMetricWriteTimes,
+		units.Millisecond,
+		"Time spent writing each metric"); err != nil {
+		return
+	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/valuesWritten",
-		&data.Writer.ValuesWritten,
+		fmt.Sprintf("writer/%s/valuesWritten", p.name),
+		&data.ValuesWritten,
 		group,
 		units.None,
 		"Number of values written to persistent storage"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/valuesNotWritten",
-		func() uint64 {
-			count := p.countAndFilter.Count()
-			if count < data.Writer.ValuesWritten {
-				return 0
-			}
-			return count - data.Writer.ValuesWritten
-		},
+		fmt.Sprintf("writer/%s/valuesNotWritten", p.name),
+		&data.ValuesNotWritten,
 		group,
 		units.None,
 		"Number of values not written to persistent storage"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/writeAttempts",
-		&data.Writer.WriteAttempts,
+		fmt.Sprintf("writer/%s/writeAttempts", p.name),
+		&data.WriteAttempts,
 		group,
 		units.None,
 		"Number of attempts to write to persistent storage"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/successfulWrites",
-		&data.Writer.SuccessfulWrites,
+		fmt.Sprintf("writer/%s/successfulWrites", p.name),
+		&data.SuccessfulWrites,
 		group,
 		units.None,
 		"Number of successful writes to persistent storage"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/successfulWriteRatio",
-		data.Writer.SuccessfulWriteRatio,
+		fmt.Sprintf("writer/%s/successfulWriteRatio", p.name),
+		data.SuccessfulWriteRatio,
 		group,
 		units.None,
 		"Ratio of successful writes to write attempts"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		"writer/lastWriteError",
-		&data.Writer.LastWriteError,
+		fmt.Sprintf("writer/%s/lastWriteError", p.name),
+		&data.LastWriteError,
 		group,
 		units.None,
 		"Last write error"); err != nil {
 		return
 	}
 	return
-}
-
-type namedIteratorConsumerType interface {
-	Consume(iterator store.NamedIterator)
 }
 
 // logger implements the scotty.Logger interface
@@ -407,7 +309,7 @@ type loggerType struct {
 	CollectionTimesDist *tricorder.CumulativeDistribution
 	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
-	newValuesConsumer   namedIteratorConsumerType
+	newValuesConsumer   pstore.ConsumerMetricsStoreList
 }
 
 func (l *loggerType) LogStateChange(
@@ -447,7 +349,7 @@ func (l *loggerType) LogResponse(
 		if l.newValuesConsumer != nil {
 			namedIterator := l.Store.NamedIteratorForEndpoint(
 				kCollectorIteratorName, e, 0)
-			l.newValuesConsumer.Consume(namedIterator)
+			l.newValuesConsumer.UpdateCounts(namedIterator)
 		}
 	}
 }
@@ -642,129 +544,17 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
-var (
-	aWriteError = errors.New("A bad write error.")
-)
-
-type nilWriter struct {
-}
-
-func (n nilWriter) IsTypeSupported(kind types.Type) bool {
-	return true
-}
-
-func (n nilWriter) Write(records []pstore.Record) error {
-	return nil
-}
-
-type throttleWriter struct {
-	pstore.LimitedRecordWriter
-	RecordsPerMinute int
-}
-
-func (t *throttleWriter) Write(records []pstore.Record) error {
-	now := time.Now()
-	result := t.LimitedRecordWriter.Write(records)
-	throttleDuration := time.Minute * time.Duration(len(records)) / time.Duration(t.RecordsPerMinute)
-	timeToBeDone := now.Add(throttleDuration)
-	now = time.Now()
-	if now.Before(timeToBeDone) {
-		time.Sleep(timeToBeDone.Sub(now))
-	}
-	return result
-}
-
-// filterWriter supports all types, but silently drops any values that
-// don't match Filter or that Wrapped does not support.
-type filterWriter struct {
-	Wrapped pstore.LimitedRecordWriter
-	Filter  func(r *pstore.Record) bool
-}
-
-func (f *filterWriter) Write(records []pstore.Record) error {
-	var filtered []pstore.Record
-	for i := range records {
-		if f.Filter(&records[i]) && f.Wrapped.IsTypeSupported(records[i].Kind) {
-			filtered = append(filtered, records[i])
-		}
-	}
-	// Don't write empty arrays.
-	if filtered == nil {
-		return nil
-	}
-	return f.Wrapped.Write(filtered)
-}
-
-func (f *filterWriter) IsTypeSupported(kind types.Type) bool {
-	return true
-}
-
-type multiLimitedWriter []pstore.LimitedRecordWriter
-
-func (m multiLimitedWriter) Write(records []pstore.Record) error {
-	for _, v := range m {
-		if err := v.Write(records); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (m multiLimitedWriter) IsTypeSupported(kind types.Type) bool {
-	for _, v := range m {
-		if !v.IsTypeSupported(kind) {
-			return false
-		}
-	}
-	return true
-}
-
-func newPStoreWriter() (result pstore.LimitedRecordWriter, err error) {
-	var writer pstore.LimitedRecordWriter
+func newPStoreConsumers() (
+	result pstore.ConsumerWithMetricsBuilderList, err error) {
 	if *fKafkaConfigFile != "" {
-		writer, err = kafka.FromFile(*fKafkaConfigFile)
-	} else if *fInfluxConfigFile != "" {
-		writer, err = influx.FromFile(*fInfluxConfigFile)
-	} else {
-		writer = nilWriter{}
+		result, err = kafka.ConsumerBuildersFromFile(*fKafkaConfigFile)
 	}
-	if err != nil {
-		return
+	if *fInfluxConfigFile != "" {
+		result, err = influx.ConsumerBuildersFromFile(
+			*fInfluxConfigFile)
 	}
-	if *fPStoreThrottle > 0 {
-		writer = &throttleWriter{
-			LimitedRecordWriter: writer,
-			RecordsPerMinute:    *fPStoreThrottle}
-	}
-	if *fPStoreDebugMetricRegex != "" || *fPStoreDebugHostRegex != "" {
-		var fakeWriter pstore.LimitedRecordWriter
-		fakeWriter, err = kafka.NewFakeWriterToPath(*fPStoreDebugFile)
-		if err != nil {
-			return
-		}
-		var metricRegex, hostRegex *regexp.Regexp
-		if *fPStoreDebugMetricRegex != "" {
-			metricRegex = regexp.MustCompile(*fPStoreDebugMetricRegex)
-		}
-		if *fPStoreDebugHostRegex != "" {
-			hostRegex = regexp.MustCompile(*fPStoreDebugHostRegex)
-		}
-		afilter := func(r *pstore.Record) bool {
-			if metricRegex != nil && !metricRegex.MatchString(r.Path) {
-				return false
-			}
-			if hostRegex != nil && !hostRegex.MatchString(r.HostName) {
-				return false
-			}
-			return true
-		}
-		filterWriter := &filterWriter{
-			Wrapped: fakeWriter,
-			Filter:  afilter,
-		}
-		result = multiLimitedWriter{writer, filterWriter}
-	} else {
-		result = writer
+	if result != nil {
+		result.SetBufferSize(*fPStoreBatchSize)
 	}
 	return
 }
@@ -832,7 +622,7 @@ func createApplicationStats(
 func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
-	newValuesConsumer namedIteratorConsumerType) {
+	newValuesConsumer pstore.ConsumerMetricsStoreList) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -908,38 +698,41 @@ func startCollector(
 	}()
 }
 
-func startPStoreLoop(
+func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
-	writer pstore.RecordWriter,
-	countAndFilter pstoreCountAndFilterType,
-	logger *log.Logger) {
-	go func() {
+	consumerBuilders pstore.ConsumerWithMetricsBuilderList,
+	logger *log.Logger) pstore.ConsumerMetricsStoreList {
+	result := make(pstore.ConsumerMetricsStoreList, len(consumerBuilders))
+	for i := range result {
+		name := fmt.Sprintf("%d", i)
 		pstoreHandler := newPStoreHandler(
-			writer,
+			name,
 			stats.ApplicationList(),
-			countAndFilter,
-			*fPStoreBatchSize)
+			consumerBuilders[i])
+		result[i] = pstoreHandler.ConsumerMetricsStore()
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}
-
-		// persistent storage writing goroutine. Write every 30s by default.
-		// Notice that this single goroutine handles all the persistent
-		// storage writing as multiple goroutines must not access the
-		// pstoreHandler instance. accessing pstoreHandler metrics is the
-		// one exception to this rule.
-		for {
-			metricStore := stats.Store()
-			writeTime := time.Now()
-			pstoreHandler.StartVisit()
-			metricStore.VisitAllEndpoints(pstoreHandler)
-			pstoreHandler.EndVisit()
-			writeDuration := time.Now().Sub(writeTime)
-			if writeDuration < *fPStoreUpdateFrequency {
-				time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
+		go func(handler *pstoreHandlerType) {
+			// persistent storage writing goroutine. Write every 30s by default.
+			// Notice that this single goroutine handles all the persistent
+			// storage writing as multiple goroutines must not access the
+			// pstoreHandler instance. accessing pstoreHandler metrics is the
+			// one exception to this rule.
+			for {
+				metricStore := stats.Store()
+				writeTime := time.Now()
+				handler.StartVisit()
+				metricStore.VisitAllEndpoints(handler)
+				handler.EndVisit()
+				writeDuration := time.Now().Sub(writeTime)
+				if writeDuration < *fPStoreUpdateFrequency {
+					time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
+				}
 			}
-		}
-	}()
+		}(pstoreHandler)
+	}
+	return result
 }
 
 func gracefulCleanup() {
@@ -979,25 +772,27 @@ func main() {
 	circularBuffer := logbuf.New(*fLogBufLines)
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
-	writer, err := newPStoreWriter()
-	applicationStats := createApplicationStats(
-		createApplicationList(), logger)
-	connectionErrors := newConnectionErrorsType()
-	var pstoreForecaster *pstoreForecasterType
+	// Read configs early so that we will fail fast.
+	consumerBuilders, err := newPStoreConsumers()
 	if err != nil {
+		log.Println(err)
 		logger.Println(err)
-	} else {
-		pstoreForecaster = createPStoreForecaster(
-			writer.IsTypeSupported)
 	}
-	if writer != nil {
-		startCollector(
-			applicationStats, connectionErrors, pstoreForecaster)
-		startPStoreLoop(
-			applicationStats, writer, pstoreForecaster, logger)
-	} else {
+	appList := createApplicationList()
+	applicationStats := createApplicationStats(appList, logger)
+	connectionErrors := newConnectionErrorsType()
+	if consumerBuilders == nil {
 		startCollector(
 			applicationStats, connectionErrors, nil)
+	} else {
+		consumerMetricStoreList := startPStoreLoops(
+			applicationStats,
+			consumerBuilders,
+			logger)
+		startCollector(
+			applicationStats,
+			connectionErrors,
+			consumerMetricStoreList)
 	}
 
 	http.Handle(

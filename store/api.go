@@ -148,6 +148,15 @@ func IteratorFilterFunc(
 		wrapped: iterator}
 }
 
+// IteratorFilter returns an Iterator like the given one except
+// that it yields only metric values for which filter returns true.
+func IteratorFilter(
+	iterator Iterator, filter Filterer) Iterator {
+	return &filterIteratorType{
+		filter:  filter,
+		wrapped: iterator}
+}
+
 // NamedIteratorFilterFunc returns an Iterator like the given one except
 // that it yields only metric values for which filter returns true.
 func NamedIteratorFilterFunc(
@@ -155,6 +164,15 @@ func NamedIteratorFilterFunc(
 	return &changedNamedIteratorType{
 		NamedIterator: ni,
 		change:        IteratorFilterFunc(ni, filter)}
+}
+
+// NamedIteratorFilter returns an Iterator like the given one except
+// that it yields only metric values for which filter returns true.
+func NamedIteratorFilter(
+	ni NamedIterator, filter Filterer) NamedIterator {
+	return &changedNamedIteratorType{
+		NamedIterator: ni,
+		change:        IteratorFilter(ni, filter)}
 }
 
 // NamedIterator iterates over metric values stored in scotty.

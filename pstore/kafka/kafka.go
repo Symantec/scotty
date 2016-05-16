@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
@@ -220,10 +221,12 @@ type writer struct {
 	serializer recordSerializerType
 }
 
-func newWriter(c *Config) (
+func newWriter(c Config) (
 	result pstore.LimitedRecordWriter, err error) {
-	if err = c.checkRequiredFields(); err != nil {
-		panic(err)
+	if len(c.Endpoints) == 0 || c.Topic == "" || c.ClientId == "" || c.TenantId == "" || c.ApiKey == "" {
+		err = errors.New(
+			"endpoint, topic, clientId, tenantId, and apiKey keys required")
+		return
 	}
 	var awriter writer
 	awriter.topic = c.Topic

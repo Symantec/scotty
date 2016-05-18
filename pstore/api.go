@@ -75,6 +75,24 @@ type LimitedRecordWriter interface {
 	IsTypeSupported(kind types.Type) bool
 }
 
+// ThrottledLimitedRecordWriter instances throttle writes.
+type ThrottledLimitedRecordWriter interface {
+	LimitedRecordWriter
+	RecordsPerMinute() int
+}
+
+// NewThrottledLimitedRecordWriter creates a new ThrottledLimitedRecordWriter.
+// recordsPerMinute = 0 means unlimited rate.
+// NewThrottledLimitedRecordWriter panics if recordsPerMinute is negative.
+func NewThrottledLimitedRecordWriter(
+	w LimitedRecordWriter,
+	recordsPerMinute int) ThrottledLimitedRecordWriter {
+	if recordsPerMinute < 0 {
+		panic("Records per minute must be non negative")
+	}
+	return newThrottledLimitedRecordWriter(w, recordsPerMinute)
+}
+
 // RecordWriterMetrics represents writing metrics
 type RecordWriterMetrics struct {
 	ValuesWritten    uint64
@@ -251,18 +269,40 @@ func (s ConsumerMetricsStoreList) UpdateCounts(n store.NamedIterator) {
 	s.updateCounts(n)
 }
 
+// ConsumerAttributes represent the unchanging attributes of a particular
+// ConsumerWithMetrics instance.
+type ConsumerAttributes struct {
+	// The number of writing goroutines
+	Concurrency int
+	// The number of records written each time
+	BatchSize int
+	// The maximum records per minute per goroutine. 0 means unlimited.
+	RecordsPerMinute int
+}
+
+// TotalRecordsPerMinute returns RecordsPerMinute * Concurrency
+func (c *ConsumerAttributes) TotalRecordsPerMinute() int {
+	return c.RecordsPerMinute * c.Concurrency
+}
+
 // ConsumerWithMetrics instances work like Consumer instances but also have
 // metrics.
 // Like Consumer instances, ConsumerWithMetric instances are NOT safe to use
 // with multiple goroutines.
 type ConsumerWithMetrics struct {
 	name         string
+	attributes   ConsumerAttributes
 	metricsStore *ConsumerMetricsStore
 	consumer     consumerType
 }
 
 func (c *ConsumerWithMetrics) Name() string {
 	return c.name
+}
+
+// Attributes writes this instance's attirbutes to a
+func (c *ConsumerWithMetrics) Attributes(a *ConsumerAttributes) {
+	*a = c.attributes
 }
 
 // MetricsStore returns the ConsumerMetricsStore for this instance.
@@ -289,15 +329,13 @@ func (c *ConsumerWithMetrics) Flush() {
 // instance.
 // These instances are NOT safe to use with multiple goroutines.
 type ConsumerWithMetricsBuilder struct {
-	c           **ConsumerWithMetrics
-	bufferSize  int
-	concurrency int
+	c **ConsumerWithMetrics
 }
 
 // NewConsumerWithMetricsBuilder creates a new instance that will
 // build a consumer that uses w to write values out.
 func NewConsumerWithMetricsBuilder(
-	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	w ThrottledLimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	return newConsumerWithMetricsBuilder(w)
 }
 
@@ -308,7 +346,7 @@ func (b *ConsumerWithMetricsBuilder) SetBufferSize(size int) {
 	if size < 1 {
 		panic("positive, non-zero size required.")
 	}
-	b.bufferSize = size
+	(*b.c).attributes.BatchSize = size
 }
 
 // SetConcurrency sets how many goroutines will write to the underlying
@@ -317,7 +355,7 @@ func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency int) {
 	if concurrency < 1 {
 		panic("positive, non-zero concurrency required.")
 	}
-	b.concurrency = concurrency
+	(*b.c).attributes.Concurrency = concurrency
 }
 
 // SetName sets the name of the consumer. Default is the empty string.

@@ -154,11 +154,6 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 	return
 }
 
-// metrics for pstoreHandlerType instances
-type pstoreHandlerMetricsType struct {
-	pstore.ConsumerMetrics
-}
-
 // pstoreHandlerType implements store.Visitor.
 // Its Visit method writes the latest values for each endpoint to
 // persistent storage. It uses a pstore.Consumer to buffer writes to
@@ -216,8 +211,8 @@ func (p *pstoreHandlerType) Visit(
 	return nil
 }
 
-func (p *pstoreHandlerType) Metrics(m *pstoreHandlerMetricsType) {
-	p.consumer.MetricsStore().Metrics(&m.ConsumerMetrics)
+func (p *pstoreHandlerType) Metrics(m *pstore.ConsumerMetrics) {
+	p.consumer.MetricsStore().Metrics(m)
 }
 
 func (p *pstoreHandlerType) ConsumerMetricsStore() *pstore.ConsumerMetricsStore {
@@ -225,7 +220,9 @@ func (p *pstoreHandlerType) ConsumerMetricsStore() *pstore.ConsumerMetricsStore 
 }
 
 func (p *pstoreHandlerType) RegisterMetrics() (err error) {
-	var data pstoreHandlerMetricsType
+	var attributes pstore.ConsumerAttributes
+	p.consumer.Attributes(&attributes)
+	var data pstore.ConsumerMetrics
 	group := tricorder.NewGroup()
 	group.RegisterUpdateFunc(
 		func() time.Time {
@@ -244,6 +241,27 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		p.perMetricWriteTimes,
 		units.Millisecond,
 		"Time spent writing each metric"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/maxRecordsPerMinute", p.Name()),
+		attributes.TotalRecordsPerMinute,
+		units.None,
+		"Max records per minute to write. 0 means unlimited"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/concurrency", p.Name()),
+		&attributes.Concurrency,
+		units.None,
+		"Number of writing goroutines"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/batchSize", p.Name()),
+		&attributes.BatchSize,
+		units.None,
+		"This many records written each time"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(

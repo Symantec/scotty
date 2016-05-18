@@ -8,7 +8,6 @@ import (
 	"os"
 	"regexp"
 	"sync"
-	"time"
 )
 
 const (
@@ -80,37 +79,20 @@ func (f *filterWriter) Write(records []pstore.Record) error {
 }
 
 type dualWriter struct {
-	pstore.LimitedRecordWriter
+	pstore.ThrottledLimitedRecordWriter
 	Extra pstore.RecordWriter
 }
 
 func (d *dualWriter) Write(records []pstore.Record) error {
-	result := d.LimitedRecordWriter.Write(records)
+	result := d.ThrottledLimitedRecordWriter.Write(records)
 	if result == nil {
 		d.Extra.Write(records)
 	}
 	return result
 }
 
-type throttleWriter struct {
-	pstore.LimitedRecordWriter
-	RecordsPerMinute int
-}
-
-func (t *throttleWriter) Write(records []pstore.Record) error {
-	now := time.Now()
-	result := t.LimitedRecordWriter.Write(records)
-	throttleDuration := time.Minute * time.Duration(len(records)) / time.Duration(t.RecordsPerMinute)
-	timeToBeDone := now.Add(throttleDuration)
-	now = time.Now()
-	if now.Before(timeToBeDone) {
-		time.Sleep(timeToBeDone.Sub(now))
-	}
-	return result
-}
-
-func (d Decorator) newWriter(wf WriterFactory) (
-	result pstore.LimitedRecordWriter, err error) {
+func (d Decorator) newThrottledWriter(wf WriterFactory) (
+	result pstore.ThrottledLimitedRecordWriter, err error) {
 	if d.RecordsPerMinute < 0 {
 		d.RecordsPerMinute = 0
 	}
@@ -118,11 +100,8 @@ func (d Decorator) newWriter(wf WriterFactory) (
 	if err != nil {
 		return
 	}
-	if d.RecordsPerMinute > 0 {
-		writer = &throttleWriter{
-			LimitedRecordWriter: writer,
-			RecordsPerMinute:    d.RecordsPerMinute}
-	}
+	twriter := pstore.NewThrottledLimitedRecordWriter(
+		writer, d.RecordsPerMinute)
 	if d.DebugMetricRegex != "" || d.DebugHostRegex != "" {
 		var fakeWriter pstore.RecordWriter
 		fakeWriter, err = newFakeWriterToPath(d.DebugFilePath)
@@ -149,15 +128,15 @@ func (d Decorator) newWriter(wf WriterFactory) (
 			Wrapped: fakeWriter,
 			Filter:  afilter,
 		}
-		result = &dualWriter{writer, filterWriter}
+		result = &dualWriter{twriter, filterWriter}
 	} else {
-		result = writer
+		result = twriter
 	}
 	return
 }
 
 func (c ConsumerConfig) newConsumerBuilder(
-	wf WriterFactory) (
+	wf WriterFactory, d *Decorator) (
 	result *pstore.ConsumerWithMetricsBuilder, err error) {
 	if c.Name == "" {
 		return nil, errors.New("Name field is required.")
@@ -168,7 +147,7 @@ func (c ConsumerConfig) newConsumerBuilder(
 	if c.Concurrency < 1 {
 		c.Concurrency = 1
 	}
-	writer, err := wf.NewWriter()
+	writer, err := d.NewThrottledWriter(wf)
 	if err != nil {
 		return
 	}

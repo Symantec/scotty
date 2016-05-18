@@ -237,6 +237,10 @@ func toConsumerType(c *Consumer) consumerType {
 	return consumerTypeAdapter{c}
 }
 
+func toAsyncConsumerType(c *AsyncConsumer) consumerType {
+	return asyncConsumerTypeAdapter{c}
+}
+
 type consumerTypeAdapter struct {
 	c *Consumer
 }
@@ -248,6 +252,15 @@ func (c consumerTypeAdapter) Write(
 
 func (c consumerTypeAdapter) Flush() {
 	c.c.Flush()
+}
+
+type asyncConsumerTypeAdapter struct {
+	*AsyncConsumer
+}
+
+func (c asyncConsumerTypeAdapter) Write(
+	n store.NamedIterator, hostName, appName string) {
+	c.WriteAsync(n, hostName, appName)
 }
 
 func (s *ConsumerMetricsStore) metrics(m *ConsumerMetrics) {
@@ -306,12 +319,19 @@ func newConsumerWithMetricsBuilder(
 		},
 	}
 	return &ConsumerWithMetricsBuilder{
-		c: &ptr, bufferSize: kDefaultBufferSize}
+		c: &ptr, bufferSize: kDefaultBufferSize, concurrency: 1}
 }
 
 func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
-	(*b.c).consumer = toConsumerType(
-		NewConsumer((*b.c).metricsStore.w, b.bufferSize))
+	if b.concurrency == 1 {
+		(*b.c).consumer = toConsumerType(
+			NewConsumer((*b.c).metricsStore.w, b.bufferSize))
+	} else if b.concurrency > 1 {
+		(*b.c).consumer = toAsyncConsumerType(NewAsyncConsumer(
+			(*b.c).metricsStore.w, b.bufferSize, b.concurrency))
+	} else {
+		panic("pstore: Oops, bad state in build method.")
+	}
 	result := *b.c
 	*b.c = nil
 	return result

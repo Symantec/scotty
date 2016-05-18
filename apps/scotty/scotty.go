@@ -80,10 +80,6 @@ var (
 		"pstore_update_frequency",
 		30*time.Second,
 		"Amount of time between writing newest metrics to persistent storage")
-	fPStoreBatchSize = flag.Int(
-		"pstore_batch_size",
-		1000,
-		"Batch to write at least this many records to persistent storage")
 	fKafkaConfigFile = flag.String(
 		"kafka_config_file",
 		"",
@@ -178,19 +174,21 @@ type pstoreHandlerType struct {
 }
 
 func newPStoreHandler(
-	name string,
 	appList *datastructs.ApplicationList,
 	consumer *pstore.ConsumerWithMetricsBuilder) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
 	return &pstoreHandlerType{
-		name:                name,
 		consumer:            consumer.Build(),
 		appList:             appList,
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
 	}
+}
+
+func (p *pstoreHandlerType) Name() string {
+	return p.consumer.Name()
 }
 
 func (p *pstoreHandlerType) StartVisit() {
@@ -210,7 +208,7 @@ func (p *pstoreHandlerType) Visit(
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
 	iterator := theStore.NamedIteratorForEndpoint(
-		fmt.Sprintf("%s/%s", kPStoreIteratorName, p.name),
+		fmt.Sprintf("%s/%s", kPStoreIteratorName, p.Name()),
 		endpointId,
 		kLookAheadWritingToPStore,
 	)
@@ -235,21 +233,21 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 			return time.Now()
 		})
 	if err = tricorder.RegisterMetric(
-		fmt.Sprintf("writer/%s/totalTimeSpent", p.name),
+		fmt.Sprintf("writer/%s/totalTimeSpent", p.Name()),
 		p.totalTimeSpentDist,
 		units.Second,
 		"total time spent per sweep"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
-		fmt.Sprintf("writer/%s/writeTimePerMetric", p.name),
+		fmt.Sprintf("writer/%s/writeTimePerMetric", p.Name()),
 		p.perMetricWriteTimes,
 		units.Millisecond,
 		"Time spent writing each metric"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/valuesWritten", p.name),
+		fmt.Sprintf("writer/%s/valuesWritten", p.Name()),
 		&data.ValuesWritten,
 		group,
 		units.None,
@@ -257,7 +255,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/valuesNotWritten", p.name),
+		fmt.Sprintf("writer/%s/valuesNotWritten", p.Name()),
 		&data.ValuesNotWritten,
 		group,
 		units.None,
@@ -265,7 +263,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/writeAttempts", p.name),
+		fmt.Sprintf("writer/%s/writeAttempts", p.Name()),
 		&data.WriteAttempts,
 		group,
 		units.None,
@@ -273,7 +271,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/successfulWrites", p.name),
+		fmt.Sprintf("writer/%s/successfulWrites", p.Name()),
 		&data.SuccessfulWrites,
 		group,
 		units.None,
@@ -281,7 +279,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/successfulWriteRatio", p.name),
+		fmt.Sprintf("writer/%s/successfulWriteRatio", p.Name()),
 		data.SuccessfulWriteRatio,
 		group,
 		units.None,
@@ -289,7 +287,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
-		fmt.Sprintf("writer/%s/lastWriteError", p.name),
+		fmt.Sprintf("writer/%s/lastWriteError", p.Name()),
 		&data.LastWriteError,
 		group,
 		units.None,
@@ -545,16 +543,13 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func newPStoreConsumers() (
-	result pstore.ConsumerWithMetricsBuilderList, err error) {
+	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	if *fKafkaConfigFile != "" {
-		result, err = kafka.ConsumerBuildersFromFile(*fKafkaConfigFile)
+		return kafka.ConsumerBuildersFromFile(*fKafkaConfigFile)
 	}
 	if *fInfluxConfigFile != "" {
-		result, err = influx.ConsumerBuildersFromFile(
+		return influx.ConsumerBuildersFromFile(
 			*fInfluxConfigFile)
-	}
-	if result != nil {
-		result.SetBufferSize(*fPStoreBatchSize)
 	}
 	return
 }
@@ -700,13 +695,11 @@ func startCollector(
 
 func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
-	consumerBuilders pstore.ConsumerWithMetricsBuilderList,
+	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
 	logger *log.Logger) pstore.ConsumerMetricsStoreList {
 	result := make(pstore.ConsumerMetricsStoreList, len(consumerBuilders))
 	for i := range result {
-		name := fmt.Sprintf("%d", i)
 		pstoreHandler := newPStoreHandler(
-			name,
 			stats.ApplicationList(),
 			consumerBuilders[i])
 		result[i] = pstoreHandler.ConsumerMetricsStore()

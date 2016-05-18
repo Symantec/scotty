@@ -2,12 +2,17 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/pstore"
 	"os"
 	"regexp"
 	"sync"
 	"time"
+)
+
+const (
+	kDefaultBatchSize = 1000
 )
 
 var (
@@ -106,6 +111,9 @@ func (t *throttleWriter) Write(records []pstore.Record) error {
 
 func (d Decorator) newWriter(wf WriterFactory) (
 	result pstore.LimitedRecordWriter, err error) {
+	if d.RecordsPerMinute < 0 {
+		d.RecordsPerMinute = 0
+	}
 	writer, err := wf.NewWriter()
 	if err != nil {
 		return
@@ -151,10 +159,41 @@ func (d Decorator) newWriter(wf WriterFactory) (
 func (c ConsumerConfig) newConsumerBuilder(
 	wf WriterFactory) (
 	result *pstore.ConsumerWithMetricsBuilder, err error) {
+	if c.Name == "" {
+		return nil, errors.New("Name field is required.")
+	}
+	if c.BatchSize < 1 {
+		c.BatchSize = kDefaultBatchSize
+	}
+	if c.Concurrency < 1 {
+		c.Concurrency = 1
+	}
 	writer, err := wf.NewWriter()
 	if err != nil {
 		return
 	}
 	result = pstore.NewConsumerWithMetricsBuilder(writer)
+	result.SetConcurrency(c.Concurrency)
+	result.SetBufferSize(c.BatchSize)
+	result.SetName(c.Name)
+	return
+}
+
+func createConsumerBuilders(c ConsumerBuilderFactoryList) (
+	list []*pstore.ConsumerWithMetricsBuilder, err error) {
+	result := make([]*pstore.ConsumerWithMetricsBuilder, c.Len())
+	nameSet := make(map[string]bool, c.Len())
+	for i := range result {
+		name := c.NameAt(i)
+		if nameSet[name] {
+			err = errors.New(fmt.Sprintf("config: Duplicate consumer name found: %s", name))
+			return
+		}
+		nameSet[name] = true
+		if result[i], err = c.NewConsumerBuilderByIndex(i); err != nil {
+			return
+		}
+	}
+	list = result
 	return
 }

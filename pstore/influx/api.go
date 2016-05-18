@@ -36,6 +36,12 @@ type Config struct {
 	Password string `yaml:"password"`
 	// The database name. Required.
 	Database string `yaml:"database"`
+	// The precision. Optional. Defaults to "ns"
+	Precision string `yaml:"precision"`
+	// The retention policy to use when writing. Optional.
+	RetentionPolicy string `yaml:"retentionPolicy"`
+	// The write consistency. Optional. "any", "one", "quorum", or "all"
+	WriteConsistency string `yaml:"writeConsistency"`
 }
 
 func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {

@@ -78,19 +78,16 @@ type LimitedRecordWriter interface {
 // ThrottledLimitedRecordWriter instances throttle writes.
 type ThrottledLimitedRecordWriter interface {
 	LimitedRecordWriter
-	RecordsPerMinute() int
+	// Returns max records to write per second. 0 means no limit.
+	RecordsPerSecond() int
 }
 
 // NewThrottledLimitedRecordWriter creates a new ThrottledLimitedRecordWriter.
-// recordsPerMinute = 0 means unlimited rate.
-// NewThrottledLimitedRecordWriter panics if recordsPerMinute is negative.
+// recordsPerSecond <= 0 means unlimited rate.
 func NewThrottledLimitedRecordWriter(
 	w LimitedRecordWriter,
-	recordsPerMinute int) ThrottledLimitedRecordWriter {
-	if recordsPerMinute < 0 {
-		panic("Records per minute must be non negative")
-	}
-	return newThrottledLimitedRecordWriter(w, recordsPerMinute)
+	recordsPerSecond int) ThrottledLimitedRecordWriter {
+	return newThrottledLimitedRecordWriter(w, recordsPerSecond)
 }
 
 // RecordWriterMetrics represents writing metrics
@@ -276,13 +273,13 @@ type ConsumerAttributes struct {
 	Concurrency int
 	// The number of records written each time
 	BatchSize int
-	// The maximum records per minute per goroutine. 0 means unlimited.
-	RecordsPerMinute int
+	// The maximum records per second per goroutine. 0 means unlimited.
+	RecordsPerSecond int
 }
 
-// TotalRecordsPerMinute returns RecordsPerMinute * Concurrency
-func (c *ConsumerAttributes) TotalRecordsPerMinute() int {
-	return c.RecordsPerMinute * c.Concurrency
+// TotalRecordsPerSecond returns RecordsPerSecond * Concurrency
+func (c *ConsumerAttributes) TotalRecordsPerSecond() int {
+	return c.RecordsPerSecond * c.Concurrency
 }
 
 // ConsumerWithMetrics instances work like Consumer instances but also have

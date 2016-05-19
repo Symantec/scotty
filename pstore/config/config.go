@@ -93,15 +93,12 @@ func (d *dualWriter) Write(records []pstore.Record) error {
 
 func (d Decorator) newThrottledWriter(wf WriterFactory) (
 	result pstore.ThrottledLimitedRecordWriter, err error) {
-	if d.RecordsPerMinute < 0 {
-		d.RecordsPerMinute = 0
-	}
 	writer, err := wf.NewWriter()
 	if err != nil {
 		return
 	}
 	twriter := pstore.NewThrottledLimitedRecordWriter(
-		writer, d.RecordsPerMinute)
+		writer, d.RecordsPerSecond)
 	if d.DebugMetricRegex != "" || d.DebugHostRegex != "" {
 		var fakeWriter pstore.RecordWriter
 		fakeWriter, err = newFakeWriterToPath(d.DebugFilePath)

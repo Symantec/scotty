@@ -14,28 +14,31 @@ const (
 
 type throttleWriter struct {
 	LimitedRecordWriter
-	recordsPerMinute int
+	recordsPerSecond int
 }
 
 func newThrottledLimitedRecordWriter(
 	w LimitedRecordWriter,
-	recordsPerMinute int) ThrottledLimitedRecordWriter {
+	recordsPerSecond int) ThrottledLimitedRecordWriter {
+	if recordsPerSecond < 0 {
+		recordsPerSecond = 0
+	}
 	return &throttleWriter{
 		LimitedRecordWriter: w,
-		recordsPerMinute:    recordsPerMinute}
+		recordsPerSecond:    recordsPerSecond}
 }
 
-func (t *throttleWriter) RecordsPerMinute() int {
-	return t.recordsPerMinute
+func (t *throttleWriter) RecordsPerSecond() int {
+	return t.recordsPerSecond
 }
 
 func (t *throttleWriter) Write(records []Record) error {
-	if t.recordsPerMinute <= 0 {
+	if t.recordsPerSecond <= 0 {
 		return t.LimitedRecordWriter.Write(records)
 	}
 	now := time.Now()
 	result := t.LimitedRecordWriter.Write(records)
-	throttleDuration := time.Minute * time.Duration(len(records)) / time.Duration(t.recordsPerMinute)
+	throttleDuration := time.Second * time.Duration(len(records)) / time.Duration(t.recordsPerSecond)
 	timeToBeDone := now.Add(throttleDuration)
 	now = time.Now()
 	if now.Before(timeToBeDone) {
@@ -346,7 +349,7 @@ func newConsumerWithMetricsBuilder(
 	writerWithMetrics := &RecordWriterWithMetrics{W: w}
 	ptr := &ConsumerWithMetrics{
 		attributes: ConsumerAttributes{
-			RecordsPerMinute: w.RecordsPerMinute(),
+			RecordsPerSecond: w.RecordsPerSecond(),
 			BatchSize:        kDefaultBufferSize,
 			Concurrency:      1},
 		metricsStore: &ConsumerMetricsStore{

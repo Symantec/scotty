@@ -5,7 +5,6 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"io"
 )
 
 // IsTypeSupported returns true if kafka supports the given metric type
@@ -18,18 +17,23 @@ func ToFloat64(r *pstore.Record) float64 {
 	return asFloat64(r)
 }
 
-// NewWriter creates a new writer that writes to kafka endpoints.
-func NewWriter(config Config) (pstore.LimitedRecordWriter, error) {
-	return newWriter(&config)
-}
-
 // FromFile creates a new writer from a configuration file.
 func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
 	var c Config
-	if err = config.Read(filename, &c); err != nil {
+	if err = config.ReadFromFile(filename, &c); err != nil {
 		return
 	}
-	return NewWriter(c)
+	return c.NewWriter()
+}
+
+// ConsumerBuildersFromFile creates consumer builders from a configuration file.
+func ConsumerBuildersFromFile(filename string) (
+	result pstore.ConsumerWithMetricsBuilderList, err error) {
+	var c ConfigList
+	if err = config.ReadFromFile(filename, &c); err != nil {
+		return
+	}
+	return config.CreateConsumerBuilders(c)
 }
 
 // NewFakeWriter creates a new writer that dumps the JSON to stdout.
@@ -45,20 +49,63 @@ func NewFakeWriterToPath(path string) (pstore.LimitedRecordWriter, error) {
 }
 
 // Config represents the configuration of kafka.
+// Config implements both config.Config and config.WriterFactory
 type Config struct {
-	// The KAFKA endpoints in "hostname:port" format
+	// The KAFKA endpoints in "hostname:port" format.
+	// At least one is required.
 	Endpoints []string `yaml:"endpoints"`
-	// The KAFKA topic
+	// The KAFKA topic. Required.
 	Topic string `yaml:"topic"`
-	// The KAFKA clientId
+	// The KAFKA clientId. Required.
 	ClientId string `yaml:"clientId"`
-	// User credential
+	// User credential. Required.
 	TenantId string `yaml:"tenantId"`
-	// User credential
+	// User credential. Required.
 	ApiKey string `yaml:"apiKey"`
 }
 
-// Read initializes this instance from r, which represents a YAML file.
-func (c *Config) Read(r io.Reader) error {
-	return c.read(r)
+func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {
+	return newWriter(*c)
+}
+
+func (c *Config) Reset() {
+	*c = Config{}
+}
+
+// ConfigPlus represents an entire kafka configuration.
+// ConfigPlus implements config.Config and config.WriterFactory
+type ConfigPlus struct {
+	Writer   Config                `yaml:"writer"`
+	Options  config.Decorator      `yaml:"options"`
+	Consumer config.ConsumerConfig `yaml:"consumer"`
+}
+
+func (c *ConfigPlus) NewWriter() (pstore.LimitedRecordWriter, error) {
+	return c.Options.NewWriter(&c.Writer)
+}
+
+func (c *ConfigPlus) NewConsumerBuilder() (
+	*pstore.ConsumerWithMetricsBuilder, error) {
+	return c.Consumer.NewConsumerBuilder(c)
+}
+
+func (c *ConfigPlus) Reset() {
+	config.Reset(&c.Writer, &c.Options, &c.Consumer)
+}
+
+// ConfigList represents a list of entire kafka configurations.
+// ConfigList implements config.Config and config.ConsumerBuilderFactoryList
+type ConfigList []ConfigPlus
+
+func (c ConfigList) Len() int {
+	return len(c)
+}
+
+func (c ConfigList) NewConsumerBuilderByIndex(i int) (
+	*pstore.ConsumerWithMetricsBuilder, error) {
+	return c[i].NewConsumerBuilder()
+}
+
+func (c *ConfigList) Reset() {
+	*c = nil
 }

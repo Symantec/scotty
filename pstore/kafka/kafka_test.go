@@ -4,26 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/Symantec/scotty/pstore"
+	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
 	"testing"
 	"time"
 )
-
-func TestKafkaConfigError(t *testing.T) {
-	configFile := `
-apiKey: someApiKey
-tenantId: someTenantId
-topic: someTopic
-clinetId: someClientId
-	`
-	buffer := bytes.NewBuffer(([]byte)(configFile))
-	var config Config
-	if err := config.Read(buffer); err == nil {
-		t.Error("Expected error reading config.")
-	}
-}
 
 func TestKafkaConfig(t *testing.T) {
 	configFile := `
@@ -39,8 +26,8 @@ clientId: someClientId
 someUnusedField: true
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
-	var config Config
-	if err := config.Read(buffer); err != nil {
+	var aconfig Config
+	if err := config.Read(buffer, &aconfig); err != nil {
 		t.Fatal(err)
 	}
 	expected := Config{
@@ -51,8 +38,8 @@ someUnusedField: true
 		Endpoints: []string{
 			"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
 	}
-	if !reflect.DeepEqual(expected, config) {
-		t.Errorf("Expected %v, got %v", expected, config)
+	if !reflect.DeepEqual(expected, aconfig) {
+		t.Errorf("Expected %v, got %v", expected, aconfig)
 	}
 }
 

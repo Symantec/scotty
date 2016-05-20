@@ -3,8 +3,13 @@ package pstore
 import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"time"
+)
+
+const (
+	kDefaultBufferSize = 1000
 )
 
 func (w *RecordWriterWithMetrics) write(records []Record) error {
@@ -116,4 +121,93 @@ func (c *Consumer) flush() error {
 		delete(c.toBeCommitted, k)
 	}
 	return err
+}
+
+type consumerType interface {
+	Write(n store.NamedIterator, hostName, appName string)
+	Flush()
+}
+
+func toConsumerType(c *Consumer) consumerType {
+	return consumerTypeAdapter{c}
+}
+
+type consumerTypeAdapter struct {
+	c *Consumer
+}
+
+func (c consumerTypeAdapter) Write(
+	n store.NamedIterator, hostName, appName string) {
+	c.c.Write(n, hostName, appName)
+}
+
+func (c consumerTypeAdapter) Flush() {
+	c.c.Flush()
+}
+
+func (s *ConsumerMetricsStore) metrics(m *ConsumerMetrics) {
+	s.w.Metrics(&m.RecordWriterMetrics)
+	recordCount := s.getRecordCount()
+	if m.ValuesWritten < recordCount {
+		m.ValuesNotWritten = recordCount - m.ValuesWritten
+	} else {
+		m.ValuesNotWritten = 0
+	}
+}
+
+func (s *ConsumerMetricsStore) getRecordCount() uint64 {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.recordCount
+}
+
+func (s *ConsumerMetricsStore) addToRecordCount(count uint64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.recordCount += count
+}
+
+func (s ConsumerMetricsStoreList) updateCounts(
+	iterator store.NamedIterator) {
+	var r store.Record
+	tempCounts := make([]uint64, len(s))
+	for iterator.Next(&r) {
+		for i := range s {
+			if s[i].Filter(&r) {
+				tempCounts[i]++
+			}
+		}
+	}
+	iterator.Commit()
+	for i := range s {
+		s[i].AddToRecordCount(tempCounts[i])
+	}
+}
+
+func toFilterer(typeFilter func(types.Type) bool) store.Filterer {
+	f := func(r *store.Record) bool {
+		return typeFilter(r.Info.Kind()) && r.Active
+	}
+	return store.FiltererFunc(f)
+}
+
+func newConsumerWithMetricsBuilder(
+	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	writerWithMetrics := &RecordWriterWithMetrics{W: w}
+	ptr := &ConsumerWithMetrics{
+		metricsStore: &ConsumerMetricsStore{
+			w:        writerWithMetrics,
+			filterer: toFilterer(w.IsTypeSupported),
+		},
+	}
+	return &ConsumerWithMetricsBuilder{
+		c: &ptr, bufferSize: kDefaultBufferSize}
+}
+
+func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
+	(*b.c).consumer = toConsumerType(
+		NewConsumer((*b.c).metricsStore.w, b.bufferSize))
+	result := *b.c
+	*b.c = nil
+	return result
 }

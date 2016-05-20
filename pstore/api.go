@@ -2,6 +2,8 @@
 package pstore
 
 import (
+	"bytes"
+	"fmt"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -19,6 +21,22 @@ const (
 // Clients are to treat TagGroup instances as immutable.
 type TagGroup map[string]string
 
+func (t TagGroup) String() string {
+	buffer := &bytes.Buffer{}
+	fmt.Fprintf(buffer, "{")
+	firstTime := true
+	for k, v := range t {
+		if firstTime {
+			fmt.Fprintf(buffer, "%s: %s", k, v)
+			firstTime = false
+		} else {
+			fmt.Fprintf(buffer, ", %s: %s", k, v)
+		}
+	}
+	fmt.Fprintf(buffer, "}")
+	return buffer.String()
+}
+
 // Record represents one value of one metric in persistent storage.
 type Record struct {
 	// Originating machine
@@ -35,6 +53,10 @@ type Record struct {
 	Value interface{}
 	// The timestamp of the metric value.
 	Timestamp time.Time
+}
+
+func (r Record) String() string {
+	return fmt.Sprintf("{HostName: %s, Path: %s, Tags: %v, Kind: %v, Unit: %v, Value: %v, Timestamp: %v}", r.HostName, r.Path, r.Tags, r.Kind, r.Unit, r.Value, r.Timestamp)
 }
 
 // RecordWriter is the interface for writing to persistent store.
@@ -141,4 +163,126 @@ func (c *Consumer) Write(
 // and does not commit progress on the corresponding NamedIterator instances.
 func (c *Consumer) Flush() error {
 	return c.flush()
+}
+
+// ConsumerMetrics represents metrics for a consumer.
+type ConsumerMetrics struct {
+	RecordWriterMetrics
+	// The number of values this consumer has yet to write out.
+	ValuesNotWritten uint64
+}
+
+// ConsumerMetricsStore stores metrics for a consumer.
+// ConsumerMetricStore instances are safe to use with multiple goroutines.
+type ConsumerMetricsStore struct {
+	w           *RecordWriterWithMetrics
+	filterer    store.Filterer
+	lock        sync.Mutex
+	recordCount uint64
+}
+
+// Adds count to the total number of records consumer must write out.
+func (s *ConsumerMetricsStore) AddToRecordCount(count uint64) {
+	s.addToRecordCount(count)
+}
+
+// Returns true if consumer is to write out this record or false otherwise.
+func (s *ConsumerMetricsStore) Filter(r *store.Record) bool {
+	return s.filterer.Filter(r)
+}
+
+// Metrics writes the consumer's metrics to m.
+func (s *ConsumerMetricsStore) Metrics(m *ConsumerMetrics) {
+	s.metrics(m)
+}
+
+// ConsumerMetricsStoreList represents an immutable slice of
+// ConsumerMetricStore instances.
+// ConsumerMetricStoreList instances are safe to use with multiple goroutines.
+type ConsumerMetricsStoreList []*ConsumerMetricsStore
+
+// UpdateCounts updates the total record count for all consumers.
+// UpdateCount consumes all values from n and commits n.
+func (s ConsumerMetricsStoreList) UpdateCounts(n store.NamedIterator) {
+	s.updateCounts(n)
+}
+
+// ConsumerWithMetrics instances work like Consumer instances but also have
+// metrics.
+// Like Consumer instances, ConsumerWithMetric instances are NOT safe to use
+// with multiple goroutines.
+type ConsumerWithMetrics struct {
+	metricsStore *ConsumerMetricsStore
+	consumer     consumerType
+}
+
+// MetricsStore returns the ConsumerMetricsStore for this instance.
+func (c *ConsumerWithMetrics) MetricsStore() *ConsumerMetricsStore {
+	return c.metricsStore
+}
+
+// Write works like Consumer.Write but does not return an error.
+func (c *ConsumerWithMetrics) Write(
+	n store.NamedIterator, host, appName string) {
+	c.consumer.Write(
+		store.NamedIteratorFilter(n, c.metricsStore.filterer),
+		host,
+		appName)
+}
+
+// Flush works like Consumer.Flush but does not return an error.
+func (c *ConsumerWithMetrics) Flush() {
+	c.consumer.Flush()
+}
+
+// ConsumerWithMetricsBuilder builds a ConsumerWithMetrics instance.
+// Each instance is good for building one and only one ConsumerWithMetrics
+// instance.
+// These instances are NOT safe to use with multiple goroutines.
+type ConsumerWithMetricsBuilder struct {
+	c          **ConsumerWithMetrics
+	bufferSize int
+}
+
+// NewConsumerWithMetricsBuilder creates a new instance that will
+// build a consumer that uses w to write values out.
+func NewConsumerWithMetricsBuilder(
+	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	return newConsumerWithMetricsBuilder(w)
+}
+
+// SetBufferSize sets how many values the consumer will buffer before
+// writing them out. The default is 1000.
+func (b *ConsumerWithMetricsBuilder) SetBufferSize(size int) {
+	b.bufferSize = size
+}
+
+// SetPerMetricWriteTimeDist sets the distribution that the consumer will
+// use to record write times. The default is not to record write times.
+func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
+	d *tricorder.CumulativeDistribution) {
+	(*b.c).metricsStore.w.PerMetricWriteTimes = d
+}
+
+// SetPerMetricBatchSizeDist sets the distribution that the consumer will
+// use to record the batch size of values written out.
+// The default is not to record batch sizes.
+func (b *ConsumerWithMetricsBuilder) SetPerMetricBatchSizeDist(
+	d *tricorder.CumulativeDistribution) {
+	(*b.c).metricsStore.w.BatchSizes = d
+}
+
+// Build builds the ConsumerWithMetrics instance and destroys this builder.
+func (b *ConsumerWithMetricsBuilder) Build() *ConsumerWithMetrics {
+	return b.build()
+}
+
+// ConsumerWithMetricsBuilderList represents an immutable slice of builders
+type ConsumerWithMetricsBuilderList []*ConsumerWithMetricsBuilder
+
+// SetBufferSize sets the buffer size on all builders in this slice.
+func (b ConsumerWithMetricsBuilderList) SetBufferSize(size int) {
+	for i := range b {
+		b[i].SetBufferSize(size)
+	}
 }

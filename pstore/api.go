@@ -109,6 +109,50 @@ func (w *RecordWriterWithMetrics) Metrics(m *RecordWriterMetrics) {
 	w._metrics(m)
 }
 
+// AsyncConsumer works like Consumer but does the work asynchronously.
+// For certain persistent stores, AsyncConsumer can offer greater
+// throughput than Consumer. However unlike Consumer, AsyncConsumer
+// methods do not return any errors encountered to the caller. Like
+// Consumer, AsyncConsumer is NOT safe to use with multiple goroutines.
+type AsyncConsumer struct {
+	requests     chan consumerRequestType
+	flushBarrier *barrier
+	concurrency  int
+}
+
+// NewAsyncConsumer creates a new AsyncConsumer instance.
+// w is the underlying writer.
+// concurrency is the count of goroutines doing the consuming.
+// bufferSize is the size of each buffer. Each goroutine gets its own buffer.
+func NewAsyncConsumer(
+	w RecordWriter, bufferSize, concurrency int) *AsyncConsumer {
+	return newAsyncConsumer(w, bufferSize, concurrency)
+}
+
+// WriteAsync works like the Consumer.Write except that it returns before
+// completing the work. Sometime in the future, a separate goroutine does
+// the work of consuming values from n, writing them to the underlying
+// RecordWriter and committing progress on n.
+//
+// Like Consumer.Write, caller must avoid creating and using another
+// NamedIterator instance with the same name iterating over the same values
+// until it has called Flush on this instance.
+func (a *AsyncConsumer) WriteAsync(
+	n store.NamedIterator, host, appName string) {
+	a.writeAsync(n, host, appName)
+}
+
+// Flush works like Consumer.Flush waiting until previous calls to WriteAsync
+// resolve before flushing the buffers. Flush does not return until it has
+// completed flushing all the buffers and committing all necessary
+// NamedIterator instances.
+//
+// After calling Flush, the client can safely assume that this instance is
+// not holding onto any NamedIterator instances.
+func (a *AsyncConsumer) Flush() {
+	a.flush()
+}
+
 // Consumer writes values from NamedIterator instances to persistent storage.
 // Consumer buffers values to be written. Whenever the buffer becomes full,
 // the Consumer instance clears the buffer, writes the values out to the

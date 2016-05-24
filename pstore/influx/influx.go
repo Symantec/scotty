@@ -39,7 +39,10 @@ func newWriter(c Config) (
 	w := &writer{
 		client: aClient,
 		batchConfig: client.BatchPointsConfig{
-			Database: c.Database,
+			Database:         c.Database,
+			Precision:        c.Precision,
+			RetentionPolicy:  c.RetentionPolicy,
+			WriteConsistency: c.WriteConsistency,
 		},
 	}
 	result = w

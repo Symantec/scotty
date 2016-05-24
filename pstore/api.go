@@ -256,8 +256,13 @@ func (s ConsumerMetricsStoreList) UpdateCounts(n store.NamedIterator) {
 // Like Consumer instances, ConsumerWithMetric instances are NOT safe to use
 // with multiple goroutines.
 type ConsumerWithMetrics struct {
+	name         string
 	metricsStore *ConsumerMetricsStore
 	consumer     consumerType
+}
+
+func (c *ConsumerWithMetrics) Name() string {
+	return c.name
 }
 
 // MetricsStore returns the ConsumerMetricsStore for this instance.
@@ -284,8 +289,9 @@ func (c *ConsumerWithMetrics) Flush() {
 // instance.
 // These instances are NOT safe to use with multiple goroutines.
 type ConsumerWithMetricsBuilder struct {
-	c          **ConsumerWithMetrics
-	bufferSize int
+	c           **ConsumerWithMetrics
+	bufferSize  int
+	concurrency int
 }
 
 // NewConsumerWithMetricsBuilder creates a new instance that will
@@ -296,9 +302,27 @@ func NewConsumerWithMetricsBuilder(
 }
 
 // SetBufferSize sets how many values the consumer will buffer before
-// writing them out. The default is 1000.
+// writing them out. The default is 1000. SetBufferSize panics if size < 1.
+
 func (b *ConsumerWithMetricsBuilder) SetBufferSize(size int) {
+	if size < 1 {
+		panic("positive, non-zero size required.")
+	}
 	b.bufferSize = size
+}
+
+// SetConcurrency sets how many goroutines will write to the underlying
+// writer. Default is 1. SetConcurrency panics if concurrency < 1.
+func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency int) {
+	if concurrency < 1 {
+		panic("positive, non-zero concurrency required.")
+	}
+	b.concurrency = concurrency
+}
+
+// SetName sets the name of the consumer. Default is the empty string.
+func (b *ConsumerWithMetricsBuilder) SetName(name string) {
+	(*b.c).name = name
 }
 
 // SetPerMetricWriteTimeDist sets the distribution that the consumer will
@@ -319,14 +343,4 @@ func (b *ConsumerWithMetricsBuilder) SetPerMetricBatchSizeDist(
 // Build builds the ConsumerWithMetrics instance and destroys this builder.
 func (b *ConsumerWithMetricsBuilder) Build() *ConsumerWithMetrics {
 	return b.build()
-}
-
-// ConsumerWithMetricsBuilderList represents an immutable slice of builders
-type ConsumerWithMetricsBuilderList []*ConsumerWithMetricsBuilder
-
-// SetBufferSize sets the buffer size on all builders in this slice.
-func (b ConsumerWithMetricsBuilderList) SetBufferSize(size int) {
-	for i := range b {
-		b[i].SetBufferSize(size)
-	}
 }

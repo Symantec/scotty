@@ -17,7 +17,7 @@ func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
 
 // ConsumerBuildersFromFile creates consumer builders from a configuration file.
 func ConsumerBuildersFromFile(filename string) (
-	result pstore.ConsumerWithMetricsBuilderList, err error) {
+	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	var c ConfigList
 	if err = config.ReadFromFile(filename, &c); err != nil {
 		return
@@ -78,6 +78,10 @@ func (c ConfigList) Len() int {
 func (c ConfigList) NewConsumerBuilderByIndex(i int) (
 	*pstore.ConsumerWithMetricsBuilder, error) {
 	return c[i].NewConsumerBuilder()
+}
+
+func (c ConfigList) NameAt(i int) string {
+	return c[i].Consumer.Name
 }
 
 func (c *ConfigList) Reset() {

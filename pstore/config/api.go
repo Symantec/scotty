@@ -59,19 +59,14 @@ type ConsumerBuilderFactoryList interface {
 	// Create a Consumer builder from item at given index.
 	NewConsumerBuilderByIndex(idx int) (
 		*pstore.ConsumerWithMetricsBuilder, error)
+	// Returns the name of the item at the given index.
+	NameAt(idx int) string
 }
 
 // CreateConsumerBuilders creates consumer builders from c.
 func CreateConsumerBuilders(c ConsumerBuilderFactoryList) (
-	list pstore.ConsumerWithMetricsBuilderList, err error) {
-	result := make(pstore.ConsumerWithMetricsBuilderList, c.Len())
-	for i := range result {
-		if result[i], err = c.NewConsumerBuilderByIndex(i); err != nil {
-			return
-		}
-	}
-	list = result
-	return
+	list []*pstore.ConsumerWithMetricsBuilder, err error) {
+	return createConsumerBuilders(c)
 }
 
 // Reset resets all the configs.
@@ -83,7 +78,8 @@ func Reset(configs ...Config) {
 
 // Decorator creates a decorated writer.
 type Decorator struct {
-	// Maximum reocrds to write per minute. 0 or negative means no limit.
+	// Maximum reocrds to write per minute. Optional.
+	// 0 or negative means no limit.
 	RecordsPerMinute int `yaml:"recordsPerMinute"`
 	// Metrics whose name matches DebugMetricRegex AND whose host matches
 	// DebugHostRegex are written to the debug file. Empty values in
@@ -92,7 +88,8 @@ type Decorator struct {
 	// matches.
 	DebugMetricRegex string `yaml:"debugMetricRegex"`
 	DebugHostRegex   string `yaml:"debugHostRegex"`
-	// The full path of the debug file. If empty, debug goes to stdout.
+	// The full path of the debug file. Optional.
+	// If empty, debug goes to stdout.
 	DebugFilePath string `yaml:"debugFilePath"`
 }
 
@@ -108,6 +105,14 @@ func (d *Decorator) Reset() {
 
 // ConsumerConfig creates a consumer builder
 type ConsumerConfig struct {
+	// The name of the consumer. Required.
+	Name string `yaml:"name"`
+	// The number of goroutines doing writing. Optional.
+	// A zero or negative value means 1.
+	Concurrency int `yaml:"concurrency"`
+	// The number of values written each time. Optional.
+	// A zero or negative value means 1000.
+	BatchSize int `yaml:"batchSize"`
 }
 
 // NewConsumerBuilder creates a new consumer builder using the given

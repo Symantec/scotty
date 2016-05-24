@@ -93,10 +93,11 @@ type Decorator struct {
 	DebugFilePath string `yaml:"debugFilePath"`
 }
 
-// NewWriter creates a new, decorated writer using the given WriterFactory
-func (d *Decorator) NewWriter(wf WriterFactory) (
-	pstore.LimitedRecordWriter, error) {
-	return d.newWriter(wf)
+// NewThrottledWriter creates a new, decorated writer using the given
+// WriterFactory
+func (d *Decorator) NewThrottledWriter(wf WriterFactory) (
+	pstore.ThrottledLimitedRecordWriter, error) {
+	return d.newThrottledWriter(wf)
 }
 
 func (d *Decorator) Reset() {
@@ -118,9 +119,9 @@ type ConsumerConfig struct {
 // NewConsumerBuilder creates a new consumer builder using the given
 // WriterFactory.
 func (c *ConsumerConfig) NewConsumerBuilder(
-	wf WriterFactory) (
+	wf WriterFactory, d *Decorator) (
 	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.newConsumerBuilder(wf)
+	return c.newConsumerBuilder(wf, d)
 }
 
 func (c *ConsumerConfig) Reset() {

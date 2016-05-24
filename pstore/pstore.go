@@ -12,6 +12,38 @@ const (
 	kDefaultBufferSize = 1000
 )
 
+type throttleWriter struct {
+	LimitedRecordWriter
+	recordsPerMinute int
+}
+
+func newThrottledLimitedRecordWriter(
+	w LimitedRecordWriter,
+	recordsPerMinute int) ThrottledLimitedRecordWriter {
+	return &throttleWriter{
+		LimitedRecordWriter: w,
+		recordsPerMinute:    recordsPerMinute}
+}
+
+func (t *throttleWriter) RecordsPerMinute() int {
+	return t.recordsPerMinute
+}
+
+func (t *throttleWriter) Write(records []Record) error {
+	if t.recordsPerMinute <= 0 {
+		return t.LimitedRecordWriter.Write(records)
+	}
+	now := time.Now()
+	result := t.LimitedRecordWriter.Write(records)
+	throttleDuration := time.Minute * time.Duration(len(records)) / time.Duration(t.recordsPerMinute)
+	timeToBeDone := now.Add(throttleDuration)
+	now = time.Now()
+	if now.Before(timeToBeDone) {
+		time.Sleep(timeToBeDone.Sub(now))
+	}
+	return result
+}
+
 func (w *RecordWriterWithMetrics) write(records []Record) error {
 	ctime := time.Now()
 	result := w.W.Write(records)
@@ -310,29 +342,36 @@ func toFilterer(typeFilter func(types.Type) bool) store.Filterer {
 }
 
 func newConsumerWithMetricsBuilder(
-	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	w ThrottledLimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	writerWithMetrics := &RecordWriterWithMetrics{W: w}
 	ptr := &ConsumerWithMetrics{
+		attributes: ConsumerAttributes{
+			RecordsPerMinute: w.RecordsPerMinute(),
+			BatchSize:        kDefaultBufferSize,
+			Concurrency:      1},
 		metricsStore: &ConsumerMetricsStore{
 			w:        writerWithMetrics,
 			filterer: toFilterer(w.IsTypeSupported),
 		},
 	}
-	return &ConsumerWithMetricsBuilder{
-		c: &ptr, bufferSize: kDefaultBufferSize, concurrency: 1}
+	return &ConsumerWithMetricsBuilder{c: &ptr}
 }
 
 func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
-	if b.concurrency == 1 {
-		(*b.c).consumer = toConsumerType(
-			NewConsumer((*b.c).metricsStore.w, b.bufferSize))
-	} else if b.concurrency > 1 {
-		(*b.c).consumer = toAsyncConsumerType(NewAsyncConsumer(
-			(*b.c).metricsStore.w, b.bufferSize, b.concurrency))
+	result := *b.c
+	if result.attributes.Concurrency == 1 {
+		result.consumer = toConsumerType(
+			NewConsumer(
+				result.metricsStore.w,
+				result.attributes.BatchSize))
+	} else if result.attributes.Concurrency > 1 {
+		result.consumer = toAsyncConsumerType(NewAsyncConsumer(
+			result.metricsStore.w,
+			result.attributes.BatchSize,
+			result.attributes.Concurrency))
 	} else {
 		panic("pstore: Oops, bad state in build method.")
 	}
-	result := *b.c
 	*b.c = nil
 	return result
 }

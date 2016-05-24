@@ -55,12 +55,12 @@ type ConfigPlus struct {
 }
 
 func (c *ConfigPlus) NewWriter() (pstore.LimitedRecordWriter, error) {
-	return c.Options.NewWriter(&c.Writer)
+	return c.Options.NewThrottledWriter(&c.Writer)
 }
 
 func (c *ConfigPlus) NewConsumerBuilder() (
 	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.Consumer.NewConsumerBuilder(c)
+	return c.Consumer.NewConsumerBuilder(&c.Writer, &c.Options)
 }
 
 func (c *ConfigPlus) Reset() {

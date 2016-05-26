@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/optiopay/kafka"
@@ -93,9 +93,9 @@ func asFloat64(r *pstore.Record) float64 {
 	case types.Float64:
 		return r.Value.(float64)
 	case types.GoTime:
-		return messages.TimeToFloat(r.Value.(time.Time))
+		return duration.TimeToFloat(r.Value.(time.Time))
 	case types.GoDuration:
-		return messages.DurationToFloat(
+		return duration.ToFloat(
 			r.Value.(time.Duration)) * units.FromSeconds(
 			r.Unit)
 	default:
@@ -116,7 +116,7 @@ type pathAndMillisType struct {
 func newPathAndMillisType(record *pstore.Record) pathAndMillisType {
 	return pathAndMillisType{
 		Path:   record.Path,
-		Millis: int64(messages.TimeToFloat(record.Timestamp) * 1000.0)}
+		Millis: int64(duration.TimeToFloat(record.Timestamp) * 1000.0)}
 }
 
 // TODO: Remove once we know the grafana bug involving duplicate timestamps

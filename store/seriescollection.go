@@ -105,6 +105,37 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 	}
 }
 
+func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
+	name string, duration float64, maxFrames int) NamedIterator {
+	var startTimes map[int]float64
+	var completed map[*timeSeriesType]float64
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	snapshot := c.iterators[name]
+	if snapshot != nil {
+		startTimes = snapshot.startTimeStamps
+		completed = snapshot.completed
+	}
+	timesByGroup := make(map[int][]float64, len(c.timestampSeries))
+	for groupId, series := range c.timestampSeries {
+		nextTimes := series.FindAfter(
+			startTimes[groupId], 0)
+		chopForRollUp(duration, maxFrames, &nextTimes)
+		timesByGroup[groupId] = nextTimes
+	}
+	return &rollUpNamedIteratorType{
+		namedIteratorType: &namedIteratorType{
+			name:                 name,
+			timeSeriesCollection: c,
+			startTimeStamps:      startTimes,
+			timestamps:           timesByGroup,
+			completed:            copyCompleted(completed),
+			timeSeries:           c.tsAll(),
+		},
+		Interval: duration,
+	}
+}
+
 func (c *timeSeriesCollectionType) saveProgress(
 	name string, progress *namedIteratorDataType) {
 	c.lock.Lock()

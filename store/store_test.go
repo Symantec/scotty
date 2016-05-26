@@ -22,6 +22,74 @@ var (
 	kError     = errors.New("An error")
 )
 
+type playbackType struct {
+	valueCount     int
+	nameToIndexMap map[string]int
+	timeStamps     map[int][]float64
+	values         [][]interface{}
+	original       metrics.SimpleList
+}
+
+func newPlaybackType(mlist metrics.List, valueCount int) *playbackType {
+	length := mlist.Len()
+	original := make(metrics.SimpleList, length)
+	nameToIndexMap := make(map[string]int, length)
+	for i := range original {
+		mlist.Index(i, &original[i])
+		if _, ok := nameToIndexMap[original[i].Path]; ok {
+			panic("path names must be unique.")
+		}
+		nameToIndexMap[original[i].Path] = i
+	}
+	return &playbackType{
+		valueCount:     valueCount,
+		nameToIndexMap: nameToIndexMap,
+		timeStamps:     make(map[int][]float64),
+		values:         make([][]interface{}, length),
+		original:       original,
+	}
+}
+
+func (p *playbackType) AddTimes(groupId int, times ...float64) {
+	if len(times) != p.valueCount {
+		panic("Wrong number of times supplied.")
+	}
+	p.timeStamps[groupId] = times
+}
+
+func (p *playbackType) Add(path string, values ...interface{}) {
+	if len(values) != p.valueCount {
+		panic("Wrong number of values supplied.")
+	}
+	idx, ok := p.nameToIndexMap[path]
+	if !ok {
+		panic("Invalid path to Add()")
+	}
+	p.values[idx] = values
+}
+
+func (p *playbackType) Play(aStore *store.Store, endpointId interface{}) {
+	for i := 0; i < p.valueCount; i++ {
+		var cmetrics metrics.SimpleList
+		for j := range p.values {
+			if p.values[j] == nil {
+				panic("Values not supplied for all metrics.")
+			}
+			if p.values[j][i] != nil {
+				aValue := p.original[j]
+				aValue.Value = p.values[j][i]
+				groupId := aValue.GroupId
+				if p.timeStamps[groupId] == nil {
+					panic("Timestamps not supplied for all groups.")
+				}
+				aValue.TimeStamp = duration.FloatToTime(p.timeStamps[groupId][i])
+				cmetrics = append(cmetrics, aValue)
+			}
+		}
+		aStore.AddBatch(endpointId, 1000.0, cmetrics)
+	}
+}
+
 type limitIteratorType struct {
 	limit   int
 	wrapped store.Iterator
@@ -433,6 +501,316 @@ func TestIteratorPageEviction(t *testing.T) {
 
 func floatToTime(f float64) time.Time {
 	return duration.FloatToTime(f)
+}
+
+func TestRollUpIterator(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Int",
+			Description: "An int",
+			Unit:        units.None,
+			Kind:        types.Int64,
+			Bits:        64,
+			GroupId:     0,
+		},
+		{
+			Path:        "Float",
+			Description: "A float",
+			Unit:        units.None,
+			Kind:        types.Float64,
+			Bits:        64,
+			GroupId:     2,
+		},
+		{
+			Path:        "String",
+			Description: "A string",
+			Unit:        units.None,
+			Kind:        types.String,
+			GroupId:     2,
+		},
+		{
+			Path:        "Inactive",
+			Description: "A description",
+			Unit:        units.None,
+			Kind:        types.Float64,
+			GroupId:     0,
+		},
+	}
+	playback := newPlaybackType(aMetric[:], 10)
+	playback.AddTimes(
+		0,
+		120000.0, 120059.5, 120119.0, // 1st interval
+		120250.0, 120300.0, // 2nd interval
+		120400.0, 120410.0, 120420.0, 120430.0, // 3rd interval
+		120500.0, // 4th interval
+	)
+	playback.AddTimes(
+		2,
+		96000.0, 96032.0, 96064.0, 96096.0, // 1st
+		96240.0,          // 2nd
+		96400.0, 96420.0, // 3rd
+		96500.0,          // 4th
+		96600.0, 96610.0, // 5th
+	)
+	playback.Add(
+		"Int",
+		int64(23000), // 1st
+		int64(29000),
+		int64(28000),
+		int64(31000), // 2nd
+		int64(32000),
+		int64(35000), // 3rd
+		int64(17000),
+		int64(19000),
+		int64(22001),
+		int64(27000), // 4th 10 total
+	)
+	playback.Add(
+		"Float",
+		4.75, // 1st
+		5.25,
+		6.25,
+		6.75,
+		9.125, // 2nd
+		1.375, // 3rd
+		2.375,
+		3.1875, // 4th
+		10.0,   // 5th
+		11.0,
+	)
+	playback.Add(
+		"String",
+		"hello", // 1st
+		"goodbye",
+		"solong",
+		"seeya",
+		"bee",  // 2nd
+		"long", // 3rd
+		"short",
+		"near", // 4th
+		"far",  // 5th
+		"too",
+	)
+	playback.Add(
+		"Inactive",
+		nil, // 1st
+		21.0,
+		27.0,
+		nil, // 2nd
+		nil,
+		9.0, // 3rd
+		nil,
+		13.0,
+		nil,
+		8.3, // 4th 10 total
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	expected := newExpectedTsValues()
+	expected.Add("Int", 120059.5, int64(26667))
+	expected.Add("Float", 96048.0, 5.75)
+	expected.Add("String", 96000.0, "hello")
+	expected.Add("Inactive", 120089.25, 24.0)
+
+	expected.Add("Int", 120275.0, int64(31500))
+	expected.Add("Float", 96240.0, 9.125)
+	expected.Add("String", 96240.0, "bee")
+
+	expected.Add("Int", 120415.0, int64(23250))
+	expected.Add("Float", 96410.0, 1.875)
+	expected.Add("String", 96400.0, "long")
+	expected.Add("Inactive", 120410.0, 11.0)
+
+	expected.Add("Float", 96500.0, 3.1875)
+	expected.Add("String", 96500.0, "near")
+
+	beginning := expected.Checkpoint()
+
+	iterator := aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 0)
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+
+	// Shouldn't get anything else off this iterator
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+
+	// Now iterate again but in chunks. In this test, don't commit
+	// every 2nd iteration to show that in that case the next iterator
+	// starts at the same place.
+	expected.Restore(beginning)
+
+	// max 3 times per metric
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	expected.Iterate(t, iterator)
+	expected.Restore(beginning)
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	assertValueEquals(t, 11, expected.Iterate(t, iterator))
+	iterator.Commit()
+
+	checkpoint := expected.Checkpoint()
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	expected.Iterate(t, iterator)
+	expected.Restore(checkpoint)
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	assertValueEquals(t, 2, expected.Iterate(t, iterator))
+	iterator.Commit()
+
+	expected.VerifyDone(t)
+
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	// Shouldn't get anything off iterator
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+
+	// Now iterate again but test iterating 8 at a time, committing
+	// and creating a new iterator. Since we committed the previous
+	// iterator, we have to use a new name to start from the beginning.
+	expected.Restore(beginning)
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
+	assertValueEquals(t, 8, expected.Iterate(
+		t, iteratorLimit(iterator, 8)))
+	iterator.Commit()
+
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
+	assertValueEquals(t, 5, expected.Iterate(
+		t, iteratorLimit(iterator, 8)))
+	iterator.Commit()
+	expected.VerifyDone(t)
+
+	// Verify that incomplete intervals aren't lost.
+	playback = newPlaybackType(aMetric[:3], 2)
+
+	playback.AddTimes(
+		0,
+		120520.0, // 4th cont
+		120600.0, // 5th
+	)
+	playback.AddTimes(
+		2,
+		96623.0, // 5th cont
+		96720.0, // 6th
+	)
+	playback.Add(
+		"Int",
+		int64(29000), // 4th cont
+		int64(33600), // 5th
+	)
+	playback.Add(
+		"Float",
+		15.0, // 5th cont
+		12.5, // 6th
+	)
+	playback.Add(
+		"String",
+		"dog",   // 5th cont
+		"mouse", // 6th
+	)
+
+	playback.Play(aStore, kEndpoint0)
+
+	expected = newExpectedTsValues()
+	expected.Add("Int", 120510.0, int64(28000))
+	expected.Add("Float", 96611.0, 12.0)
+	expected.Add("String", 96600.0, "far")
+	expected.Add("Inactive", 120500.0, 8.3)
+
+	iterator = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 2*time.Minute, 0)
+
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+}
+
+func TestRollUpIteratorBool(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "path",
+			Description: "A bool",
+			Unit:        units.None,
+			Kind:        types.Bool,
+			Bits:        0,
+			GroupId:     0,
+		},
+	}
+	playback := newPlaybackType(aMetric[:], 8)
+	playback.AddTimes(
+		0,
+		30000.0, 30100.0, 30200.0, // 1st interval
+		30300.0, 30400.0, 30500.0, // 2nd interval
+		30900.0, // 3rd interval
+		31200.0, // 4th interval
+	)
+	playback.Add(
+		"path",
+		true, false, false, // 1st
+		false, true, true, // 2nd
+		true,  // 3rd
+		false, // 4th
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	expected := newExpectedTsValues()
+	expected.Add("path", 30000.0, true)
+	expected.Add("path", 30300.0, false)
+	expected.Add("path", 30900.0, true)
+
+	iterator := aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 5*time.Minute, 0)
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+}
+
+func TestRollUpIteratorInt8(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "path",
+			Description: "An int",
+			Unit:        units.None,
+			Kind:        types.Int8,
+			Bits:        0,
+			GroupId:     0,
+		},
+	}
+	playback := newPlaybackType(aMetric[:], 8)
+	playback.AddTimes(
+		0,
+		30000.0, 30100.0, 30200.0, // 1st interval
+		30300.0, 30400.0, 30500.0, // 2nd interval
+		30900.0, // 3rd interval
+		31200.0, // 4th interval
+	)
+	playback.Add(
+		"path",
+		int8(-128), int8(127), int8(5), // 1st interval
+		int8(-128), int8(-128), int8(-128), // 2nd interval
+		int8(127), // 3rd
+		int8(0),   // 4th
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	expected := newExpectedTsValues()
+	expected.Add("path", 30100.0, int8(1))
+	expected.Add("path", 30400.0, int8(-128))
+	expected.Add("path", 30900.0, int8(127))
+
+	iterator := aStore.NamedIteratorForEndpointRollUp(
+		"anIterator", kEndpoint0, 5*time.Minute, 0)
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
 }
 
 func TestIterator(t *testing.T) {

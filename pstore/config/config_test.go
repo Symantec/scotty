@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"testing"
+	"time"
 )
 
 type nilWriter struct {
@@ -99,6 +100,7 @@ func TestReadConfig(t *testing.T) {
     name: "some name"
     concurrency: 7
     batchSize: 730
+    rollUpSpan: 2m15s
 - writer:
     someField: "hello"
   consumer:
@@ -111,6 +113,7 @@ func TestReadConfig(t *testing.T) {
     concurrency: -2
     name: "negative"
     batchSize: -17
+    rollUpSpan: -2m
 `
 	consumerBuilders, err := consumerBuildersFromString(configFile)
 	if err != nil {
@@ -127,6 +130,7 @@ func TestReadConfig(t *testing.T) {
 			Concurrency:      7,
 			BatchSize:        730,
 			RecordsPerSecond: 124,
+			RollUpSpan:       135 * time.Second,
 		},
 		attributes)
 	assertValueEquals(t, "minimal", consumers[1].Name())
@@ -134,9 +138,8 @@ func TestReadConfig(t *testing.T) {
 	assertValueEquals(
 		t,
 		pstore.ConsumerAttributes{
-			Concurrency:      1,
-			BatchSize:        1000,
-			RecordsPerSecond: 0,
+			Concurrency: 1,
+			BatchSize:   1000,
 		},
 		attributes)
 	assertValueEquals(t, "negative", consumers[2].Name())
@@ -144,9 +147,8 @@ func TestReadConfig(t *testing.T) {
 	assertValueEquals(
 		t,
 		pstore.ConsumerAttributes{
-			Concurrency:      1,
-			BatchSize:        1000,
-			RecordsPerSecond: 0,
+			Concurrency: 1,
+			BatchSize:   1000,
 		},
 		attributes)
 }

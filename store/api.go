@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"time"
 )
 
 // MetricInfo represents the meta data for a metric
@@ -365,6 +366,56 @@ func (s *Store) NamedIteratorForEndpoint(
 	endpointId interface{},
 	maxFrames int) NamedIterator {
 	return s.namedIteratorForEndpoint(name, endpointId, maxFrames)
+}
+
+// NamedIteratorForEndpointRollUp works like NamedItgeratorForEndpoint except
+// that instead of reporting every individual value for each metric, it
+// reports summarised values by averaging / rolling up values for each time
+// period.
+//
+// NamedIteratorForEndpointRollUp summarises values by averaging both the
+// values and the timestamps of values for each time period.
+// When averaging integer values, it rounds the average to the nearest integer.
+// For non-numeric values such as strings, it summarises by reporting the
+// first encountered value and timestamp in each time period.
+// It ignores any inactive flags encountered when summarising values.
+//
+// For each metric, NamedIteratorForEndpointRollUp reports at most one
+// value for each time period. If a metric has no values or has only
+// inactive flag(s) for a given time period,
+// NamedIteratorForEndpointRollUp reports no value for that metric during
+// that time period.
+//
+// As described in the NamedIterator documentation, the name is used to
+// track progress for iterating over the given endpoint. Therefore, caller
+// should avoid having two iterators at once with the same name iterating
+// over the same endpoint even if one iterator comes from this method while
+// the other comes from NamedIteratorForEndpoint.
+//
+// dur is the length of the time periods. For example, dur = 5 * time.Minute
+// means use time periods 12:00-12:05; 12:05-12:10; 12:15-12:20. Each time
+// period includes the lower bound and excludes the upper bound. For example,
+// 12:15-12:20 includes 12:15 but not 12:20. To avoid confusion, dur should
+// evenly divide 1 minute or 1 hour. dur = 2*time.Minute, dur = 3*time.Minute,
+// dur = 4*time.Minute, and dur = 6*time.Minute are all good choices.
+// dur = 7*time.Minute is not.
+//
+// If maxFrames = 0, NamedIteratorForEndpointRollUp makes best effort to
+// report the rest of the unreported summarised values. A positive maxFrames
+// hints to the returned iterator that it should iterate over at most maxFrames
+// time periods, not values, per metric.
+//
+// To avoid reporting summarised values for a time period before all the values
+// are in, NamedIteratorForEndpointRollup will not report a summarised value
+// for a given time period for a metric unless values for a later time period
+// for that same metric are present.
+func (s *Store) NamedIteratorForEndpointRollUp(
+	name string,
+	endpointId interface{},
+	dur time.Duration,
+	maxFrames int) NamedIterator {
+	return s.namedIteratorForEndpointRollUp(
+		name, endpointId, dur, maxFrames)
 }
 
 // LatestByEndpoint returns the latest records for each metric for a

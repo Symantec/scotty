@@ -210,17 +210,13 @@ func (p *pstoreHandlerType) Visit(
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
-	iterator := theStore.NamedIteratorForEndpoint(
-		fmt.Sprintf("%s/%s", kPStoreIteratorName, p.Name()),
-		endpointId,
-		kLookAheadWritingToPStore,
-	)
+	iterator := p.namedIterator(theStore, endpointId)
 	p.consumer.Write(iterator, hostName, appName)
 	return nil
 }
 
-func (p *pstoreHandlerType) Metrics(m *pstore.ConsumerMetrics) {
-	p.consumer.MetricsStore().Metrics(m)
+func (p *pstoreHandlerType) Attributes(attributes *pstore.ConsumerAttributes) {
+	p.consumer.Attributes(attributes)
 }
 
 func (p *pstoreHandlerType) ConsumerMetricsStore() *pstore.ConsumerMetricsStore {
@@ -231,10 +227,11 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	var attributes pstore.ConsumerAttributes
 	p.consumer.Attributes(&attributes)
 	var data pstore.ConsumerMetrics
+	metricsStore := p.ConsumerMetricsStore()
 	group := tricorder.NewGroup()
 	group.RegisterUpdateFunc(
 		func() time.Time {
-			p.Metrics(&data)
+			metricsStore.Metrics(&data)
 			return time.Now()
 		})
 	if err = tricorder.RegisterMetric(
@@ -321,6 +318,30 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	return
+}
+
+func (p *pstoreHandlerType) iteratorName() string {
+	return fmt.Sprintf("%s/%s", kPStoreIteratorName, p.Name())
+}
+
+func (p *pstoreHandlerType) namedIterator(
+	theStore *store.Store,
+	endpointId interface{}) store.NamedIterator {
+	var attributes pstore.ConsumerAttributes
+	p.Attributes(&attributes)
+	if attributes.RollUpSpan == 0 {
+		return theStore.NamedIteratorForEndpoint(
+			p.iteratorName(),
+			endpointId,
+			kLookAheadWritingToPStore,
+		)
+	}
+	return theStore.NamedIteratorForEndpointRollUp(
+		p.iteratorName(),
+		endpointId,
+		attributes.RollUpSpan,
+		kLookAheadWritingToPStore,
+	)
 }
 
 // logger implements the scotty.Logger interface
@@ -775,10 +796,16 @@ func startPStoreLoops(
 			stats.ApplicationList(),
 			consumerBuilders[i])
 		result[i] = pstoreHandler.ConsumerMetricsStore()
+		var attributes pstore.ConsumerAttributes
+		pstoreHandler.Attributes(&attributes)
+		refreshRate := *fPStoreUpdateFrequency
+		if attributes.RollUpSpan > 0 {
+			refreshRate = attributes.RollUpSpan
+		}
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}
-		go func(handler *pstoreHandlerType) {
+		go func(handler *pstoreHandlerType, refreshRate time.Duration) {
 			// persistent storage writing goroutine. Write every 30s by default.
 			// Notice that this single goroutine handles all the persistent
 			// storage writing as multiple goroutines must not access the
@@ -791,11 +818,11 @@ func startPStoreLoops(
 				metricStore.VisitAllEndpoints(handler)
 				handler.EndVisit()
 				writeDuration := time.Now().Sub(writeTime)
-				if writeDuration < *fPStoreUpdateFrequency {
-					time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
+				if writeDuration < refreshRate {
+					time.Sleep(refreshRate - writeDuration)
 				}
 			}
-		}(pstoreHandler)
+		}(pstoreHandler, refreshRate)
 	}
 	return result
 }

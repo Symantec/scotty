@@ -7,6 +7,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"io"
 	"os"
+	"time"
 )
 
 // Config implementations may be read from a yaml configuration file.
@@ -113,7 +114,8 @@ type ConsumerConfig struct {
 	Concurrency int `yaml:"concurrency"`
 	// The number of values written each time. Optional.
 	// A zero or negative value means 1000.
-	BatchSize int `yaml:"batchSize"`
+	BatchSize  int           `yaml:"batchSize"`
+	RollUpSpan time.Duration `yaml:"rollUpSpan"`
 }
 
 // NewConsumerBuilder creates a new consumer builder using the given

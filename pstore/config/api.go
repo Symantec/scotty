@@ -78,9 +78,9 @@ func Reset(configs ...Config) {
 
 // Decorator creates a decorated writer.
 type Decorator struct {
-	// Maximum reocrds to write per minute. Optional.
+	// Maximum reocrds to write per second. Optional.
 	// 0 or negative means no limit.
-	RecordsPerMinute int `yaml:"recordsPerMinute"`
+	RecordsPerSecond int `yaml:"recordsPerSecond"`
 	// Metrics whose name matches DebugMetricRegex AND whose host matches
 	// DebugHostRegex are written to the debug file. Empty values in
 	// both of these fields means no debugging. An empty value in

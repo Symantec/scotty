@@ -244,10 +244,10 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetric(
-		fmt.Sprintf("writer/%s/maxRecordsPerMinute", p.Name()),
-		attributes.TotalRecordsPerMinute,
+		fmt.Sprintf("writer/%s/maxRecordsPerSecond", p.Name()),
+		attributes.TotalRecordsPerSecond,
 		units.None,
-		"Max records per minute to write. 0 means unlimited"); err != nil {
+		"Max records per second to write. 0 means unlimited"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(

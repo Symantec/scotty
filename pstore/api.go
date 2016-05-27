@@ -255,17 +255,6 @@ func (s *ConsumerMetricsStore) Metrics(m *ConsumerMetrics) {
 	s.metrics(m)
 }
 
-// ConsumerMetricsStoreList represents an immutable slice of
-// ConsumerMetricStore instances.
-// ConsumerMetricStoreList instances are safe to use with multiple goroutines.
-type ConsumerMetricsStoreList []*ConsumerMetricsStore
-
-// UpdateCounts updates the total record count for all consumers.
-// UpdateCount consumes all values from n and commits n.
-func (s ConsumerMetricsStoreList) UpdateCounts(n store.NamedIterator) {
-	s.updateCounts(n)
-}
-
 // ConsumerAttributes represent the unchanging attributes of a particular
 // ConsumerWithMetrics instance.
 type ConsumerAttributes struct {

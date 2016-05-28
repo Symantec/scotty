@@ -71,7 +71,7 @@ func (h *Handler) ServeHTTP(
 	fmt.Fprintln(writer, "<center>")
 	fmt.Fprintln(writer, "<h1><b>Scotty</b> status page</h1>")
 	fmt.Fprintln(writer, "</center>")
-	html.WriteHeader(writer)
+	html.WriteHeaderNoGC(writer)
 	fmt.Fprintln(writer, "<br>")
 	v := newView(result)
 	if err := htmlTemplate.Execute(writer, v); err != nil {

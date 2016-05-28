@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,6 +45,10 @@ const (
 )
 
 var (
+	gAlloc []byte
+)
+
+var (
 	fPort = flag.Int(
 		"portNum",
 		6980,
@@ -55,7 +60,7 @@ var (
 	fPageCount = flag.Int(
 		"page_count",
 		30*1000*1000,
-		"Buffer size per endpoint in records")
+		"Total page count")
 	fAppFile = flag.String(
 		"app_file",
 		"apps.yaml",
@@ -96,6 +101,8 @@ var (
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fDegree = flag.Int(
 		"degree", 10, "Degree of btree")
+	fPagePercentage = flag.Float64(
+		"page_percentage", 50.0, "Percentage of allocated memory used for pages")
 )
 
 type byHostName messages.ErrorList
@@ -604,12 +611,58 @@ func hostNames(machines []mdb.Machine) (result []string) {
 	return
 }
 
+func totalMemoryUsed() uint64 {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	return memStats.Alloc
+}
+
 func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger) *datastructs.ApplicationStatuses {
+	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
+	if err != nil {
+		log.Fatal(err)
+	}
+	var astore *store.Store
 	fmt.Println("Initialization started.")
-	astore := store.NewStoreBytesPerPage(
-		*fBytesPerPage, computePageCount(), *fThreshhold, *fDegree)
+	if totalMemoryToUse > 0 {
+		gAlloc = make([]byte, totalMemoryToUse)
+		// Do something with our slice so that compiler doesn't
+		// complain or optimise the slice allocation away
+		fmt.Printf(
+			"Total memory: %d\n",
+			totalMemoryToUse+uint64(gAlloc[totalMemoryToUse-1]+gAlloc[0]))
+		logger.Printf("totalMemoryInUse: %d\n", totalMemoryUsed())
+		gAlloc = nil
+		now := time.Now()
+		runtime.GC()
+		logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())
+		pagesToUse := int(float64(totalMemoryToUse) / float64(*fBytesPerPage) * (*fPagePercentage) / 100.0)
+		astore = store.NewStoreBytesPerPage(
+			*fBytesPerPage, pagesToUse, *fThreshhold, *fDegree)
+		tricorder.RegisterMetric(
+			"proc/memory/target-alloc",
+			&totalMemoryToUse,
+			units.Byte,
+			"Target memory usage")
+		go func() {
+			for {
+				time.Sleep(time.Minute)
+				totalMemoryInUse := totalMemoryUsed()
+				threshhold := uint64(float64(totalMemoryToUse) * 0.9)
+				if totalMemoryInUse > threshhold {
+					logger.Printf("threshhold: %d totalMemoryInUse: %d\n", threshhold, totalMemoryInUse)
+					now := time.Now()
+					runtime.GC()
+					logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())
+				}
+			}
+		}()
+	} else {
+		astore = store.NewStoreBytesPerPage(
+			*fBytesPerPage, *fPageCount, *fThreshhold, *fDegree)
+	}
 	if err := astore.RegisterMetrics(); err != nil {
 		log.Fatal(err)
 	}

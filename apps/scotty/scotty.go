@@ -21,6 +21,7 @@ import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
@@ -134,7 +135,7 @@ func (e *connectionErrorsType) Set(
 	m *collector.Endpoint, err error, timestamp time.Time) {
 	newError := &messages.Error{
 		HostName:  m.HostName(),
-		Timestamp: trimessages.SinceEpoch(timestamp).String(),
+		Timestamp: duration.SinceEpoch(timestamp).String(),
 		Error:     err.Error(),
 	}
 	e.lock.Lock()
@@ -361,7 +362,7 @@ func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector
 
 func (l *loggerType) LogResponse(
 	e *collector.Endpoint, list metrics.List, state *collector.State) {
-	ts := trimessages.TimeToFloat(state.Timestamp())
+	ts := duration.TimeToFloat(state.Timestamp())
 	added, ok := l.Store.AddBatch(
 		e,
 		ts,
@@ -431,7 +432,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	}
 	jsonValue, _ := trimessages.AsJson(r.Value, a.lastInfo.Kind(), a.lastInfo.Unit())
 	newTimestampedValue := &messages.TimestampedValue{
-		Timestamp: trimessages.SinceEpochFloat(r.TimeStamp).String(),
+		Timestamp: duration.SinceEpochFloat(r.TimeStamp).String(),
 		Value:     jsonValue,
 		Active:    r.Active,
 	}
@@ -455,7 +456,7 @@ func gatherDataForEndpoint(
 	history int,
 	isSingleton bool) (result messages.EndpointMetricList) {
 	result = make(messages.EndpointMetricList, 0)
-	now := trimessages.TimeToFloat(time.Now())
+	now := duration.TimeToFloat(time.Now())
 	appender := newEndpointMetricsAppender(&result)
 	if path == "" {
 		metricStore.ByEndpoint(endpoint, now-60.0*float64(history), math.Inf(1), appender)
@@ -670,7 +671,7 @@ func createApplicationStats(
 	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
 	machines := <-mdbChannel
 	stats.MarkHostsActiveExclusively(
-		trimessages.TimeToFloat(time.Now()),
+		duration.TimeToFloat(time.Now()),
 		hostNames(machines.Machines))
 	fmt.Println("Initialization complete.")
 	// Endpoint refresher goroutine
@@ -678,7 +679,7 @@ func createApplicationStats(
 		for {
 			machines := <-mdbChannel
 			stats.MarkHostsActiveExclusively(
-				trimessages.TimeToFloat(time.Now()),
+				duration.TimeToFloat(time.Now()),
 				hostNames(machines.Machines))
 		}
 	}()

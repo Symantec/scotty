@@ -5,7 +5,7 @@ import (
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
@@ -432,7 +432,7 @@ func TestIteratorPageEviction(t *testing.T) {
 }
 
 func floatToTime(f float64) time.Time {
-	return messages.FloatToTime(f)
+	return duration.FloatToTime(f)
 }
 
 func TestIterator(t *testing.T) {

@@ -2,7 +2,7 @@ package store
 
 import (
 	"github.com/Symantec/scotty/metrics"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"sync"
@@ -205,7 +205,7 @@ func (c *timeSeriesCollectionType) LookupBatch(
 		if avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = timestamp
 		} else {
-			timestampByGroupId[id.GroupId()] = messages.TimeToFloat(avalue.TimeStamp)
+			timestampByGroupId[id.GroupId()] = duration.TimeToFloat(avalue.TimeStamp)
 		}
 	}
 	// populate notFetched

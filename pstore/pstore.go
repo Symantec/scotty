@@ -2,7 +2,7 @@ package pstore
 
 import (
 	"github.com/Symantec/scotty/store"
-	"github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"time"
@@ -232,7 +232,7 @@ func (c *Consumer) write(
 			Kind:      r.Info.Kind(),
 			Unit:      r.Info.Unit(),
 			Value:     r.Value,
-			Timestamp: messages.FloatToTime(r.TimeStamp),
+			Timestamp: duration.FloatToTime(r.TimeStamp),
 		}
 		c.idx++
 		if c.idx == len(c.buffer) {

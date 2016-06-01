@@ -205,9 +205,9 @@ func (t *totalCountType) Update(
 // persistnt storage and to avoid writing the same value twice.
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
-	name                string
 	consumer            *pstore.ConsumerWithMetrics
 	appList             *datastructs.ApplicationList
+	memoryManager       *memoryManagerType
 	startTime           time.Time
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
@@ -215,13 +215,15 @@ type pstoreHandlerType struct {
 
 func newPStoreHandler(
 	appList *datastructs.ApplicationList,
-	consumer *pstore.ConsumerWithMetricsBuilder) *pstoreHandlerType {
+	consumer *pstore.ConsumerWithMetricsBuilder,
+	memoryManager *memoryManagerType) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
 	return &pstoreHandlerType{
 		consumer:            consumer.Build(),
 		appList:             appList,
+		memoryManager:       memoryManager,
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
 	}
@@ -249,6 +251,9 @@ func (p *pstoreHandlerType) Visit(
 	appName := p.appList.ByPort(port).Name()
 	iterator := p.namedIterator(theStore, endpointId)
 	p.consumer.Write(iterator, hostName, appName)
+	if p.memoryManager != nil {
+		p.memoryManager.Check()
+	}
 	return nil
 }
 
@@ -698,15 +703,18 @@ func totalMemoryUsed() uint64 {
 	return memStats.Alloc
 }
 
-func createApplicationStats(
-	appList *datastructs.ApplicationList,
-	logger *log.Logger) *datastructs.ApplicationStatuses {
+type memoryManagerType struct {
+	pagesToUse  int
+	targetAlloc uint64
+	logger      *log.Logger
+	gcCh        chan bool
+}
+
+func createMemoryManager(logger *log.Logger) *memoryManagerType {
 	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
 	if err != nil {
 		log.Fatal(err)
 	}
-	var astore *store.Store
-	fmt.Println("Initialization started.")
 	if totalMemoryToUse > 0 {
 		gAlloc = make([]byte, totalMemoryToUse)
 		// Do something with our slice so that compiler doesn't
@@ -720,26 +728,67 @@ func createApplicationStats(
 		runtime.GC()
 		logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())
 		pagesToUse := int(float64(totalMemoryToUse) / float64(*fBytesPerPage) * (*fPagePercentage) / 100.0)
+		result := &memoryManagerType{
+			pagesToUse:  pagesToUse,
+			targetAlloc: totalMemoryToUse,
+			logger:      logger,
+			gcCh:        make(chan bool),
+		}
+		go result.loop()
+		return result
+	}
+	return nil
+}
+
+func (m *memoryManagerType) PagesToUse() int {
+	return m.pagesToUse
+}
+
+func (m *memoryManagerType) TargetAlloc() uint64 {
+	return m.targetAlloc
+}
+
+func (m *memoryManagerType) Check() {
+	select {
+	case m.gcCh <- true:
+	default:
+	}
+}
+
+func (m *memoryManagerType) loop() {
+	for {
+		<-m.gcCh
+		totalMemoryInUse := totalMemoryUsed()
+		threshhold := uint64(float64(m.targetAlloc) * 0.9)
+		if totalMemoryInUse > threshhold {
+			m.logger.Printf(
+				"threshhold: %d totalMemoryInUse: %d\n",
+				threshhold,
+				totalMemoryInUse)
+			now := time.Now()
+			runtime.GC()
+			m.logger.Printf(
+				"GCTime: %v; totalMemoryInUse: %d\n",
+				time.Since(now),
+				totalMemoryUsed())
+		}
+	}
+}
+
+func createApplicationStats(
+	appList *datastructs.ApplicationList,
+	logger *log.Logger,
+	memoryManager *memoryManagerType) *datastructs.ApplicationStatuses {
+	var astore *store.Store
+	fmt.Println("Initialization started.")
+	if memoryManager != nil {
 		astore = store.NewStoreBytesPerPage(
-			*fBytesPerPage, pagesToUse, *fThreshhold, *fDegree)
+			*fBytesPerPage, memoryManager.PagesToUse(), *fThreshhold, *fDegree)
 		tricorder.RegisterMetric(
 			"proc/memory/target-alloc",
-			&totalMemoryToUse,
+			memoryManager.TargetAlloc,
 			units.Byte,
 			"Target memory usage")
-		go func() {
-			for {
-				time.Sleep(time.Minute)
-				totalMemoryInUse := totalMemoryUsed()
-				threshhold := uint64(float64(totalMemoryToUse) * 0.9)
-				if totalMemoryInUse > threshhold {
-					logger.Printf("threshhold: %d totalMemoryInUse: %d\n", threshhold, totalMemoryInUse)
-					now := time.Now()
-					runtime.GC()
-					logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())
-				}
-			}
-		}()
 	} else {
 		astore = store.NewStoreBytesPerPage(
 			*fBytesPerPage, *fPageCount, *fThreshhold, *fDegree)
@@ -769,7 +818,8 @@ func createApplicationStats(
 func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
-	totalCounts []*totalCountType) {
+	totalCounts []*totalCountType,
+	memoryManager *memoryManagerType) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -838,6 +888,9 @@ func startCollector(
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
+			if memoryManager != nil {
+				memoryManager.Check()
+			}
 			if sweepDuration < *fCollectionFrequency {
 				time.Sleep((*fCollectionFrequency) - sweepDuration)
 			}
@@ -848,12 +901,14 @@ func startCollector(
 func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
 	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
+	memoryManager *memoryManagerType,
 	logger *log.Logger) []*totalCountType {
 	result := make([]*totalCountType, len(consumerBuilders))
 	for i := range result {
 		pstoreHandler := newPStoreHandler(
 			stats.ApplicationList(),
-			consumerBuilders[i])
+			consumerBuilders[i],
+			memoryManager)
 		result[i] = pstoreHandler.TotalCount()
 		var attributes pstore.ConsumerAttributes
 		pstoreHandler.Attributes(&attributes)
@@ -930,20 +985,24 @@ func main() {
 		logger.Println(err)
 	}
 	appList := createApplicationList()
-	applicationStats := createApplicationStats(appList, logger)
+	memoryManager := createMemoryManager(logger)
+	applicationStats := createApplicationStats(
+		appList, logger, memoryManager)
 	connectionErrors := newConnectionErrorsType()
 	if consumerBuilders == nil {
 		startCollector(
-			applicationStats, connectionErrors, nil)
+			applicationStats, connectionErrors, nil, memoryManager)
 	} else {
 		totalCounts := startPStoreLoops(
 			applicationStats,
 			consumerBuilders,
+			memoryManager,
 			logger)
 		startCollector(
 			applicationStats,
 			connectionErrors,
-			totalCounts)
+			totalCounts,
+			memoryManager)
 	}
 
 	http.Handle(

@@ -144,6 +144,9 @@ func (c ConsumerConfig) newConsumerBuilder(
 	if c.Concurrency < 1 {
 		c.Concurrency = 1
 	}
+	if c.RollUpSpan < 0 {
+		c.RollUpSpan = 0
+	}
 	writer, err := d.NewThrottledWriter(wf)
 	if err != nil {
 		return
@@ -151,6 +154,7 @@ func (c ConsumerConfig) newConsumerBuilder(
 	result = pstore.NewConsumerWithMetricsBuilder(writer)
 	result.SetConcurrency(c.Concurrency)
 	result.SetBufferSize(c.BatchSize)
+	result.SetRollUpSpan(c.RollUpSpan)
 	result.SetName(c.Name)
 	return
 }

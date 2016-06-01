@@ -73,6 +73,15 @@ func (s *Store) namedIteratorForEndpoint(
 	return s.byApplication[endpointId].NewNamedIterator(name, maxFrames)
 }
 
+func (s *Store) namedIteratorForEndpointRollUp(
+	name string,
+	endpointId interface{},
+	duration time.Duration,
+	maxFrames int) NamedIterator {
+	return s.byApplication[endpointId].NewNamedIteratorRollUp(
+		name, float64(duration)/float64(time.Second), maxFrames)
+}
+
 func (s *Store) byEndpoint(
 	endpointId interface{},
 	start, end float64,

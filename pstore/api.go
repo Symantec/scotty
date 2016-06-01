@@ -255,17 +255,6 @@ func (s *ConsumerMetricsStore) Metrics(m *ConsumerMetrics) {
 	s.metrics(m)
 }
 
-// ConsumerMetricsStoreList represents an immutable slice of
-// ConsumerMetricStore instances.
-// ConsumerMetricStoreList instances are safe to use with multiple goroutines.
-type ConsumerMetricsStoreList []*ConsumerMetricsStore
-
-// UpdateCounts updates the total record count for all consumers.
-// UpdateCount consumes all values from n and commits n.
-func (s ConsumerMetricsStoreList) UpdateCounts(n store.NamedIterator) {
-	s.updateCounts(n)
-}
-
 // ConsumerAttributes represent the unchanging attributes of a particular
 // ConsumerWithMetrics instance.
 type ConsumerAttributes struct {
@@ -275,6 +264,13 @@ type ConsumerAttributes struct {
 	BatchSize int
 	// The maximum records per second per goroutine. 0 means unlimited.
 	RecordsPerSecond int
+	// The time period length for rolled up values.
+	// A value bigger than 0 means that client should feed this consumer
+	// store.NamedIterator instances that report summarised values for
+	// the same time period length. 0 means client should feed this
+	// consumer store.NamedIterator instances that report all metric
+	// values.
+	RollUpSpan time.Duration
 }
 
 // TotalRecordsPerSecond returns RecordsPerSecond * Concurrency
@@ -353,6 +349,16 @@ func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency int) {
 		panic("positive, non-zero concurrency required.")
 	}
 	(*b.c).attributes.Concurrency = concurrency
+}
+
+// SetRollUpSpan sets the length of time periods for rolled up values
+// Other than setting RollUpSpan consumer attribute, this method has
+// no effect on built consumer.
+func (b *ConsumerWithMetricsBuilder) SetRollUpSpan(dur time.Duration) {
+	if dur < 0 {
+		panic("Non-negative duration required.")
+	}
+	(*b.c).attributes.RollUpSpan = dur
 }
 
 // SetName sets the name of the consumer. Default is the empty string.

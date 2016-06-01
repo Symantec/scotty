@@ -320,23 +320,6 @@ func (s *ConsumerMetricsStore) addToRecordCount(count uint64) {
 	s.recordCount += count
 }
 
-func (s ConsumerMetricsStoreList) updateCounts(
-	iterator store.NamedIterator) {
-	var r store.Record
-	tempCounts := make([]uint64, len(s))
-	for iterator.Next(&r) {
-		for i := range s {
-			if s[i].Filter(&r) {
-				tempCounts[i]++
-			}
-		}
-	}
-	iterator.Commit()
-	for i := range s {
-		s[i].AddToRecordCount(tempCounts[i])
-	}
-}
-
 func toFilterer(typeFilter func(types.Type) bool) store.Filterer {
 	f := func(r *store.Record) bool {
 		return typeFilter(r.Info.Kind()) && r.Active

@@ -162,6 +162,43 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 	return
 }
 
+// a totalCountType instance updates the total count of values to write in a
+// parituclar pstoreHandlerType instance.
+// Unlike pstoreHandlerType, these instances are safe to use with
+// multiple goroutines with one caveat. See documentation for Update.
+type totalCountType struct {
+	metrics    *pstore.ConsumerMetricsStore
+	name       string
+	rollUpSpan time.Duration
+}
+
+func (t *totalCountType) iteratorName() string {
+	return fmt.Sprintf("%s/%s", kCollectorIteratorName, t.name)
+}
+
+// Update adds any new, uncounted values in for given endpointId in given
+// store to this total count.
+//
+// Although these instances are safe to use with multiple gorutines,
+// multiple goroutines should not call Update on the same instance for
+// the same store and endpointId as this would cause data races over what
+// values are new and uncounted. However, it is fine for multiple goroutines
+// to call Update on the same instance for different endpointIds.
+func (t *totalCountType) Update(
+	theStore *store.Store, endpointId interface{}) {
+	var r store.Record
+	var tempCount uint64
+	iterator := createNamedIterator(
+		theStore, endpointId, t.iteratorName(), t.rollUpSpan)
+	for iterator.Next(&r) {
+		if t.metrics.Filter(&r) {
+			tempCount++
+		}
+	}
+	iterator.Commit()
+	t.metrics.AddToRecordCount(tempCount)
+}
+
 // pstoreHandlerType implements store.Visitor.
 // Its Visit method writes the latest values for each endpoint to
 // persistent storage. It uses a pstore.Consumer to buffer writes to
@@ -210,17 +247,23 @@ func (p *pstoreHandlerType) Visit(
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
-	iterator := theStore.NamedIteratorForEndpoint(
-		fmt.Sprintf("%s/%s", kPStoreIteratorName, p.Name()),
-		endpointId,
-		kLookAheadWritingToPStore,
-	)
+	iterator := p.namedIterator(theStore, endpointId)
 	p.consumer.Write(iterator, hostName, appName)
 	return nil
 }
 
-func (p *pstoreHandlerType) Metrics(m *pstore.ConsumerMetrics) {
-	p.consumer.MetricsStore().Metrics(m)
+func (p *pstoreHandlerType) Attributes(attributes *pstore.ConsumerAttributes) {
+	p.consumer.Attributes(attributes)
+}
+
+func (p *pstoreHandlerType) TotalCount() *totalCountType {
+	var attributes pstore.ConsumerAttributes
+	p.Attributes(&attributes)
+	return &totalCountType{
+		metrics:    p.ConsumerMetricsStore(),
+		name:       p.Name(),
+		rollUpSpan: attributes.RollUpSpan,
+	}
 }
 
 func (p *pstoreHandlerType) ConsumerMetricsStore() *pstore.ConsumerMetricsStore {
@@ -231,10 +274,11 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	var attributes pstore.ConsumerAttributes
 	p.consumer.Attributes(&attributes)
 	var data pstore.ConsumerMetrics
+	metricsStore := p.ConsumerMetricsStore()
 	group := tricorder.NewGroup()
 	group.RegisterUpdateFunc(
 		func() time.Time {
-			p.Metrics(&data)
+			metricsStore.Metrics(&data)
 			return time.Now()
 		})
 	if err = tricorder.RegisterMetric(
@@ -323,6 +367,42 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	return
 }
 
+func (p *pstoreHandlerType) iteratorName() string {
+	return fmt.Sprintf("%s/%s", kPStoreIteratorName, p.Name())
+}
+
+func (p *pstoreHandlerType) namedIterator(
+	theStore *store.Store,
+	endpointId interface{}) store.NamedIterator {
+	var attributes pstore.ConsumerAttributes
+	p.Attributes(&attributes)
+	return createNamedIterator(
+		theStore,
+		endpointId,
+		p.iteratorName(),
+		attributes.RollUpSpan)
+}
+
+func createNamedIterator(
+	theStore *store.Store,
+	endpointId interface{},
+	iteratorName string,
+	rollUpSpan time.Duration) store.NamedIterator {
+	if rollUpSpan == 0 {
+		return theStore.NamedIteratorForEndpoint(
+			iteratorName,
+			endpointId,
+			kLookAheadWritingToPStore,
+		)
+	}
+	return theStore.NamedIteratorForEndpointRollUp(
+		iteratorName,
+		endpointId,
+		rollUpSpan,
+		kLookAheadWritingToPStore,
+	)
+}
+
 // logger implements the scotty.Logger interface
 // keeping track of collection statistics
 type loggerType struct {
@@ -333,7 +413,7 @@ type loggerType struct {
 	CollectionTimesDist *tricorder.CumulativeDistribution
 	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
-	newValuesConsumer   pstore.ConsumerMetricsStoreList
+	totalCounts         []*totalCountType
 }
 
 func (l *loggerType) LogStateChange(
@@ -370,10 +450,10 @@ func (l *loggerType) LogResponse(
 	if ok {
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
-		if l.newValuesConsumer != nil {
-			namedIterator := l.Store.NamedIteratorForEndpoint(
-				kCollectorIteratorName, e, 0)
-			l.newValuesConsumer.UpdateCounts(namedIterator)
+		if l.totalCounts != nil {
+			for i := range l.totalCounts {
+				l.totalCounts[i].Update(l.Store, e)
+			}
 		}
 	}
 }
@@ -689,7 +769,7 @@ func createApplicationStats(
 func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
-	newValuesConsumer pstore.ConsumerMetricsStoreList) {
+	totalCounts []*totalCountType) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -750,7 +830,7 @@ func startCollector(
 				CollectionTimesDist: collectionTimesDist,
 				ByProtocolDist:      byProtocolDist,
 				ChangedMetricsDist:  changedMetricsPerEndpointDist,
-				newValuesConsumer:   newValuesConsumer,
+				totalCounts:         totalCounts,
 			}
 			sweepTime := time.Now()
 			for _, endpoint := range endpoints {
@@ -768,17 +848,23 @@ func startCollector(
 func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
 	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
-	logger *log.Logger) pstore.ConsumerMetricsStoreList {
-	result := make(pstore.ConsumerMetricsStoreList, len(consumerBuilders))
+	logger *log.Logger) []*totalCountType {
+	result := make([]*totalCountType, len(consumerBuilders))
 	for i := range result {
 		pstoreHandler := newPStoreHandler(
 			stats.ApplicationList(),
 			consumerBuilders[i])
-		result[i] = pstoreHandler.ConsumerMetricsStore()
+		result[i] = pstoreHandler.TotalCount()
+		var attributes pstore.ConsumerAttributes
+		pstoreHandler.Attributes(&attributes)
+		refreshRate := *fPStoreUpdateFrequency
+		if attributes.RollUpSpan > 0 {
+			refreshRate = attributes.RollUpSpan
+		}
 		if err := pstoreHandler.RegisterMetrics(); err != nil {
 			log.Fatal(err)
 		}
-		go func(handler *pstoreHandlerType) {
+		go func(handler *pstoreHandlerType, refreshRate time.Duration) {
 			// persistent storage writing goroutine. Write every 30s by default.
 			// Notice that this single goroutine handles all the persistent
 			// storage writing as multiple goroutines must not access the
@@ -791,11 +877,11 @@ func startPStoreLoops(
 				metricStore.VisitAllEndpoints(handler)
 				handler.EndVisit()
 				writeDuration := time.Now().Sub(writeTime)
-				if writeDuration < *fPStoreUpdateFrequency {
-					time.Sleep((*fPStoreUpdateFrequency) - writeDuration)
+				if writeDuration < refreshRate {
+					time.Sleep(refreshRate - writeDuration)
 				}
 			}
-		}(pstoreHandler)
+		}(pstoreHandler, refreshRate)
 	}
 	return result
 }
@@ -850,14 +936,14 @@ func main() {
 		startCollector(
 			applicationStats, connectionErrors, nil)
 	} else {
-		consumerMetricStoreList := startPStoreLoops(
+		totalCounts := startPStoreLoops(
 			applicationStats,
 			consumerBuilders,
 			logger)
 		startCollector(
 			applicationStats,
 			connectionErrors,
-			consumerMetricStoreList)
+			totalCounts)
 	}
 
 	http.Handle(

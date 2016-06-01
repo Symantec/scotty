@@ -2,7 +2,6 @@
 package metrics
 
 import (
-	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"time"
 )
@@ -10,20 +9,20 @@ import (
 // Value represents a single metric value.
 type Value struct {
 	// Required. The name of the metric. For tricorder metrics, this is
-	// the metric path.
+	// the metric path. This field must be unique across a list of metrics.
 	Path string
 	// Optional. The description of the metric.
 	Description string
-	// Required. The unit of the metric. Will be units.None if unknown.
+	// Optional. The unit of the metric.
 	Unit units.Unit
-	// Required. The kind of the metric.
-	Kind types.Type
-	// Optional. The number of bits.
-	Bits int
 	// Required. Value is the value of the metric. The type stored in
-	// value depends on Kind according to the tricorder documentation.
+	// value must be one of the following:
+	// bool, int8, int16, int32, int64, uint8, uint16, uint32, uint64,
+	// float32, float64, string, time.Time, time.Duration, or
+	// tricorder/go/tricorder/messages.Distribution
 	Value interface{}
-	// Optional. The timestamp of the value.
+	// Optional. The timestamp of the value. If present in one value in a
+	// list then it is required for ALL values in that same list.
 	TimeStamp time.Time
 	// Optional. The timestamp group ID. Required if TimeStamp is provided.
 	// If a.GroupId == b.GroupId then a.TimeStamp == b.TimeStamp, but
@@ -39,6 +38,11 @@ type List interface {
 	Len() int
 	// Index stores the ith metric at value
 	Index(i int, value *Value)
+}
+
+// VerifyList verifies that the given list adheres to the specification.
+func VerifyList(list List) error {
+	return verifyList(list)
 }
 
 // SimpleList lets a slice of Value instances be a List.

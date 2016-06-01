@@ -56,8 +56,6 @@ func (l listType) Index(i int, result *metrics.Value) {
 	result.Path = l[i].Path
 	result.Description = l[i].Description
 	result.Unit = l[i].Unit
-	result.Kind = l[i].Kind
-	result.Bits = l[i].Bits
 	result.Value = l[i].Value
 	if l[i].TimeStamp == nil {
 		result.TimeStamp = time.Time{}

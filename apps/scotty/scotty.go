@@ -46,7 +46,7 @@ const (
 )
 
 var (
-	gAlloc []byte
+	gAlloc [][]byte
 )
 
 var (
@@ -703,11 +703,25 @@ func totalMemoryUsed() uint64 {
 	return memStats.Alloc
 }
 
+func totalSystemMemory() uint64 {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	return memStats.Sys
+}
+
 type memoryManagerType struct {
 	pagesToUse  int
 	targetAlloc uint64
 	logger      *log.Logger
 	gcCh        chan bool
+}
+
+func allocateMemory(totalMemoryToUse uint64) {
+	chunkSize := totalMemoryToUse/1000 + 1
+	for totalSystemMemory() < (totalMemoryToUse-chunkSize+1)/100*99+1 {
+		chunk := make([]byte, chunkSize)
+		gAlloc = append(gAlloc, chunk)
+	}
 }
 
 func createMemoryManager(logger *log.Logger) *memoryManagerType {
@@ -716,13 +730,13 @@ func createMemoryManager(logger *log.Logger) *memoryManagerType {
 		log.Fatal(err)
 	}
 	if totalMemoryToUse > 0 {
-		gAlloc = make([]byte, totalMemoryToUse)
-		// Do something with our slice so that compiler doesn't
-		// complain or optimise the slice allocation away
-		fmt.Printf(
-			"Total memory: %d\n",
-			totalMemoryToUse+uint64(gAlloc[totalMemoryToUse-1]+gAlloc[0]))
-		logger.Printf("totalMemoryInUse: %d\n", totalMemoryUsed())
+		allocateMemory(totalMemoryToUse)
+		// Adjust totalMemoryToUse with actual memory used at
+		// this point which is slightly smaller because of
+		// system overhead.
+		totalMemoryToUse = totalMemoryUsed()
+		fmt.Printf("totalMemoryInUse: %d\n", totalMemoryToUse)
+		logger.Printf("totalMemoryInUse: %d\n", totalMemoryToUse)
 		gAlloc = nil
 		now := time.Now()
 		runtime.GC()

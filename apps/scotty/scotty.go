@@ -46,10 +46,6 @@ const (
 )
 
 var (
-	gAlloc [][]byte
-)
-
-var (
 	fPort = flag.Int(
 		"portNum",
 		6980,
@@ -716,12 +712,13 @@ type memoryManagerType struct {
 	gcCh        chan bool
 }
 
-func allocateMemory(totalMemoryToUse uint64) {
+func allocateMemory(totalMemoryToUse uint64) (allocatedMemory [][]byte) {
 	chunkSize := totalMemoryToUse/1000 + 1
-	for totalSystemMemory() < (totalMemoryToUse-chunkSize+1)/100*99+1 {
+	for totalSystemMemory() < (totalMemoryToUse-chunkSize+1)/100*99 {
 		chunk := make([]byte, chunkSize)
-		gAlloc = append(gAlloc, chunk)
+		allocatedMemory = append(allocatedMemory, chunk)
 	}
+	return
 }
 
 func createMemoryManager(logger *log.Logger) *memoryManagerType {
@@ -730,14 +727,16 @@ func createMemoryManager(logger *log.Logger) *memoryManagerType {
 		log.Fatal(err)
 	}
 	if totalMemoryToUse > 0 {
-		allocateMemory(totalMemoryToUse)
+		allocatedMemory := allocateMemory(totalMemoryToUse)
 		// Adjust totalMemoryToUse with actual memory used at
 		// this point which is slightly smaller because of
 		// system overhead.
 		totalMemoryToUse = totalMemoryUsed()
-		fmt.Printf("totalMemoryInUse: %d\n", totalMemoryToUse)
-		logger.Printf("totalMemoryInUse: %d\n", totalMemoryToUse)
-		gAlloc = nil
+		// Prevent compiler complaining about unused allocated memory
+		logger.Printf(
+			"totalMemoryInUse: %d\n",
+			totalMemoryToUse+uint64(len(allocatedMemory)*0))
+		allocatedMemory = nil
 		now := time.Now()
 		runtime.GC()
 		logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())

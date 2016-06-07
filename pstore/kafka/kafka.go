@@ -12,6 +12,7 @@ import (
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -279,7 +280,7 @@ func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
 		kTenantId:  s.TenantId,
 		kApiKey:    s.ApiKey,
 		kTimestamp: r.Timestamp.Format(kTimeFormat),
-		kName:      r.Path,
+		kName:      strings.Replace(r.Path, "/", "_", -1),
 		kHost:      r.HostName,
 		kValue:     ToFloat64(r)}
 	for k, v := range r.Tags {

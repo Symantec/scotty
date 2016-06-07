@@ -4,7 +4,6 @@ import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"strings"
 	"time"
 )
 
@@ -228,7 +227,7 @@ func (c *Consumer) write(
 		c.buffer[c.idx] = Record{
 			HostName:  hostName,
 			Tags:      TagGroup{TagAppName: appName},
-			Path:      strings.Replace(r.Info.Path(), "/", "_", -1),
+			Path:      r.Info.Path(),
 			Kind:      r.Info.Kind(),
 			Unit:      r.Info.Unit(),
 			Value:     r.Value,

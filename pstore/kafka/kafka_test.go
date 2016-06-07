@@ -64,7 +64,7 @@ func TestSerializeInt(t *testing.T) {
 		"myApiKey",
 		"2014-05-13T09:53:20.000Z",
 		-59,
-		"/my/path",
+		"_my_path",
 		"ash1",
 		"horse")
 }
@@ -90,7 +90,7 @@ func TestSerializeBool(t *testing.T) {
 		"myApiKey",
 		"2014-05-13T09:53:20.125Z",
 		0,
-		"/my/path/bool",
+		"_my_path_bool",
 		"ash2",
 		"Health")
 
@@ -113,7 +113,7 @@ func TestSerializeBool(t *testing.T) {
 		"myApiKey",
 		"2014-05-13T09:53:20.375Z",
 		1,
-		"/my/path/bools",
+		"_my_path_bools",
 		"ash3",
 		"cat")
 }
@@ -191,7 +191,7 @@ func quickVerifyWithUnit(
 		"myApi",
 		"2014-05-13T09:53:20.875Z",
 		expected,
-		"/my/path/someValue",
+		"_my_path_someValue",
 		"someHost",
 		"someApp")
 

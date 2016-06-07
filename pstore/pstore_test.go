@@ -4,18 +4,29 @@ import (
 	"errors"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
 	"testing"
+	"time"
+)
+
+const (
+	kDescription = "A Description"
+	kPath        = "/some/path"
+)
+
+var (
+	kNow = time.Date(2016, 6, 7, 13, 25, 0, 0, time.Local)
 )
 
 var (
 	kMetricInfo = (&store.MetricInfoBuilder{
 		Bits:        64,
-		Description: "A Description",
+		Description: kDescription,
 		Kind:        types.Int64,
-		Path:        "/some/path",
+		Path:        kPath,
 		Unit:        units.None,
 	}).Build()
 	kWriteError = errors.New("An error")
@@ -127,14 +138,26 @@ func (w *baseWriterForTestingType) VerifyWrite(
 				t.Error("Still expecting records in current write, but no more.")
 				continue
 			}
-			if actual := nextWrite[0].Value; int64(i) != actual {
-				t.Errorf("Expected value %d, got %d", i, actual)
-			}
 			if actual := nextWrite[0].HostName; host != actual {
 				t.Errorf("Expected host %s, got %s", host, actual)
 			}
-			if actual := nextWrite[0].Tags[pstore.TagAppName]; actual != app {
+			if actual := nextWrite[0].Path; kPath != actual {
+				t.Errorf("Expected path %s, got %s", kPath, actual)
+			}
+			if actual := nextWrite[0].Tags[pstore.TagAppName]; app != actual {
 				t.Errorf("Expected app %s, got %s", app, actual)
+			}
+			if actual := nextWrite[0].Kind; types.Int64 != actual {
+				t.Errorf("Expected type %s, got %s", types.Int64, actual)
+			}
+			if actual := nextWrite[0].Unit; units.None != actual {
+				t.Errorf("Expected unit %s, got %s", units.None, actual)
+			}
+			if actual := nextWrite[0].Value; int64(i) != actual {
+				t.Errorf("Expected value %d, got %d", i, actual)
+			}
+			if actual := nextWrite[0].Timestamp; kNow != actual {
+				t.Errorf("Expected timestamp %v, got %v", kNow, actual)
 			}
 			nextWrite = nextWrite[1:]
 		}
@@ -191,6 +214,7 @@ func (n *namedIteratorForTestingType) Next(r *store.Record) bool {
 	}
 	r.Info = kMetricInfo
 	r.Value = int64(n.numWritten)
+	r.TimeStamp = duration.TimeToFloat(kNow)
 	r.Active = true
 	n.numWritten++
 	return true

@@ -546,65 +546,44 @@ func TestRollUpIterator(t *testing.T) {
 		120400.0, 120410.0, 120420.0, 120430.0, // 3rd interval
 		120500.0, // 4th interval
 	)
-	playback.AddTimes(
-		2,
-		96000.0, 96032.0, 96064.0, 96096.0, // 1st
-		96240.0,          // 2nd
-		96400.0, 96420.0, // 3rd
-		96500.0,          // 4th
-		96600.0, 96610.0, // 5th
-	)
 	playback.Add(
 		"Int",
-		int64(23000), // 1st
-		int64(29000),
-		int64(28000),
-		int64(31000), // 2nd
-		int64(32000),
-		int64(35000), // 3rd
-		int64(17000),
-		int64(19000),
-		int64(22001),
+		int64(23000), int64(29000), int64(28000), // 1st
+		int64(31000), int64(32000), // 2nd
+		int64(35000), int64(17000), int64(19000), int64(22001), // 3rd
 		int64(27000), // 4th 10 total
 	)
 	playback.Add(
+		"Inactive",
+		nil, 21.0, 27.0, // 1st
+		nil, nil, // 2nd
+		9.0, nil, 13.0, nil, // 3rd
+		8.3, // 4th 10 total
+	)
+
+	playback.AddTimes(
+		2,
+		96000.0, 96032.0, 96064.0, 96096.0, // 1st interval
+		96240.0,          // 2nd interval
+		96400.0, 96420.0, // 3rd interval
+		96500.0,          // 4th interval
+		96600.0, 96610.0, // 5th interval
+	)
+	playback.Add(
 		"Float",
-		4.75, // 1st
-		5.25,
-		6.25,
-		6.75,
-		9.125, // 2nd
-		1.375, // 3rd
-		2.375,
-		3.1875, // 4th
-		10.0,   // 5th
-		11.0,
+		4.75, 5.25, 6.25, 6.75, // 1st
+		9.125,        // 2nd
+		1.375, 2.375, // 3rd
+		3.1875,     // 4th
+		10.0, 11.0, // 5th
 	)
 	playback.Add(
 		"String",
-		"hello", // 1st
-		"goodbye",
-		"solong",
-		"seeya",
-		"bee",  // 2nd
-		"long", // 3rd
-		"short",
-		"near", // 4th
-		"far",  // 5th
-		"too",
-	)
-	playback.Add(
-		"Inactive",
-		nil, // 1st
-		21.0,
-		27.0,
-		nil, // 2nd
-		nil,
-		9.0, // 3rd
-		nil,
-		13.0,
-		nil,
-		8.3, // 4th 10 total
+		"hello", "goodbye", "solong", "seeya", // 1st
+		"bee",           // 2nd
+		"long", "short", // 3rd
+		"near",       // 4th
+		"far", "too", // 5th
 	)
 	playback.Play(aStore, kEndpoint0)
 
@@ -695,15 +674,16 @@ func TestRollUpIterator(t *testing.T) {
 		120520.0, // 4th cont
 		120600.0, // 5th
 	)
-	playback.AddTimes(
-		2,
-		96623.0, // 5th cont
-		96720.0, // 6th
-	)
 	playback.Add(
 		"Int",
 		int64(29000), // 4th cont
 		int64(33600), // 5th
+	)
+
+	playback.AddTimes(
+		2,
+		96623.0, // 5th cont
+		96720.0, // 6th
 	)
 	playback.Add(
 		"Float",
@@ -850,143 +830,98 @@ func TestIterator(t *testing.T) {
 			GroupId:     2,
 		},
 	}
-	aMetric[0].Value = 0
-	aMetric[1].Value = 1
-	aMetric[2].Value = 2
-	aMetric[3].Value = 3
-	aMetric[0].TimeStamp = floatToTime(100.0)
-	aMetric[1].TimeStamp = floatToTime(100.0)
-	aMetric[2].TimeStamp = floatToTime(102.0)
-	aMetric[3].TimeStamp = floatToTime(102.0)
-	aStore.AddBatch(kEndpoint0, 1000, aMetric[:])
-
-	aMetric[1].Value = 101
-	aMetric[0].TimeStamp = floatToTime(200.0)
-	aMetric[1].TimeStamp = floatToTime(200.0)
-	aMetric[2].TimeStamp = floatToTime(202.0)
-	aMetric[3].TimeStamp = floatToTime(202.0)
-	aStore.AddBatch(kEndpoint0, 1010, aMetric[:])
-
-	aMetric[0].Value = 200
-	aMetric[1].Value = 201
-	aMetric[2].Value = 202
-	aMetric[3].Value = 203
-	aMetric[0].TimeStamp = floatToTime(300.0)
-	aMetric[1].TimeStamp = floatToTime(300.0)
-	aMetric[2].TimeStamp = floatToTime(302.0)
-	aMetric[3].TimeStamp = floatToTime(302.0)
-	aStore.AddBatch(kEndpoint0, 1020, aMetric[:])
-
-	aMetric[2].Value = 302
-	aMetric[0].TimeStamp = floatToTime(400.0)
-	aMetric[1].TimeStamp = floatToTime(400.0)
-	aMetric[2].TimeStamp = floatToTime(402.0)
-	aMetric[3].TimeStamp = floatToTime(402.0)
-	aStore.AddBatch(kEndpoint0, 1030, aMetric[:])
-
-	aMetric[0].Value = 400
-	aMetric[1].Value = 401
-	aMetric[2].Value = 402
-	aMetric[3].Value = 403
-	aMetric[0].TimeStamp = floatToTime(500.0)
-	aMetric[1].TimeStamp = floatToTime(500.0)
-	aMetric[2].TimeStamp = floatToTime(502.0)
-	aMetric[3].TimeStamp = floatToTime(502.0)
-	aStore.AddBatch(kEndpoint0, 1040, aMetric[:])
-
-	// Timestamps for group 0 don't advance
-	aMetric[3].Value = 503
-	aMetric[2].TimeStamp = floatToTime(602.0)
-	aMetric[3].TimeStamp = floatToTime(602.0)
-	aStore.AddBatch(kEndpoint0, 1050, aMetric[:])
-
-	// metric 0 goes missing but timestamps don't advance.
-	aMetric[3].Value = 603
-	aMetric[2].TimeStamp = floatToTime(702.0)
-	aMetric[3].TimeStamp = floatToTime(702.0)
-	aStore.AddBatch(kEndpoint0, 1060, aMetric[1:])
-
-	// This time, timestamps advance but metric 1 goes missing
-	aMetric[0].Value = 700
-	aMetric[3].Value = 703
-	aMetric[0].TimeStamp = floatToTime(800.0)
-	aMetric[1].TimeStamp = floatToTime(800.0)
-	aMetric[2].TimeStamp = floatToTime(802.0)
-	aMetric[3].TimeStamp = floatToTime(802.0)
-	tempMetric := make(metrics.SimpleList, len(aMetric))
-	copy(tempMetric, aMetric)
-	tempMetric[1], tempMetric[0] = tempMetric[0], tempMetric[1]
-	aStore.AddBatch(kEndpoint0, 1070, tempMetric[1:])
-
-	// This time all of group 0 goes missing
-	aMetric[3].Value = 803
-	aMetric[2].TimeStamp = floatToTime(902.0)
-	aMetric[3].TimeStamp = floatToTime(902.0)
-	aStore.AddBatch(kEndpoint0, 1080, aMetric[2:])
-
-	// This time all of group 2 goes missing
-	aMetric[0].Value = 900
-	aMetric[1].Value = 901
-	aMetric[0].TimeStamp = floatToTime(1000.0)
-	aMetric[1].TimeStamp = floatToTime(1000.0)
-	aStore.AddBatch(kEndpoint0, 1090, aMetric[:2])
-
-	// Everything missing
-	aStore.AddBatch(kEndpoint0, 1100, aMetric[:0])
+	playback := newPlaybackType(aMetric[:], 11)
+	playback.AddTimes(
+		0,
+		100.0, 200.0, 300.0, 400.0, 500.0,
+		500.0, 500.0, 800.0, 900.0, 1000.0,
+		1100.0,
+	)
+	playback.Add(
+		"Alice",
+		int64(0), int64(0), int64(200), int64(200), int64(400),
+		int64(400), nil, int64(700), nil, int64(900),
+		nil,
+	)
+	playback.Add(
+		"Bob",
+		int64(1), int64(101), int64(201), int64(201), int64(401),
+		int64(401), int64(401), nil, nil, int64(901),
+		nil,
+	)
+	playback.AddTimes(
+		2,
+		102.0, 202.0, 302.0, 402.0, 502.0,
+		602.0, 702.0, 802.0, 902.0, 1002.0,
+		1102.0,
+	)
+	playback.Add(
+		"Charlie",
+		int32(2), int32(2), int32(202), int32(302), int32(402),
+		int32(402), int32(402), int32(402), int32(402), nil,
+		nil,
+	)
+	playback.Add(
+		"FoxTrot",
+		int64(3), int64(3), int64(203), int64(203), int64(403),
+		int64(503), int64(603), int64(703), int64(803), nil,
+		nil,
+	)
+	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("Alice", 100.0, 0)
-	expected.Add("Bob", 100.0, 1)
-	expected.Add("Charlie", 102.0, 2)
-	expected.Add("FoxTrot", 102.0, 3)
+	expected.Add("Alice", 100.0, int64(0))
+	expected.Add("Bob", 100.0, int64(1))
+	expected.Add("Charlie", 102.0, int32(2))
+	expected.Add("FoxTrot", 102.0, int64(3))
 
-	expected.Add("Alice", 200.0, 0)
-	expected.Add("Bob", 200.0, 101)
-	expected.Add("Charlie", 202.0, 2)
-	expected.Add("FoxTrot", 202.0, 3)
+	expected.Add("Alice", 200.0, int64(0))
+	expected.Add("Bob", 200.0, int64(101))
+	expected.Add("Charlie", 202.0, int32(2))
+	expected.Add("FoxTrot", 202.0, int64(3))
 
-	expected.Add("Alice", 300.0, 200)
-	expected.Add("Bob", 300.0, 201)
-	expected.Add("Charlie", 302.0, 202)
-	expected.Add("FoxTrot", 302.0, 203)
+	expected.Add("Alice", 300.0, int64(200))
+	expected.Add("Bob", 300.0, int64(201))
+	expected.Add("Charlie", 302.0, int32(202))
+	expected.Add("FoxTrot", 302.0, int64(203))
 
-	expected.Add("Alice", 400.0, 200)
-	expected.Add("Bob", 400.0, 201)
-	expected.Add("Charlie", 402.0, 302)
-	expected.Add("FoxTrot", 402.0, 203)
+	expected.Add("Alice", 400.0, int64(200))
+	expected.Add("Bob", 400.0, int64(201))
+	expected.Add("Charlie", 402.0, int32(302))
+	expected.Add("FoxTrot", 402.0, int64(203))
 
-	expected.Add("Alice", 500.0, 400)
-	expected.Add("Bob", 500.0, 401)
-	expected.Add("Charlie", 502.0, 402)
-	expected.Add("FoxTrot", 502.0, 403)
+	expected.Add("Alice", 500.0, int64(400))
+	expected.Add("Bob", 500.0, int64(401))
+	expected.Add("Charlie", 502.0, int32(402))
+	expected.Add("FoxTrot", 502.0, int64(403))
 
-	expected.Add("Alice", 500.0, 400)
-	expected.Add("Bob", 500.0, 401)
-	expected.Add("Charlie", 602.0, 402)
-	expected.Add("FoxTrot", 602.0, 503)
+	expected.Add("Alice", 500.0, int64(400))
+	expected.Add("Bob", 500.0, int64(401))
+	expected.Add("Charlie", 602.0, int32(402))
+	expected.Add("FoxTrot", 602.0, int64(503))
 
 	// Even though alice goes missing, we don't log a missing value
 	// because we already have value 400 for alice at the same
 	// timestamp
-	expected.Add("Alice", 500.0, 400)
-	expected.Add("Bob", 500.0, 401)
-	expected.Add("Charlie", 702.0, 402)
-	expected.Add("FoxTrot", 702.0, 603)
+	expected.Add("Alice", 500.0, int64(400))
+	expected.Add("Bob", 500.0, int64(401))
+	expected.Add("Charlie", 702.0, int32(402))
+	expected.Add("FoxTrot", 702.0, int64(603))
 
-	expected.Add("Alice", 800.0, 700)
+	expected.Add("Alice", 800.0, int64(700))
 	expected.AddInactive("Bob", 800.0, int64(0))
-	expected.Add("Charlie", 802.0, 402)
-	expected.Add("FoxTrot", 802.0, 703)
+	expected.Add("Charlie", 802.0, int32(402))
+	expected.Add("FoxTrot", 802.0, int64(703))
 
 	expected.AddInactive("Alice", 800.001, int64(0))
 	// The Iterator is simple and does not try to filter consecutive
 	// missing flags.
 	expected.AddInactive("Bob", 800.001, int64(0))
-	expected.Add("Charlie", 902.0, 402)
-	expected.Add("FoxTrot", 902.0, 803)
+	expected.Add("Charlie", 902.0, int32(402))
+	expected.Add("FoxTrot", 902.0, int64(803))
 
-	expected.Add("Alice", 1000.0, 900)
-	expected.Add("Bob", 1000.0, 901)
+	expected.Add("Alice", 1000.0, int64(900))
+	expected.Add("Bob", 1000.0, int64(901))
 	expected.AddInactive("Charlie", 902.001, int32(0))
 	expected.AddInactive("FoxTrot", 902.001, int64(0))
 
@@ -1067,9 +1002,9 @@ func TestIterator(t *testing.T) {
 
 	// Now test filtering
 	filteredExpected := newExpectedTsValues()
-	filteredExpected.Add("Alice", 100.0, 0)
-	filteredExpected.Add("Alice", 200.0, 0)
-	filteredExpected.Add("Alice", 300.0, 200)
+	filteredExpected.Add("Alice", 100.0, int64(0))
+	filteredExpected.Add("Alice", 200.0, int64(0))
+	filteredExpected.Add("Alice", 300.0, int64(200))
 
 	iterator = aStore.NamedIteratorForEndpoint(
 		"aThirdIterator", kEndpoint0, 0)

@@ -8,8 +8,6 @@ import (
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
-	"github.com/Symantec/tricorder/go/tricorder/types"
-	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
 	"reflect"
 	"sort"
@@ -139,34 +137,22 @@ func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
 		{
 			Path:        "/foo/first",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/second",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/third",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/fourth",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
 	for i := range aMetric {
-		aMetric[i].Value = i
+		aMetric[i].Value = int64(i)
 	}
 	for i := range endpoints {
 		s.AddBatch(endpoints[i], 1.0, aMetric[:])
@@ -232,7 +218,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	assertValueEquals(t, 35, endpointId.Port())
 
 	// Trying to add to inactive endpoint should fail
-	if _, ok := aStore.AddBatch(endpointId, 9999.0, nil); ok {
+	if _, err := aStore.AddBatch(endpointId, 9999.0, metrics.SimpleList(nil)); err != store.ErrInactive {
 		t.Error("Adding to inactive endpoint should fail.")
 	}
 
@@ -295,7 +281,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	var noMetrics metrics.SimpleList
 
 	// Trying to add to active endpoint should succeed
-	if _, ok := aStore.AddBatch(endpointId, 9999.0, noMetrics); !ok {
+	if _, err := aStore.AddBatch(endpointId, 9999.0, noMetrics); err != nil {
 		t.Error("Adding to active endpoint should succeed.")
 	}
 
@@ -415,16 +401,13 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 		{
 			Path:        "/foo",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
 	appStatus.MarkHostsActiveExclusively(
 		10.0,
 		[]string{"host1", "host2", "host3"})
 
-	aMetric[0].Value = 50
+	aMetric[0].Value = int64(50)
 
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
@@ -438,7 +421,7 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 		"host3", "AnApp")
 	aStore.AddBatch(endpointId, 100.0, aMetric[:])
 
-	aMetric[0].Value = 55
+	aMetric[0].Value = int64(55)
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
@@ -452,7 +435,7 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 		"host3", "AnApp")
 	aStore.AddBatch(endpointId, 110.0, aMetric[:])
 
-	aMetric[0].Value = 60
+	aMetric[0].Value = int64(60)
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
@@ -466,7 +449,7 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 		120.0,
 		[]string{"host1", "host2"})
 
-	aMetric[0].Value = 65
+	aMetric[0].Value = int64(65)
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")

@@ -143,7 +143,6 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 				e.logError(err, state, logger)
 				return
 			}
-			state = state.goToSynced(time.Now())
 			e.logMetrics(metrics, state, logger)
 		}(state)
 	default:
@@ -159,13 +158,26 @@ func (e *Endpoint) logState(state *State, logger Logger) {
 }
 
 func (e *Endpoint) logMetrics(metrics metrics.List, state *State, logger Logger) {
+	syncTime := time.Now()
+	if logger != nil {
+		err := logger.LogResponse(e, metrics, syncTime)
+		if err != nil {
+			newState := state.goToFailedToPoll(syncTime)
+			e.logError(err, newState, logger)
+			return
+		}
+	}
+	newState := state.goToSynced(syncTime)
+	e.logNoError(newState, logger)
+}
+
+func (e *Endpoint) logNoError(state *State, logger Logger) {
 	oldState, hadError := e._setError(state, false)
 	if logger != nil {
 		logger.LogStateChange(e, oldState, state)
 		if hadError {
 			logger.LogError(e, nil, nil)
 		}
-		logger.LogResponse(e, metrics, state)
 	}
 }
 

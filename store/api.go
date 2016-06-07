@@ -2,10 +2,16 @@
 package store
 
 import (
+	"errors"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"time"
+)
+
+var (
+	// AddBatch returns ErrInactive if endpoint is marked inactive.
+	ErrInactive = errors.New("store: endpoint inactive.")
 )
 
 // MetricInfo represents the meta data for a metric
@@ -278,7 +284,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 
 // AddBatch adds metric values.
 // AddBatch returns the total number of metric values added including any
-// inactive flags. If endpoint is inactive, AddBatch returns ok = false.
+// inactive flags. If endpoint is inactive, AddBatch returns err = ErrInactive.
 // AddBatch uses timestamp for all new values in metricList.
 // timestamp is seconds since Jan 1, 1970 GMT.
 // If a time series already in the given endpoint does not have a new value
@@ -293,7 +299,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
-	metricList metrics.List) (numAdded int, ok bool) {
+	metricList metrics.List) (numAdded int, err error) {
 	return s.addBatch(endpointId, timestamp, metricList)
 }
 

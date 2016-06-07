@@ -68,7 +68,7 @@ func (p *playbackType) Add(path string, values ...interface{}) {
 	p.values[idx] = values
 }
 
-func (p *playbackType) Play(aStore *store.Store, endpointId interface{}) {
+func (p *playbackType) Play(aStore *store.Store, endpointId interface{}) error {
 	for i := 0; i < p.valueCount; i++ {
 		var cmetrics metrics.SimpleList
 		for j := range p.values {
@@ -86,8 +86,11 @@ func (p *playbackType) Play(aStore *store.Store, endpointId interface{}) {
 				cmetrics = append(cmetrics, aValue)
 			}
 		}
-		aStore.AddBatch(endpointId, 1000.0, cmetrics)
+		if _, err := aStore.AddBatch(endpointId, 1000.0, cmetrics); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 type limitIteratorType struct {
@@ -107,10 +110,10 @@ func iteratorLimit(wrapped store.Iterator, limit int) store.Iterator {
 	return &limitIteratorType{limit: limit, wrapped: wrapped}
 }
 
-type sumMetricsType int
+type sumMetricsType int64
 
 func (s *sumMetricsType) Append(r *store.Record) bool {
-	*s += sumMetricsType(r.Value.(int))
+	*s += sumMetricsType(r.Value.(int64))
 	return true
 }
 
@@ -189,28 +192,25 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
 
-	aMetric[0].Value = 1
+	aMetric[0].Value = int64(1)
 	aStore.AddBatch(kEndpoint0, 100.0, aMetric[:])
-	aMetric[0].Value = 2
+	aMetric[0].Value = int64(2)
 	aStore.AddBatch(kEndpoint0, 107.0, aMetric[:])
-	aMetric[0].Value = 3
+	aMetric[0].Value = int64(3)
 	aStore.AddBatch(kEndpoint0, 114.0, aMetric[:])
-	aMetric[0].Value = 4
+	aMetric[0].Value = int64(4)
 	aStore.AddBatch(kEndpoint0, 121.0, aMetric[:])
 
-	aMetric[0].Value = 11
+	aMetric[0].Value = int64(11)
 	aStore.AddBatch(kEndpoint1, 100.0, aMetric[:])
-	aMetric[0].Value = 12
+	aMetric[0].Value = int64(12)
 	aStore.AddBatch(kEndpoint1, 107.0, aMetric[:])
-	aMetric[0].Value = 13
+	aMetric[0].Value = int64(13)
 	aStore.AddBatch(kEndpoint1, 114.0, aMetric[:])
-	aMetric[0].Value = 14
+	aMetric[0].Value = int64(14)
 	aStore.AddBatch(kEndpoint1, 121.0, aMetric[:])
 
 	var total sumMetricsType
@@ -429,18 +429,10 @@ func TestIteratorPageEviction(t *testing.T) {
 		{
 			Path:        "Alice",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
-			GroupId:     0,
 		},
 		{
 			Path:        "Bob",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
-			GroupId:     0,
 		},
 	}
 	// 2 endpoints 5 distinct values per endpoint = 2 * 2 = 4 pages
@@ -510,31 +502,21 @@ func TestRollUpIterator(t *testing.T) {
 		{
 			Path:        "Int",
 			Description: "An int",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 			GroupId:     0,
 		},
 		{
 			Path:        "Float",
 			Description: "A float",
-			Unit:        units.None,
-			Kind:        types.Float64,
-			Bits:        64,
 			GroupId:     2,
 		},
 		{
 			Path:        "String",
 			Description: "A string",
-			Unit:        units.None,
-			Kind:        types.String,
 			GroupId:     2,
 		},
 		{
 			Path:        "Inactive",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Float64,
 			GroupId:     0,
 		},
 	}
@@ -718,10 +700,6 @@ func TestRollUpIteratorBool(t *testing.T) {
 		{
 			Path:        "path",
 			Description: "A bool",
-			Unit:        units.None,
-			Kind:        types.Bool,
-			Bits:        0,
-			GroupId:     0,
 		},
 	}
 	playback := newPlaybackType(aMetric[:], 8)
@@ -759,10 +737,6 @@ func TestRollUpIteratorInt8(t *testing.T) {
 		{
 			Path:        "path",
 			Description: "An int",
-			Unit:        units.None,
-			Kind:        types.Int8,
-			Bits:        0,
-			GroupId:     0,
 		},
 	}
 	playback := newPlaybackType(aMetric[:], 8)
@@ -800,33 +774,21 @@ func TestIterator(t *testing.T) {
 		{
 			Path:        "Alice",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 			GroupId:     0,
 		},
 		{
 			Path:        "Bob",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 			GroupId:     0,
 		},
 		{
 			Path:        "Charlie",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int32,
-			Bits:        32,
 			GroupId:     2,
 		},
 		{
 			Path:        "FoxTrot",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 			GroupId:     2,
 		},
 	}
@@ -1022,6 +984,118 @@ func TestIterator(t *testing.T) {
 	filteredExpected.Iterate(t, iterator)
 }
 
+func TestMissingValue(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	// Missing value.
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "No value",
+			Description: "no value",
+		},
+	}
+	if _, err := aStore.AddBatch(
+		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		t.Error("Expected error, missing value")
+	}
+}
+
+func TestDuplicateValue(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	// duplicate value.
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Duplicate",
+			Description: "duplicate",
+			Value:       int64(97),
+		},
+		{
+			Path:        "Duplicate",
+			Description: "duplicate",
+			Value:       int64(97),
+		},
+	}
+	if _, err := aStore.AddBatch(
+		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		t.Error("Expected error, duplicate value")
+	}
+}
+
+func TestBadValue(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	// bad value.
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Bad value",
+			Description: "bad value",
+			Value:       92,
+		},
+	}
+	if _, err := aStore.AddBatch(
+		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		t.Error("Expected error, bad value")
+	}
+}
+
+func TestMetaData(t *testing.T) {
+	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "None",
+			Description: "none",
+		},
+		{
+			Path:        "Second",
+			Description: "second",
+			Unit:        units.Second,
+			GroupId:     3,
+		},
+	}
+	playback := newPlaybackType(aMetric[:], 1)
+	playback.AddTimes(
+		0,
+		1000.0,
+	)
+	playback.Add(
+		"None",
+		uint8(17),
+	)
+	playback.AddTimes(
+		3,
+		1000.0,
+	)
+	playback.Add(
+		"Second",
+		float32(62.5),
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	var result []store.Record
+	aStore.ByNameAndEndpoint(
+		"None", kEndpoint0, 0.0, 2000.0, store.AppendTo(&result))
+	assertValueEquals(t, 1, len(result))
+	assertValueEquals(t, "None", result[0].Info.Path())
+	assertValueEquals(t, 8, result[0].Info.Bits())
+	assertValueEquals(t, "none", result[0].Info.Description())
+	assertValueEquals(t, 0, result[0].Info.GroupId())
+	assertValueEquals(t, types.Uint8, result[0].Info.Kind())
+	assertValueEquals(t, units.None, result[0].Info.Unit())
+
+	result = nil
+	aStore.ByNameAndEndpoint(
+		"Second", kEndpoint0, 0.0, 2000.0, store.AppendTo(&result))
+	assertValueEquals(t, 1, len(result))
+	assertValueEquals(t, "Second", result[0].Info.Path())
+	assertValueEquals(t, 32, result[0].Info.Bits())
+	assertValueEquals(t, "second", result[0].Info.Description())
+	assertValueEquals(t, 3, result[0].Info.GroupId())
+	assertValueEquals(t, types.Float32, result[0].Info.Kind())
+	assertValueEquals(t, units.Second, result[0].Info.Unit())
+}
+
 func TestIndivMetricGoneInactive(t *testing.T) {
 	aStore := store.NewStore(1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -1029,43 +1103,34 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/baz",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/32bit",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int32,
-			Bits:        32,
 		},
 	}
-	aMetric[0].Value = 3
-	aMetric[1].Value = 8
+	aMetric[0].Value = int64(3)
+	aMetric[1].Value = int64(8)
 	aStore.AddBatch(kEndpoint0, 1000, aMetric[0:2])
-	aMetric[0].Value = 13
-	aMetric[1].Value = 18
+	aMetric[0].Value = int64(13)
+	aMetric[1].Value = int64(18)
 	aStore.AddBatch(kEndpoint0, 1010, aMetric[0:2])
-	aMetric[0].Value = 23
-	aMetric[1].Value = 28
+	aMetric[0].Value = int64(23)
+	aMetric[1].Value = int64(28)
 	aStore.AddBatch(kEndpoint0, 1020, aMetric[0:2])
 
 	// foo/bar metric inactive now
-	aMetric[1].Value = 38
-	aMetric[2].Value = 39
+	aMetric[1].Value = int64(38)
+	aMetric[2].Value = int32(39)
 	aStore.AddBatch(kEndpoint0, 1030, aMetric[1:3])
 
 	// foo/32bit inactive now
-	aMetric[0].Value = 43
-	aMetric[1].Value = 48
+	aMetric[0].Value = int64(43)
+	aMetric[1].Value = int64(48)
 	aStore.AddBatch(kEndpoint0, 1040, aMetric[0:2])
 
 	var result []store.Record
@@ -1074,13 +1139,13 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 
 	assertValueEquals(t, 3, len(result))
 	assertValueEquals(t, 1040.0, result[0].TimeStamp)
-	assertValueEquals(t, 43, result[0].Value)
+	assertValueEquals(t, int64(43), result[0].Value)
 	assertValueEquals(t, true, result[0].Active)
 	assertValueEquals(t, 1030.0, result[1].TimeStamp)
 	assertValueEquals(t, int64(0), result[1].Value)
 	assertValueEquals(t, false, result[1].Active)
 	assertValueEquals(t, 1020.0, result[2].TimeStamp)
-	assertValueEquals(t, 23, result[2].Value)
+	assertValueEquals(t, int64(23), result[2].Value)
 	assertValueEquals(t, true, result[2].Active)
 
 	result = nil
@@ -1092,7 +1157,7 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 	assertValueEquals(t, int32(0), result[0].Value)
 	assertValueEquals(t, false, result[0].Active)
 	assertValueEquals(t, 1030.0, result[1].TimeStamp)
-	assertValueEquals(t, 39, result[1].Value)
+	assertValueEquals(t, int32(39), result[1].Value)
 	assertValueEquals(t, true, result[1].Active)
 }
 
@@ -1104,33 +1169,27 @@ func TestMachineGoneInactive(t *testing.T) {
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/baz",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
-	aMetric[0].Value = 6
-	aMetric[1].Value = 8
+	aMetric[0].Value = int64(6)
+	aMetric[1].Value = int64(8)
 	aStore.AddBatch(kEndpoint0, 900, aMetric[:])
-	aMetric[0].Value = 16
-	aMetric[1].Value = 18
+	aMetric[0].Value = int64(16)
+	aMetric[1].Value = int64(18)
 	aStore.AddBatch(kEndpoint0, 910, aMetric[:])
 
-	aMetric[0].Value = 1
-	aMetric[1].Value = 2
+	aMetric[0].Value = int64(1)
+	aMetric[1].Value = int64(2)
 	aStore.AddBatch(kEndpoint1, 1900, aMetric[:])
-	aMetric[0].Value = 11
-	aMetric[1].Value = 12
+	aMetric[0].Value = int64(11)
+	aMetric[1].Value = int64(12)
 	aStore.AddBatch(kEndpoint1, 1910, aMetric[:])
-	aMetric[0].Value = 11
-	aMetric[1].Value = 22
+	aMetric[0].Value = int64(11)
+	aMetric[1].Value = int64(22)
 	aStore.AddBatch(kEndpoint1, 1920, aMetric[:])
 
 	// The timestamp here doesn't matter.
@@ -1144,10 +1203,10 @@ func TestMachineGoneInactive(t *testing.T) {
 
 	assertValueEquals(t, 2, len(result))
 	assertValueEquals(t, 910.0, result[0].TimeStamp)
-	assertValueEquals(t, 16, result[0].Value)
+	assertValueEquals(t, int64(16), result[0].Value)
 	assertValueEquals(t, true, result[0].Active)
 	assertValueEquals(t, 900.0, result[1].TimeStamp)
-	assertValueEquals(t, 6, result[1].Value)
+	assertValueEquals(t, int64(6), result[1].Value)
 	assertValueEquals(t, true, result[1].Active)
 
 	result = nil
@@ -1159,10 +1218,10 @@ func TestMachineGoneInactive(t *testing.T) {
 		assertValueEquals(t, int64(0), result[0].Value)
 		assertValueEquals(t, false, result[0].Active)
 		assertValueEquals(t, 1910.0, result[1].TimeStamp)
-		assertValueEquals(t, 11, result[1].Value)
+		assertValueEquals(t, int64(11), result[1].Value)
 		assertValueEquals(t, true, result[1].Active)
 		assertValueEquals(t, 1900.0, result[2].TimeStamp)
-		assertValueEquals(t, 1, result[2].Value)
+		assertValueEquals(t, int64(1), result[2].Value)
 		assertValueEquals(t, true, result[2].Active)
 	}
 
@@ -1175,24 +1234,24 @@ func TestMachineGoneInactive(t *testing.T) {
 		assertValueEquals(t, int64(0), result[0].Value)
 		assertValueEquals(t, false, result[0].Active)
 		assertValueEquals(t, 1920.0, result[1].TimeStamp)
-		assertValueEquals(t, 22, result[1].Value)
+		assertValueEquals(t, int64(22), result[1].Value)
 		assertValueEquals(t, true, result[1].Active)
 		assertValueEquals(t, 1910.0, result[2].TimeStamp)
-		assertValueEquals(t, 12, result[2].Value)
+		assertValueEquals(t, int64(12), result[2].Value)
 		assertValueEquals(t, true, result[2].Active)
 		assertValueEquals(t, 1900.0, result[3].TimeStamp)
-		assertValueEquals(t, 2, result[3].Value)
+		assertValueEquals(t, int64(2), result[3].Value)
 		assertValueEquals(t, true, result[3].Active)
 	}
 
 	expectedTsValues := newExpectedTsValues()
-	expectedTsValues.Add("/foo/bar", 1900.0, 1)
-	expectedTsValues.Add("/foo/bar", 1910.0, 11)
-	expectedTsValues.Add("/foo/bar", 1920.0, 11)
+	expectedTsValues.Add("/foo/bar", 1900.0, int64(1))
+	expectedTsValues.Add("/foo/bar", 1910.0, int64(11))
+	expectedTsValues.Add("/foo/bar", 1920.0, int64(11))
 	expectedTsValues.AddInactive("/foo/bar", 1920.001, int64(0))
-	expectedTsValues.Add("/foo/baz", 1900.0, 2)
-	expectedTsValues.Add("/foo/baz", 1910.0, 12)
-	expectedTsValues.Add("/foo/baz", 1920.0, 22)
+	expectedTsValues.Add("/foo/baz", 1900.0, int64(2))
+	expectedTsValues.Add("/foo/baz", 1910.0, int64(12))
+	expectedTsValues.Add("/foo/baz", 1920.0, int64(22))
 	expectedTsValues.AddInactive("/foo/baz", 1920.001, int64(0))
 
 	iterator := aStore.NamedIteratorForEndpoint("aname", kEndpoint1, 0)
@@ -1202,11 +1261,11 @@ func TestMachineGoneInactive(t *testing.T) {
 
 	var noMetrics metrics.SimpleList
 
-	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); ok {
+	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); err != store.ErrInactive {
 		t.Error("Expected AddBatch to fail")
 	}
 	aStore.MarkEndpointActive(kEndpoint1)
-	if _, ok := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); !ok {
+	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); err != nil {
 		t.Error("Expected AddBatch to succeed")
 	}
 }
@@ -1226,20 +1285,17 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
-	aMetric[0].Value = 12
+	aMetric[0].Value = int64(12)
 	aStore.AddBatch(kEndpoint0, 1200.0, aMetric[:])
-	aMetric[0].Value = 13
+	aMetric[0].Value = int64(13)
 	aStore.AddBatch(kEndpoint0, 1300.0, aMetric[:])
-	aMetric[0].Value = 14
+	aMetric[0].Value = int64(14)
 	aStore.AddBatch(kEndpoint0, 1400.0, aMetric[:])
-	aMetric[0].Value = 15
+	aMetric[0].Value = int64(15)
 	aStore.AddBatch(kEndpoint0, 1500.0, aMetric[:])
-	aMetric[0].Value = 16
+	aMetric[0].Value = int64(16)
 	aStore.AddBatch(kEndpoint0, 1600.0, aMetric[:])
 	// Re-add 5th value. Oldest value now 14, not 12.
 	aStore.AddBatch(kEndpoint0, 1700.0, aMetric[:])
@@ -1253,10 +1309,10 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	expectedTsValues.VerifyDone(t)
 
 	expectedTsValues = newExpectedTsValues()
-	expectedTsValues.Add("/foo/bar", 1400.0, 14)
-	expectedTsValues.Add("/foo/bar", 1500.0, 15)
-	expectedTsValues.Add("/foo/bar", 1600.0, 16)
-	expectedTsValues.Add("/foo/bar", 1700.0, 16)
+	expectedTsValues.Add("/foo/bar", 1400.0, int64(14))
+	expectedTsValues.Add("/foo/bar", 1500.0, int64(15))
+	expectedTsValues.Add("/foo/bar", 1600.0, int64(16))
+	expectedTsValues.Add("/foo/bar", 1700.0, int64(16))
 
 	iterator = aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
 	expectedTsValues.Iterate(t, iterator)
@@ -1289,23 +1345,14 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		{
 			Path:        "/foo/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/baz",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/foo/baz",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        32,
 		},
 	}
 
@@ -1315,32 +1362,32 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// paged timestamps per endpoint = 5 - 1 = 4
 	// total: 6*2 = 12 paged values and 4*2 = 8 paged timestamps
 	// Need 12 / 2 = 6 pages for values and 8 / 2 = 4 pages for timestamps
-	aMetric[0].Value = 0
-	aMetric[1].Value = 1
+	aMetric[0].Value = int64(0)
+	aMetric[1].Value = int64(1)
 	addBatch(t, aStore, kEndpoint0, 100.0, aMetric[:2], 2)
-	aMetric[1].Value = 11
+	aMetric[1].Value = int64(11)
 	addBatch(t, aStore, kEndpoint0, 110.0, aMetric[:2], 1)
-	aMetric[0].Value = 20
-	aMetric[1].Value = 21
+	aMetric[0].Value = int64(20)
+	aMetric[1].Value = int64(21)
 	addBatch(t, aStore, kEndpoint0, 120.0, aMetric[:2], 2)
-	aMetric[1].Value = 31
+	aMetric[1].Value = int64(31)
 	addBatch(t, aStore, kEndpoint0, 130.0, aMetric[:2], 1)
-	aMetric[0].Value = 40
-	aMetric[1].Value = 41
+	aMetric[0].Value = int64(40)
+	aMetric[1].Value = int64(41)
 	addBatch(t, aStore, kEndpoint0, 140.0, aMetric[:2], 2)
 
-	aMetric[0].Value = 5
-	aMetric[1].Value = 6
+	aMetric[0].Value = int64(5)
+	aMetric[1].Value = int64(6)
 	addBatch(t, aStore, kEndpoint1, 105.0, aMetric[:2], 2)
-	aMetric[1].Value = 16
+	aMetric[1].Value = int64(16)
 	addBatch(t, aStore, kEndpoint1, 115.0, aMetric[:2], 1)
-	aMetric[0].Value = 25
-	aMetric[1].Value = 26
+	aMetric[0].Value = int64(25)
+	aMetric[1].Value = int64(26)
 	addBatch(t, aStore, kEndpoint1, 125.0, aMetric[:2], 2)
-	aMetric[1].Value = 36
+	aMetric[1].Value = int64(36)
 	addBatch(t, aStore, kEndpoint1, 135.0, aMetric[:2], 1)
-	aMetric[0].Value = 45
-	aMetric[1].Value = 46
+	aMetric[0].Value = int64(45)
+	aMetric[1].Value = int64(46)
 	addBatch(t, aStore, kEndpoint1, 145.0, aMetric[:2], 2)
 
 	result = nil
@@ -1357,7 +1404,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	assertValueEquals(t, kEndpoint0, result[0].EndpointId)
 	assertValueEquals(t, "/foo/bar", result[0].Info.Path())
 	assertValueEquals(t, 140.0, result[0].TimeStamp)
-	assertValueEquals(t, 40, result[0].Value)
+	assertValueEquals(t, int64(40), result[0].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -1371,7 +1418,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 1, len(result))
 	assertValueEquals(t, 120.0, result[0].TimeStamp)
-	assertValueEquals(t, 20, result[0].Value)
+	assertValueEquals(t, int64(20), result[0].Value)
 
 	result = nil
 	aStore.ByPrefixAndEndpoint(
@@ -1379,7 +1426,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 1, len(result))
 	assertValueEquals(t, 120.0, result[0].TimeStamp)
-	assertValueEquals(t, 20, result[0].Value)
+	assertValueEquals(t, int64(20), result[0].Value)
 
 	// Now we should get 1 from foo/bar and one from foo/baz.
 	result = nil
@@ -1424,9 +1471,9 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 2, len(result))
 	assertValueEquals(t, 120.0, result[0].TimeStamp)
-	assertValueEquals(t, 20, result[0].Value)
+	assertValueEquals(t, int64(20), result[0].Value)
 	assertValueEquals(t, 100.0, result[1].TimeStamp)
-	assertValueEquals(t, 0, result[1].Value)
+	assertValueEquals(t, int64(0), result[1].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -1434,15 +1481,15 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 5, len(result))
 	assertValueEquals(t, 140.0, result[0].TimeStamp)
-	assertValueEquals(t, 41, result[0].Value)
+	assertValueEquals(t, int64(41), result[0].Value)
 	assertValueEquals(t, 130.0, result[1].TimeStamp)
-	assertValueEquals(t, 31, result[1].Value)
+	assertValueEquals(t, int64(31), result[1].Value)
 	assertValueEquals(t, 120.0, result[2].TimeStamp)
-	assertValueEquals(t, 21, result[2].Value)
+	assertValueEquals(t, int64(21), result[2].Value)
 	assertValueEquals(t, 110.0, result[3].TimeStamp)
-	assertValueEquals(t, 11, result[3].Value)
+	assertValueEquals(t, int64(11), result[3].Value)
 	assertValueEquals(t, 100.0, result[4].TimeStamp)
-	assertValueEquals(t, 1, result[4].Value)
+	assertValueEquals(t, int64(1), result[4].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -1450,11 +1497,11 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 3, len(result))
 	assertValueEquals(t, 145.0, result[0].TimeStamp)
-	assertValueEquals(t, 45, result[0].Value)
+	assertValueEquals(t, int64(45), result[0].Value)
 	assertValueEquals(t, 125.0, result[1].TimeStamp)
-	assertValueEquals(t, 25, result[1].Value)
+	assertValueEquals(t, int64(25), result[1].Value)
 	assertValueEquals(t, 105.0, result[2].TimeStamp)
-	assertValueEquals(t, 5, result[2].Value)
+	assertValueEquals(t, int64(5), result[2].Value)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -1462,15 +1509,15 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 	assertValueEquals(t, 5, len(result))
 	assertValueEquals(t, 145.0, result[0].TimeStamp)
-	assertValueEquals(t, 46, result[0].Value)
+	assertValueEquals(t, int64(46), result[0].Value)
 	assertValueEquals(t, 135.0, result[1].TimeStamp)
-	assertValueEquals(t, 36, result[1].Value)
+	assertValueEquals(t, int64(36), result[1].Value)
 	assertValueEquals(t, 125.0, result[2].TimeStamp)
-	assertValueEquals(t, 26, result[2].Value)
+	assertValueEquals(t, int64(26), result[2].Value)
 	assertValueEquals(t, 115.0, result[3].TimeStamp)
-	assertValueEquals(t, 16, result[3].Value)
+	assertValueEquals(t, int64(16), result[3].Value)
 	assertValueEquals(t, 105.0, result[4].TimeStamp)
-	assertValueEquals(t, 6, result[4].Value)
+	assertValueEquals(t, int64(6), result[4].Value)
 
 	runAppenderClientTest(
 		t,
@@ -1505,22 +1552,22 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		barIdx, bazIdx = 0, 3
 	}
 	assertValueEquals(t, 145.0, result[bazIdx+0].TimeStamp)
-	assertValueEquals(t, 46, result[bazIdx+0].Value)
+	assertValueEquals(t, int64(46), result[bazIdx+0].Value)
 	assertValueEquals(t, 135.0, result[bazIdx+1].TimeStamp)
-	assertValueEquals(t, 36, result[bazIdx+1].Value)
+	assertValueEquals(t, int64(36), result[bazIdx+1].Value)
 	assertValueEquals(t, 125.0, result[bazIdx+2].TimeStamp)
-	assertValueEquals(t, 26, result[bazIdx+2].Value)
+	assertValueEquals(t, int64(26), result[bazIdx+2].Value)
 	assertValueEquals(t, 115.0, result[bazIdx+3].TimeStamp)
-	assertValueEquals(t, 16, result[bazIdx+3].Value)
+	assertValueEquals(t, int64(16), result[bazIdx+3].Value)
 	assertValueEquals(t, 105.0, result[bazIdx+4].TimeStamp)
-	assertValueEquals(t, 6, result[bazIdx+4].Value)
+	assertValueEquals(t, int64(6), result[bazIdx+4].Value)
 
 	assertValueEquals(t, 145.0, result[barIdx+0].TimeStamp)
-	assertValueEquals(t, 45, result[barIdx+0].Value)
+	assertValueEquals(t, int64(45), result[barIdx+0].Value)
 	assertValueEquals(t, 125.0, result[barIdx+1].TimeStamp)
-	assertValueEquals(t, 25, result[barIdx+1].Value)
+	assertValueEquals(t, int64(25), result[barIdx+1].Value)
 	assertValueEquals(t, 105.0, result[barIdx+2].TimeStamp)
-	assertValueEquals(t, 5, result[barIdx+2].Value)
+	assertValueEquals(t, int64(5), result[barIdx+2].Value)
 
 	runAppenderClientTest(
 		t,
@@ -1538,16 +1585,17 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		barIdx, bazIdx = 0, 2
 	}
 	assertValueEquals(t, 125.0, result[bazIdx+0].TimeStamp)
-	assertValueEquals(t, 26, result[bazIdx+0].Value)
+	assertValueEquals(t, int64(26), result[bazIdx+0].Value)
 	assertValueEquals(t, 115.0, result[bazIdx+1].TimeStamp)
-	assertValueEquals(t, 16, result[bazIdx+1].Value)
+	assertValueEquals(t, int64(16), result[bazIdx+1].Value)
 
 	assertValueEquals(t, 125.0, result[barIdx+0].TimeStamp)
-	assertValueEquals(t, 25, result[barIdx+0].Value)
+	assertValueEquals(t, int64(25), result[barIdx+0].Value)
 	assertValueEquals(t, 105.0, result[barIdx+1].TimeStamp)
-	assertValueEquals(t, 5, result[barIdx+1].Value)
+	assertValueEquals(t, int64(5), result[barIdx+1].Value)
 
-	// Now add 3 more values. All the value pages as well as the timestamp
+	// Now add 2 more values and one inactive marker. All the value
+	// pages as well as the timestamp
 	// pages are full at this point. We need a new page for
 	// aMetric[0] and a new page for aMetric[1] and a new page for
 	// timestamp 155. aMetric[2] is a new time series so it needs no
@@ -1557,10 +1605,11 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// will give up a page, the timestamps for endpoint0 will give up
 	// a page, finally aMetric[1] for endpoint0 will give up its page.
 	// So the values for endpoint0 will give up a total of two pages.
-	aMetric[0].Value = 55
-	aMetric[1].Value = 56
-	aMetric[2].Value = 57
-	addBatch(t, aStore, kEndpoint1, 155.0, aMetric[:], 3)
+	aMetric[0].Value = int64(55)
+	aMetric[2].Value = int32(57)
+	tempMetrics := metrics.SimpleList{aMetric[0], aMetric[2]}
+	// Includes inactive marker for 64 bit /foo/baz
+	addBatch(t, aStore, kEndpoint1, 155.0, tempMetrics[:], 3)
 
 	result = nil
 	aStore.ByEndpoint(
@@ -1585,9 +1634,9 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		barIdx, bazIdx = 1, 0
 	}
 	assertValueEquals(t, 140.0, result[barIdx].TimeStamp)
-	assertValueEquals(t, 40, result[barIdx].Value)
+	assertValueEquals(t, int64(40), result[barIdx].Value)
 	assertValueEquals(t, 140.0, result[bazIdx].TimeStamp)
-	assertValueEquals(t, 41, result[bazIdx].Value)
+	assertValueEquals(t, int64(41), result[bazIdx].Value)
 
 	runAppenderClientTest(
 		t,
@@ -1609,11 +1658,12 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 		bits32, bits64 = 2, 0
 	}
 	assertValueEquals(t, 155.0, result[bits32].TimeStamp)
-	assertValueEquals(t, 57, result[bits32].Value)
+	assertValueEquals(t, int32(57), result[bits32].Value)
 	assertValueEquals(t, 155.0, result[bits64+0].TimeStamp)
-	assertValueEquals(t, 56, result[bits64+0].Value)
+	// inactive
+	assertValueEquals(t, int64(0), result[bits64+0].Value)
 	assertValueEquals(t, 145.0, result[bits64+1].TimeStamp)
-	assertValueEquals(t, 46, result[bits64+1].Value)
+	assertValueEquals(t, int64(46), result[bits64+1].Value)
 
 	runAppenderClientTest(
 		t,
@@ -1682,8 +1732,8 @@ func addBatch(
 	ts float64,
 	m metrics.List,
 	count int) {
-	out, ok := astore.AddBatch(endpointId, ts, m)
-	if !ok {
+	out, err := astore.AddBatch(endpointId, ts, m)
+	if err != nil {
 		t.Errorf("Expected AddBatch to succeed")
 	}
 	if out != count {
@@ -1706,37 +1756,28 @@ func addDataForHighPriorityEvictionTest(s *store.Store) {
 		{
 			Path:        "/foo",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/bar",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 		{
 			Path:        "/baz",
 			Description: "A description",
-			Unit:        units.None,
-			Kind:        types.Int64,
-			Bits:        64,
 		},
 	}
-	aMetric[0].Value = 2
-	aMetric[1].Value = 4
-	aMetric[2].Value = 5
+	aMetric[0].Value = int64(2)
+	aMetric[1].Value = int64(4)
+	aMetric[2].Value = int64(5)
 	s.AddBatch(kEndpoint0, 100, aMetric[:])
-	aMetric[0].Value = 12
-	aMetric[1].Value = 14
-	aMetric[2].Value = 15
+	aMetric[0].Value = int64(12)
+	aMetric[1].Value = int64(14)
+	aMetric[2].Value = int64(15)
 	s.AddBatch(kEndpoint0, 110, aMetric[:])
-	aMetric[0].Value = 22
-	aMetric[1].Value = 24
+	aMetric[0].Value = int64(22)
+	aMetric[1].Value = int64(24)
 	s.AddBatch(kEndpoint0, 120, aMetric[:2])
-	aMetric[0].Value = 32
-	aMetric[1].Value = 34
+	aMetric[0].Value = int64(32)
+	aMetric[1].Value = int64(34)
 	s.AddBatch(kEndpoint0, 130, aMetric[:2])
 }

@@ -442,13 +442,15 @@ func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector
 }
 
 func (l *loggerType) LogResponse(
-	e *collector.Endpoint, list metrics.List, state *collector.State) {
-	ts := duration.TimeToFloat(state.Timestamp())
-	added, ok := l.Store.AddBatch(
+	e *collector.Endpoint,
+	list metrics.List,
+	timestamp time.Time) error {
+	ts := duration.TimeToFloat(timestamp)
+	added, err := l.Store.AddBatch(
 		e,
 		ts,
 		list)
-	if ok {
+	if err == nil {
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
 		if l.totalCounts != nil {
@@ -457,6 +459,12 @@ func (l *loggerType) LogResponse(
 			}
 		}
 	}
+	// This error just means that the endpoint was marked inactive
+	// during polling.
+	if err == store.ErrInactive {
+		return nil
+	}
+	return err
 }
 
 type gzipResponseWriter struct {

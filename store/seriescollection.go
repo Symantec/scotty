@@ -4,6 +4,7 @@ import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"strings"
 	"sync"
 )
@@ -23,15 +24,18 @@ func (m *metricInfoStoreType) Init() {
 }
 
 // Register returns the correct MetricInfo instance from the pool for
-// passed in metric. Register will always return a non nil value.
-func (m *metricInfoStoreType) Register(metric *metrics.Value) (
+// passed in metric and type. Register will always return a non nil value.
+func (m *metricInfoStoreType) Register(metric *metrics.Value, kind types.Type) (
 	result *MetricInfo) {
+	if kind == types.Unknown {
+		panic("Got Unknown type")
+	}
 	infoStruct := MetricInfo{
 		path:        metric.Path,
 		description: metric.Description,
 		unit:        metric.Unit,
-		kind:        metric.Kind,
-		bits:        metric.Bits,
+		kind:        kind,
+		bits:        kind.Bits(),
 		groupId:     metric.GroupId}
 	result, alreadyExists := m.ByInfo[infoStruct]
 	if alreadyExists {
@@ -195,6 +199,13 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 	return
 }
 
+func indexOf(mlist metrics.List, i int, avalue *metrics.Value) {
+	mlist.Index(i, avalue)
+	if avalue.Unit == "" {
+		avalue.Unit = units.None
+	}
+}
+
 // LookupBatch looks up all the metrics in one go and returns the
 // following:
 // fetched: timeSeries already in this collection keyed by Metric.
@@ -212,13 +223,16 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	fetchedTimeStamps map[*timestampSeriesType]float64,
 	newTs []*timestampSeriesType,
 	notFetchedTimeStamps []*timestampSeriesType,
-	ok bool) {
+	err error) {
+	if err = metrics.VerifyList(mlist); err != nil {
+		return
+	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if !c.active {
+		err = ErrInactive
 		return
 	}
-	ok = true
 	valueByMetric := make(map[*MetricInfo]interface{})
 	timestampByGroupId := make(map[int]float64)
 	fetched = make(map[*timeSeriesType]interface{})
@@ -226,12 +240,13 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	mlen := mlist.Len()
 	for i := 0; i < mlen; i++ {
 		var avalue metrics.Value
-		mlist.Index(i, &avalue)
+		indexOf(mlist, i, &avalue)
+		kind := types.FromGoValue(avalue.Value)
 		// TODO: Allow distribution metrics later.
-		if avalue.Kind == types.Dist {
+		if kind == types.Dist {
 			continue
 		}
-		id := c.metricInfoStore.Register(&avalue)
+		id := c.metricInfoStore.Register(&avalue, kind)
 		valueByMetric[id] = avalue.Value
 		if avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = timestamp
@@ -413,11 +428,11 @@ func (c *timeSeriesCollectionType) MarkInactive(
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	mlist metrics.List,
-	supplier *pageQueueType) (result int, ok bool) {
+	supplier *pageQueueType) (result int, err error) {
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
-	fetched, newOnes, notFetched, tsFetched, newTs, tsNotFetched, ok := c.LookupBatch(timestamp, mlist)
-	if !ok {
+	fetched, newOnes, notFetched, tsFetched, newTs, tsNotFetched, err := c.LookupBatch(timestamp, mlist)
+	if err != nil {
 		return
 	}
 	result = c.updateTimeStampSeriesAndTimeSeries(

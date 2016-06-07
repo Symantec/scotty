@@ -105,8 +105,11 @@ func (s *State) Status() Status {
 // Endpoint instances call Logger methods immediately after updating themselves.
 // Logger instances must be safe to use among multiple goroutines.
 type Logger interface {
-	// Called when new metrics come in from a given endpoint
-	LogResponse(e *Endpoint, response metrics.List, state *State)
+	// Called when new metrics come in from a given endpoint. If
+	// implementation returns a non-nil error, state goes to
+	// FailedtoPoll. Otherwise, state goes to Synced.
+	LogResponse(
+		e *Endpoint, response metrics.List, timestamp time.Time) error
 	// Called when error happens collecting metrics from a given
 	// endpoint.
 	// Also called when an error clears. In such a case both err and

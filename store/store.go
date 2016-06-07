@@ -45,7 +45,7 @@ func (s *Store) shallowCopy() *Store {
 func (s *Store) addBatch(
 	endpointId interface{},
 	timestamp float64,
-	mlist metrics.List) (int, bool) {
+	mlist metrics.List) (int, error) {
 	return s.byApplication[endpointId].AddBatch(
 		timestamp, mlist, s.supplier)
 }

@@ -60,10 +60,6 @@ type ConfigPlus struct {
 	Consumer config.ConsumerConfig `yaml:"consumer"`
 }
 
-func (c *ConfigPlus) NewWriter() (pstore.LimitedRecordWriter, error) {
-	return c.Options.NewThrottledWriter(&c.Writer)
-}
-
 func (c *ConfigPlus) NewConsumerBuilder() (
 	*pstore.ConsumerWithMetricsBuilder, error) {
 	return c.Consumer.NewConsumerBuilder(&c.Writer, &c.Options)

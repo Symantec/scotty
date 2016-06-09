@@ -317,6 +317,13 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		"This many records written each time"); err != nil {
 		return
 	}
+	if err = tricorder.RegisterMetric(
+		fmt.Sprintf("writer/%s/rollUpSpan", p.Name()),
+		&attributes.RollUpSpan,
+		units.None,
+		"Time period length for rolled up values. 0 means no roll up."); err != nil {
+		return
+	}
 	if err = tricorder.RegisterMetricInGroup(
 		fmt.Sprintf("writer/%s/valuesWritten", p.Name()),
 		&data.ValuesWritten,

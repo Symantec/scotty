@@ -114,7 +114,9 @@ type ConsumerConfig struct {
 	Concurrency int `yaml:"concurrency"`
 	// The number of values written each time. Optional.
 	// A zero or negative value means 1000.
-	BatchSize  int           `yaml:"batchSize"`
+	BatchSize int `yaml:"batchSize"`
+	// The length of time for rolling up values when writing. Optional.
+	// Zero means write every value and do no rollup.
 	RollUpSpan time.Duration `yaml:"rollUpSpan"`
 }
 

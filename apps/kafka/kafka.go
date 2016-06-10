@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/influx"
 	"github.com/Symantec/scotty/pstore/kafka"
+	"github.com/Symantec/scotty/pstore/tsdb"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"gopkg.in/yaml.v2"
@@ -24,6 +25,10 @@ var (
 		"influx_config_file",
 		"",
 		"influx configuration file")
+	fTsdbConfigFile = flag.String(
+		"tsdb_config_file",
+		"",
+		"tsdb configuration file")
 	fCommandFile = flag.String(
 		"command_file",
 		"",
@@ -165,6 +170,8 @@ func createKafkaWriter() (result pstore.RecordWriter) {
 		result, err = kafka.FromFile(*fKafkaConfigFile)
 	} else if *fInfluxConfigFile != "" {
 		result, err = influx.FromFile(*fInfluxConfigFile)
+	} else if *fTsdbConfigFile != "" {
+		result, err = tsdb.FromFile(*fTsdbConfigFile)
 	} else {
 		return kafka.NewFakeWriter()
 	}

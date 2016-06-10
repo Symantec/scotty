@@ -18,6 +18,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/influx"
 	"github.com/Symantec/scotty/pstore/kafka"
+	"github.com/Symantec/scotty/pstore/tsdb"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
@@ -90,6 +91,10 @@ var (
 		"influx_config_file",
 		"",
 		"influx configuration file")
+	fTsdbConfigFile = flag.String(
+		"tsdb_config_file",
+		"",
+		"tsdb configuration file")
 	fLogBufLines = flag.Uint(
 		"logbufLines", 1024, "Number of lines to store in the log buffer")
 	fPidFile = flag.String(
@@ -663,8 +668,10 @@ func newPStoreConsumers() (
 		return kafka.ConsumerBuildersFromFile(*fKafkaConfigFile)
 	}
 	if *fInfluxConfigFile != "" {
-		return influx.ConsumerBuildersFromFile(
-			*fInfluxConfigFile)
+		return influx.ConsumerBuildersFromFile(*fInfluxConfigFile)
+	}
+	if *fTsdbConfigFile != "" {
+		return tsdb.ConsumerBuildersFromFile(*fTsdbConfigFile)
 	}
 	return
 }

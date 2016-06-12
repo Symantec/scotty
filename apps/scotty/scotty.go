@@ -208,7 +208,6 @@ func (t *totalCountType) Update(
 type pstoreHandlerType struct {
 	consumer            *pstore.ConsumerWithMetrics
 	appList             *datastructs.ApplicationList
-	memoryManager       *memoryManagerType
 	startTime           time.Time
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
@@ -216,15 +215,13 @@ type pstoreHandlerType struct {
 
 func newPStoreHandler(
 	appList *datastructs.ApplicationList,
-	consumer *pstore.ConsumerWithMetricsBuilder,
-	memoryManager *memoryManagerType) *pstoreHandlerType {
+	consumer *pstore.ConsumerWithMetricsBuilder) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
 	return &pstoreHandlerType{
 		consumer:            consumer.Build(),
 		appList:             appList,
-		memoryManager:       memoryManager,
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
 	}
@@ -252,9 +249,6 @@ func (p *pstoreHandlerType) Visit(
 	appName := p.appList.ByPort(port).Name()
 	iterator := p.namedIterator(theStore, endpointId)
 	p.consumer.Write(iterator, hostName, appName)
-	if p.memoryManager != nil {
-		p.memoryManager.Check()
-	}
 	return nil
 }
 
@@ -669,16 +663,23 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
-func newPStoreConsumers() (
+func newPStoreConsumers(memoryManager *memoryManagerType) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	if *fKafkaConfigFile != "" {
-		return kafka.ConsumerBuildersFromFile(*fKafkaConfigFile)
+		result, err = kafka.ConsumerBuildersFromFile(
+			*fKafkaConfigFile)
 	}
 	if *fInfluxConfigFile != "" {
-		return influx.ConsumerBuildersFromFile(*fInfluxConfigFile)
+		result, err = influx.ConsumerBuildersFromFile(
+			*fInfluxConfigFile)
 	}
 	if *fTsdbConfigFile != "" {
-		return tsdb.ConsumerBuildersFromFile(*fTsdbConfigFile)
+		result, err = tsdb.ConsumerBuildersFromFile(*fTsdbConfigFile)
+	}
+	// Add hook to check memory after each write
+	for i := range result {
+		result[i].AddWriterHook(
+			writerHookType{wrapped: memoryManager})
 	}
 	return
 }
@@ -810,6 +811,15 @@ func (m *memoryManagerType) loop() {
 	}
 }
 
+type writerHookType struct {
+	wrapped *memoryManagerType
+}
+
+func (w writerHookType) WriteCalled(
+	unusedRecords []pstore.Record, unusedError error) {
+	w.wrapped.Check()
+}
+
 func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger,
@@ -936,14 +946,12 @@ func startCollector(
 func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
 	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
-	memoryManager *memoryManagerType,
 	logger *log.Logger) []*totalCountType {
 	result := make([]*totalCountType, len(consumerBuilders))
 	for i := range result {
 		pstoreHandler := newPStoreHandler(
 			stats.ApplicationList(),
-			consumerBuilders[i],
-			memoryManager)
+			consumerBuilders[i])
 		result[i] = pstoreHandler.TotalCount()
 		var attributes pstore.ConsumerAttributes
 		pstoreHandler.Attributes(&attributes)
@@ -1014,13 +1022,13 @@ func main() {
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
 	// Read configs early so that we will fail fast.
-	consumerBuilders, err := newPStoreConsumers()
+	memoryManager := createMemoryManager(logger)
+	consumerBuilders, err := newPStoreConsumers(memoryManager)
 	if err != nil {
 		log.Println(err)
 		logger.Println(err)
 	}
 	appList := createApplicationList()
-	memoryManager := createMemoryManager(logger)
 	applicationStats := createApplicationStats(
 		appList, logger, memoryManager)
 	connectionErrors := newConnectionErrorsType()
@@ -1031,7 +1039,6 @@ func main() {
 		totalCounts := startPStoreLoops(
 			applicationStats,
 			consumerBuilders,
-			memoryManager,
 			logger)
 		startCollector(
 			applicationStats,

@@ -92,11 +92,13 @@ func NewThrottledLimitedRecordWriter(
 
 // RecordWriterMetrics represents writing metrics
 type RecordWriterMetrics struct {
-	ValuesWritten    uint64
-	WriteAttempts    uint64
-	SuccessfulWrites uint64
-	LastWriteError   string
-	TimeSpentWriting time.Duration
+	ValuesWritten         uint64
+	WriteAttempts         uint64
+	SuccessfulWrites      uint64
+	LastWriteError        string
+	LastWriteErrorTS      time.Time
+	LastSuccessfulWriteTS time.Time
+	TimeSpentWriting      time.Duration
 }
 
 func (w *RecordWriterMetrics) SuccessfulWriteRatio() float64 {

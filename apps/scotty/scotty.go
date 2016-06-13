@@ -377,6 +377,22 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		"Last write error"); err != nil {
 		return
 	}
+	if err = tricorder.RegisterMetricInGroup(
+		fmt.Sprintf("writer/%s/lastWriteErrorTime", p.Name()),
+		&data.LastWriteErrorTS,
+		group,
+		units.None,
+		"Time of last write error"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInGroup(
+		fmt.Sprintf("writer/%s/lastSuccessfulWrite", p.Name()),
+		&data.LastSuccessfulWriteTS,
+		group,
+		units.None,
+		"Time of last successful write"); err != nil {
+		return
+	}
 	return
 }
 

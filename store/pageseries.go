@@ -236,6 +236,14 @@ func (t *timestampSeriesType) Latest() float64 {
 	return t.lastTs
 }
 
+func (t *timestampSeriesType) Earliest() float64 {
+	firstTimes := t.FindAfter(0.0, 1)
+	if len(firstTimes) > 0 {
+		return firstTimes[0]
+	}
+	return t.Latest()
+}
+
 // PageList returns the pages this series owns.
 func (t *timestampSeriesType) PageList() pageListType {
 	t.lock.Lock()

@@ -189,7 +189,7 @@ func (t *totalCountType) Update(
 	theStore *store.Store, endpointId interface{}) {
 	var r store.Record
 	var tempCount uint64
-	iterator := createNamedIterator(
+	iterator, _ := createNamedIterator(
 		theStore, endpointId, t.iteratorName(), t.rollUpSpan)
 	for iterator.Next(&r) {
 		if t.metrics.Filter(&r) {
@@ -198,6 +198,36 @@ func (t *totalCountType) Update(
 	}
 	iterator.Commit()
 	t.metrics.AddToRecordCount(tempCount)
+}
+
+type visitorMetricsType struct {
+	TimeLeft time.Duration
+}
+
+type visitorMetricsStoreType struct {
+	lock    sync.Mutex
+	metrics visitorMetricsType
+}
+
+func (v *visitorMetricsStoreType) Metrics(metrics *visitorMetricsType) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	*metrics = v.metrics
+}
+
+func (v *visitorMetricsStoreType) SetTimeLeft(timeLeft time.Duration) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	v.metrics.TimeLeft = timeLeft
+}
+
+func (v *visitorMetricsStoreType) MaybeIncreaseTimeLeft(
+	timeLeft time.Duration) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	if timeLeft > v.metrics.TimeLeft {
+		v.metrics.TimeLeft = timeLeft
+	}
 }
 
 // pstoreHandlerType implements store.Visitor.
@@ -211,6 +241,7 @@ type pstoreHandlerType struct {
 	startTime           time.Time
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
+	visitorMetricsStore *visitorMetricsStoreType
 }
 
 func newPStoreHandler(
@@ -224,6 +255,7 @@ func newPStoreHandler(
 		appList:             appList,
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
+		visitorMetricsStore: &visitorMetricsStoreType{},
 	}
 }
 
@@ -235,10 +267,13 @@ func (p *pstoreHandlerType) StartVisit() {
 	p.startTime = time.Now()
 }
 
-func (p *pstoreHandlerType) EndVisit() {
+func (p *pstoreHandlerType) EndVisit(theStore *store.Store) {
 	p.consumer.Flush()
+	p.visitorMetricsStore.SetTimeLeft(
+		duration.FromFloat(theStore.TimeLeft(p.iteratorName())))
 	totalTime := time.Now().Sub(p.startTime)
 	p.totalTimeSpentDist.Add(totalTime)
+
 }
 
 func (p *pstoreHandlerType) Visit(
@@ -247,8 +282,10 @@ func (p *pstoreHandlerType) Visit(
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
-	iterator := p.namedIterator(theStore, endpointId)
+	iterator, timeLeft := p.namedIterator(theStore, endpointId)
 	p.consumer.Write(iterator, hostName, appName)
+	p.visitorMetricsStore.MaybeIncreaseTimeLeft(
+		duration.FromFloat(timeLeft))
 	return nil
 }
 
@@ -274,11 +311,14 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	var attributes pstore.ConsumerAttributes
 	p.consumer.Attributes(&attributes)
 	var data pstore.ConsumerMetrics
+	var visitorData visitorMetricsType
 	metricsStore := p.ConsumerMetricsStore()
+	visitorMetricsStore := p.visitorMetricsStore
 	group := tricorder.NewGroup()
 	group.RegisterUpdateFunc(
 		func() time.Time {
 			metricsStore.Metrics(&data)
+			visitorMetricsStore.Metrics(&visitorData)
 			return time.Now()
 		})
 	if err = tricorder.RegisterMetric(
@@ -340,6 +380,14 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
+		fmt.Sprintf("writer/%s/timeLeft", p.Name()),
+		&visitorData.TimeLeft,
+		group,
+		units.None,
+		"approximate time writer is behind"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInGroup(
 		fmt.Sprintf("writer/%s/writeAttempts", p.Name()),
 		&data.WriteAttempts,
 		group,
@@ -396,7 +444,7 @@ func (p *pstoreHandlerType) iteratorName() string {
 
 func (p *pstoreHandlerType) namedIterator(
 	theStore *store.Store,
-	endpointId interface{}) store.NamedIterator {
+	endpointId interface{}) (store.NamedIterator, float64) {
 	var attributes pstore.ConsumerAttributes
 	p.Attributes(&attributes)
 	return createNamedIterator(
@@ -410,7 +458,7 @@ func createNamedIterator(
 	theStore *store.Store,
 	endpointId interface{},
 	iteratorName string,
-	rollUpSpan time.Duration) store.NamedIterator {
+	rollUpSpan time.Duration) (store.NamedIterator, float64) {
 	if rollUpSpan == 0 {
 		return theStore.NamedIteratorForEndpoint(
 			iteratorName,
@@ -989,7 +1037,7 @@ func startPStoreLoops(
 				writeTime := time.Now()
 				handler.StartVisit()
 				metricStore.VisitAllEndpoints(handler)
-				handler.EndVisit()
+				handler.EndVisit(metricStore)
 				writeDuration := time.Now().Sub(writeTime)
 				if writeDuration < refreshRate {
 					time.Sleep(refreshRate - writeDuration)

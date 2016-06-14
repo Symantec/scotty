@@ -84,7 +84,7 @@ func newTimeSeriesCollectionType(
 }
 
 func (c *timeSeriesCollectionType) NewNamedIterator(
-	name string, maxFrames int) NamedIterator {
+	name string, maxFrames int) (NamedIterator, float64) {
 	var startTimes map[int]float64
 	var completed map[*timeSeriesType]float64
 	c.lock.Lock()
@@ -99,7 +99,7 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		timesByGroup[groupId] = series.FindAfter(
 			startTimes[groupId], maxFrames)
 	}
-	return &namedIteratorType{
+	result := &namedIteratorType{
 		name:                 name,
 		timeSeriesCollection: c,
 		startTimeStamps:      startTimes,
@@ -107,10 +107,40 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		completed:            copyCompleted(completed),
 		timeSeries:           c.tsAll(),
 	}
+	timeLeft := c.timeLeft(result.nextStartTimeStamps())
+	return result, timeLeft
+}
+
+func (c *timeSeriesCollectionType) timeLeft(
+	startTimes map[int]float64) float64 {
+	result := 0.0
+	for groupId, series := range c.timestampSeries {
+		first := startTimes[groupId]
+		if first == 0.0 {
+			first = series.Earliest()
+		}
+		current := series.Latest() - first
+		if current > result {
+			result = current
+		}
+	}
+	return result
+}
+
+func (c *timeSeriesCollectionType) TimeLeft(name string) float64 {
+	var startTimes map[int]float64
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	snapshot := c.iterators[name]
+	if snapshot != nil {
+		startTimes = snapshot.startTimeStamps
+	}
+	return c.timeLeft(startTimes)
 }
 
 func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
-	name string, duration float64, maxFrames int) NamedIterator {
+	name string, duration float64, maxFrames int) (
+	NamedIterator, float64) {
 	var startTimes map[int]float64
 	var completed map[*timeSeriesType]float64
 	c.lock.Lock()
@@ -127,7 +157,7 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		chopForRollUp(duration, maxFrames, &nextTimes)
 		timesByGroup[groupId] = nextTimes
 	}
-	return &rollUpNamedIteratorType{
+	result := &rollUpNamedIteratorType{
 		namedIteratorType: &namedIteratorType{
 			name:                 name,
 			timeSeriesCollection: c,
@@ -138,6 +168,8 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		},
 		Interval: duration,
 	}
+	timeLeft := c.timeLeft(result.nextStartTimeStamps())
+	return result, timeLeft
 }
 
 func (c *timeSeriesCollectionType) saveProgress(

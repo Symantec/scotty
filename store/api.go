@@ -354,11 +354,24 @@ func (s *Store) ByEndpoint(
 	s.byEndpoint(endpointId, start, end, result)
 }
 
+// TimeLeft returns the the approximate maximum timespan measured in seconds
+// of values left to be iterated from iterator with given name across all
+// end points.
+func (s *Store) TimeLeft(name string) (seconds float64) {
+	return s.timeLeft(name)
+}
+
 // NamedIteratorForEndpoint returns an iterator for the given name that
 // iterates over metric values for all known timestamps for the given endpoint.
 // Although returned iterator iterates over values and timestamps in no
 // particular order, it will iterate over values of the same metric by
 // increasing timestamp.
+//
+// The second value returned is the approximate maximum timespan measured
+// in seconds of the remaining values left to be iterated once returned
+// iterator is exhausted. This second value is approximate because of
+// concurrent access to the store with no exlusive lock. In particular, even
+// if maxFrames = 0, this returned second value may be > 0.
 //
 // If maxFrames = 0, the returned iterator will make best effort to iterate
 // over all the metric values in the endpoint. A positive maxFrames hints to
@@ -370,7 +383,8 @@ func (s *Store) ByEndpoint(
 func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
-	maxFrames int) NamedIterator {
+	maxFrames int) (
+	iterator NamedIterator, remainingValuesInSeconds float64) {
 	return s.namedIteratorForEndpoint(name, endpointId, maxFrames)
 }
 
@@ -419,7 +433,8 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},
 	dur time.Duration,
-	maxFrames int) NamedIterator {
+	maxFrames int) (
+	iterator NamedIterator, remainingValuesInSeconds float64) {
 	return s.namedIteratorForEndpointRollUp(
 		name, endpointId, dur, maxFrames)
 }

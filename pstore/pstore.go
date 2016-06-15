@@ -95,12 +95,14 @@ func (w *RecordWriterMetrics) logWrite(
 	w.ValuesWritten += uint64(batchSize)
 	w.WriteAttempts += 1
 	w.SuccessfulWrites += 1
+	w.LastSuccessfulWriteTS = time.Now()
 	w.TimeSpentWriting += timeTaken
 }
 
 func (w *RecordWriterMetrics) logWriteError(err string, timeTaken time.Duration) {
 	w.WriteAttempts += 1
 	w.LastWriteError = err
+	w.LastWriteErrorTS = time.Now()
 	w.TimeSpentWriting += timeTaken
 }
 

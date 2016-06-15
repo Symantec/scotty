@@ -82,14 +82,6 @@ type ThrottledLimitedRecordWriter interface {
 	RecordsPerSecond() int
 }
 
-// NewThrottledLimitedRecordWriter creates a new ThrottledLimitedRecordWriter.
-// recordsPerSecond <= 0 means unlimited rate.
-func NewThrottledLimitedRecordWriter(
-	w LimitedRecordWriter,
-	recordsPerSecond int) ThrottledLimitedRecordWriter {
-	return newThrottledLimitedRecordWriter(w, recordsPerSecond)
-}
-
 // RecordWriterMetrics represents writing metrics
 type RecordWriterMetrics struct {
 	ValuesWritten    uint64
@@ -317,29 +309,56 @@ func (c *ConsumerWithMetrics) Flush() {
 	c.consumer.Flush()
 }
 
+// Instances that want to know when a batch of records are written to
+// persistent store implement this interface.
+type RecordWriteHooker interface {
+	// WriteHook is called just after a write or attempted write to
+	// pstore. records are the records written; err is the resulting
+	// error if any. Implementations must not modify the records array.
+	WriteHook(records []Record, result error)
+}
+
 // ConsumerWithMetricsBuilder builds a ConsumerWithMetrics instance.
 // Each instance is good for building one and only one ConsumerWithMetrics
 // instance.
 // These instances are NOT safe to use with multiple goroutines.
 type ConsumerWithMetricsBuilder struct {
-	c **ConsumerWithMetrics
+	c     *ConsumerWithMetrics
+	hooks []RecordWriteHooker
 }
 
 // NewConsumerWithMetricsBuilder creates a new instance that will
 // build a consumer that uses w to write values out.
 func NewConsumerWithMetricsBuilder(
-	w ThrottledLimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	return newConsumerWithMetricsBuilder(w)
+}
+
+// AddHook adds a hook for writes. hook must be non-nil.
+func (b *ConsumerWithMetricsBuilder) AddHook(hook RecordWriteHooker) {
+	if hook == nil {
+		panic("nil RecordWriteHooker")
+	}
+	b.hooks = append(b.hooks, hook)
+}
+
+// SetRecordsPerSecond throttles writes. Default is 0 which means no
+// throttling. SetRecordsPerSecond panics if recordsPerSecond is negative.
+func (b *ConsumerWithMetricsBuilder) SetRecordsPerSecond(
+	recordsPerSecond int) {
+	if recordsPerSecond < 0 {
+		panic("recordsPerSecond must be non negative")
+	}
+	b.c.attributes.RecordsPerSecond = recordsPerSecond
 }
 
 // SetBufferSize sets how many values the consumer will buffer before
 // writing them out. The default is 1000. SetBufferSize panics if size < 1.
-
 func (b *ConsumerWithMetricsBuilder) SetBufferSize(size int) {
 	if size < 1 {
 		panic("positive, non-zero size required.")
 	}
-	(*b.c).attributes.BatchSize = size
+	b.c.attributes.BatchSize = size
 }
 
 // SetConcurrency sets how many goroutines will write to the underlying
@@ -348,7 +367,7 @@ func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency int) {
 	if concurrency < 1 {
 		panic("positive, non-zero concurrency required.")
 	}
-	(*b.c).attributes.Concurrency = concurrency
+	b.c.attributes.Concurrency = concurrency
 }
 
 // SetRollUpSpan sets the length of time periods for rolled up values
@@ -358,19 +377,19 @@ func (b *ConsumerWithMetricsBuilder) SetRollUpSpan(dur time.Duration) {
 	if dur < 0 {
 		panic("Non-negative duration required.")
 	}
-	(*b.c).attributes.RollUpSpan = dur
+	b.c.attributes.RollUpSpan = dur
 }
 
 // SetName sets the name of the consumer. Default is the empty string.
 func (b *ConsumerWithMetricsBuilder) SetName(name string) {
-	(*b.c).name = name
+	b.c.name = name
 }
 
 // SetPerMetricWriteTimeDist sets the distribution that the consumer will
 // use to record write times. The default is not to record write times.
 func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
 	d *tricorder.CumulativeDistribution) {
-	(*b.c).metricsStore.w.PerMetricWriteTimes = d
+	b.c.metricsStore.w.PerMetricWriteTimes = d
 }
 
 // SetPerMetricBatchSizeDist sets the distribution that the consumer will
@@ -378,7 +397,7 @@ func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
 // The default is not to record batch sizes.
 func (b *ConsumerWithMetricsBuilder) SetPerMetricBatchSizeDist(
 	d *tricorder.CumulativeDistribution) {
-	(*b.c).metricsStore.w.BatchSizes = d
+	b.c.metricsStore.w.BatchSizes = d
 }
 
 // Build builds the ConsumerWithMetrics instance and destroys this builder.

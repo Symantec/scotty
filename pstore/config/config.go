@@ -78,62 +78,48 @@ func (f *filterWriter) Write(records []pstore.Record) error {
 	return f.Wrapped.Write(filtered)
 }
 
-type dualWriter struct {
-	pstore.ThrottledLimitedRecordWriter
-	Extra pstore.RecordWriter
+type hookWriter struct {
+	wrapped pstore.RecordWriter
 }
 
-func (d *dualWriter) Write(records []pstore.Record) error {
-	result := d.ThrottledLimitedRecordWriter.Write(records)
-	if result == nil {
-		d.Extra.Write(records)
+func (h *hookWriter) WriteHook(records []pstore.Record, err error) {
+	if err == nil {
+		h.wrapped.Write(records)
 	}
-	return result
 }
 
-func (d Decorator) newThrottledWriter(wf WriterFactory) (
-	result pstore.ThrottledLimitedRecordWriter, err error) {
-	writer, err := wf.NewWriter()
+func newWriteHooker(debugMetricRegex, debugHostRegex, debugFilePath string) (
+	result pstore.RecordWriteHooker, err error) {
+	var fakeWriter pstore.RecordWriter
+	fakeWriter, err = newFakeWriterToPath(debugFilePath)
 	if err != nil {
 		return
 	}
-	twriter := pstore.NewThrottledLimitedRecordWriter(
-		writer, d.RecordsPerSecond)
-	if d.DebugMetricRegex != "" || d.DebugHostRegex != "" {
-		var fakeWriter pstore.RecordWriter
-		fakeWriter, err = newFakeWriterToPath(d.DebugFilePath)
-		if err != nil {
-			return
-		}
-		var metricRegex, hostRegex *regexp.Regexp
-		if d.DebugMetricRegex != "" {
-			metricRegex = regexp.MustCompile(d.DebugMetricRegex)
-		}
-		if d.DebugHostRegex != "" {
-			hostRegex = regexp.MustCompile(d.DebugHostRegex)
-		}
-		afilter := func(r *pstore.Record) bool {
-			if metricRegex != nil && !metricRegex.MatchString(r.Path) {
-				return false
-			}
-			if hostRegex != nil && !hostRegex.MatchString(r.HostName) {
-				return false
-			}
-			return true
-		}
-		filterWriter := &filterWriter{
-			Wrapped: fakeWriter,
-			Filter:  afilter,
-		}
-		result = &dualWriter{twriter, filterWriter}
-	} else {
-		result = twriter
+	var metricRegex, hostRegex *regexp.Regexp
+	if debugMetricRegex != "" {
+		metricRegex = regexp.MustCompile(debugMetricRegex)
 	}
-	return
+	if debugHostRegex != "" {
+		hostRegex = regexp.MustCompile(debugHostRegex)
+	}
+	afilter := func(r *pstore.Record) bool {
+		if metricRegex != nil && !metricRegex.MatchString(r.Path) {
+			return false
+		}
+		if hostRegex != nil && !hostRegex.MatchString(r.HostName) {
+			return false
+		}
+		return true
+	}
+	filterWriter := &filterWriter{
+		Wrapped: fakeWriter,
+		Filter:  afilter,
+	}
+	return &hookWriter{wrapped: filterWriter}, nil
 }
 
 func (c ConsumerConfig) newConsumerBuilder(
-	wf WriterFactory, d *Decorator) (
+	wf WriterFactory, d Decorator) (
 	result *pstore.ConsumerWithMetricsBuilder, err error) {
 	if c.Name == "" {
 		return nil, errors.New("Name field is required.")
@@ -147,16 +133,28 @@ func (c ConsumerConfig) newConsumerBuilder(
 	if c.RollUpSpan < 0 {
 		c.RollUpSpan = 0
 	}
-	writer, err := d.NewThrottledWriter(wf)
+	writer, err := wf.NewWriter()
 	if err != nil {
 		return
 	}
-	result = pstore.NewConsumerWithMetricsBuilder(writer)
-	result.SetConcurrency(c.Concurrency)
-	result.SetBufferSize(c.BatchSize)
-	result.SetRollUpSpan(c.RollUpSpan)
-	result.SetName(c.Name)
-	return
+	builder := pstore.NewConsumerWithMetricsBuilder(writer)
+	if d.RecordsPerSecond > 0 {
+		builder.SetRecordsPerSecond(d.RecordsPerSecond)
+	}
+	if d.DebugMetricRegex != "" || d.DebugHostRegex != "" {
+		var hook pstore.RecordWriteHooker
+		hook, err = newWriteHooker(
+			d.DebugMetricRegex, d.DebugHostRegex, d.DebugFilePath)
+		if err != nil {
+			return
+		}
+		builder.AddHook(hook)
+	}
+	builder.SetConcurrency(c.Concurrency)
+	builder.SetBufferSize(c.BatchSize)
+	builder.SetRollUpSpan(c.RollUpSpan)
+	builder.SetName(c.Name)
+	return builder, nil
 }
 
 func createConsumerBuilders(c ConsumerBuilderFactoryList) (

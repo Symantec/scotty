@@ -11,32 +11,30 @@ const (
 	kDefaultBufferSize = 1000
 )
 
-type throttleWriter struct {
-	LimitedRecordWriter
-	recordsPerSecond int
+type hookWriter struct {
+	wrapped RecordWriter
+	hooks   []RecordWriteHooker
 }
 
-func newThrottledLimitedRecordWriter(
-	w LimitedRecordWriter,
-	recordsPerSecond int) ThrottledLimitedRecordWriter {
-	if recordsPerSecond < 0 {
-		recordsPerSecond = 0
+func (h *hookWriter) Write(records []Record) error {
+	result := h.wrapped.Write(records)
+	for _, hook := range h.hooks {
+		hook.WriteHook(records, result)
 	}
-	return &throttleWriter{
-		LimitedRecordWriter: w,
-		recordsPerSecond:    recordsPerSecond}
+	return result
 }
 
-func (t *throttleWriter) RecordsPerSecond() int {
-	return t.recordsPerSecond
+type throttleWriter struct {
+	wrapped          RecordWriter
+	recordsPerSecond int
 }
 
 func (t *throttleWriter) Write(records []Record) error {
 	if t.recordsPerSecond <= 0 {
-		return t.LimitedRecordWriter.Write(records)
+		return t.wrapped.Write(records)
 	}
 	now := time.Now()
-	result := t.LimitedRecordWriter.Write(records)
+	result := t.wrapped.Write(records)
 	throttleDuration := time.Second * time.Duration(len(records)) / time.Duration(t.recordsPerSecond)
 	timeToBeDone := now.Add(throttleDuration)
 	now = time.Now()
@@ -327,23 +325,36 @@ func toFilterer(typeFilter func(types.Type) bool) store.Filterer {
 }
 
 func newConsumerWithMetricsBuilder(
-	w ThrottledLimitedRecordWriter) *ConsumerWithMetricsBuilder {
+	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	writerWithMetrics := &RecordWriterWithMetrics{W: w}
 	ptr := &ConsumerWithMetrics{
 		attributes: ConsumerAttributes{
-			RecordsPerSecond: w.RecordsPerSecond(),
-			BatchSize:        kDefaultBufferSize,
-			Concurrency:      1},
+			BatchSize:   kDefaultBufferSize,
+			Concurrency: 1},
 		metricsStore: &ConsumerMetricsStore{
 			w:        writerWithMetrics,
 			filterer: toFilterer(w.IsTypeSupported),
 		},
 	}
-	return &ConsumerWithMetricsBuilder{c: &ptr}
+	return &ConsumerWithMetricsBuilder{c: ptr}
 }
 
 func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
-	result := *b.c
+	result := b.c
+	// fixup writer
+	writer := result.metricsStore.w.W
+	if result.attributes.RecordsPerSecond > 0 {
+		writer = &throttleWriter{
+			wrapped:          writer,
+			recordsPerSecond: result.attributes.RecordsPerSecond,
+		}
+	}
+	if len(b.hooks) > 0 {
+		writer = &hookWriter{
+			wrapped: writer,
+			hooks:   b.hooks}
+	}
+	result.metricsStore.w.W = writer
 	if result.attributes.Concurrency == 1 {
 		result.consumer = toConsumerType(
 			NewConsumer(
@@ -357,6 +368,7 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	} else {
 		panic("pstore: Oops, bad state in build method.")
 	}
-	*b.c = nil
+	b.c = nil
+	b.hooks = nil
 	return result
 }

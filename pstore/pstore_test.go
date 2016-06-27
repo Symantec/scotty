@@ -14,7 +14,8 @@ import (
 
 const (
 	kDescription = "A Description"
-	kPath        = "/some/path"
+	kInt64Path   = "/some/int64/path"
+	kStringPath  = "/some/string/path"
 )
 
 var (
@@ -22,15 +23,51 @@ var (
 )
 
 var (
-	kMetricInfo = (&store.MetricInfoBuilder{
+	kInt64MetricInfo = (&store.MetricInfoBuilder{
 		Bits:        64,
 		Description: kDescription,
 		Kind:        types.Int64,
-		Path:        kPath,
+		Path:        kInt64Path,
+		Unit:        units.None,
+	}).Build()
+	kStringMetricInfo = (&store.MetricInfoBuilder{
+		Description: kDescription,
+		Kind:        types.String,
+		Path:        kStringPath,
 		Unit:        units.None,
 	}).Build()
 	kWriteError = errors.New("An error")
 )
+
+// Test that consumer exhausts iterators even in the corner case where
+// the write buffer fills up and all that is left on the iterator are
+// types the writer doesn't support.
+func TestBug1586(t *testing.T) {
+	builder := pstore.NewConsumerWithMetricsBuilder(
+		noStringsNilWriterType{})
+	// Buffer size and number of int64 values have to match.
+	builder.SetBufferSize(20)
+	consumer := builder.Build()
+
+	// 20 int64 values that can be written to pstore
+	int64Iterator := newNamedIteratorSameValueType(
+		"int64Iterator", 20, int64(37), kInt64MetricInfo)
+	// 5 string values that cannot be written to pstore
+	stringIterator := newNamedIteratorSameValueType(
+		"stringIterator", 5, "foo", kStringMetricInfo)
+	// Final iterator yields 20 int64 values followed by 5 string values.
+	iterator := compoundIteratorType{
+		int64Iterator, stringIterator}
+
+	consumer.Write(iterator, "someHost", "someApp")
+	consumer.Flush()
+
+	// Writing to the consumer should exhaust all the values in the
+	// iterator including the string values left over after the buffer
+	// fills.
+	int64Iterator.VerifyExhausted(t)
+	stringIterator.VerifyExhausted(t)
+}
 
 func TestConsumer(t *testing.T) {
 	baseWriter := newBaseWriterForTesting()
@@ -96,6 +133,11 @@ func TestConsumer(t *testing.T) {
 	baseWriter.VerifyNoMoreWrites(t)
 	assertSuccess(t, consumer.Flush())
 	sixIterator.VerifyCommitPoints(t, 6)
+
+	// Iterators involved in failure before remain uncommitted.
+	threeIterator.VerifyNoCommits(t)
+	fourIterator.VerifyNoCommits(t)
+
 	baseWriter.VerifyWrite(t, 0, 6, "sixHost", "sixApp")
 	baseWriter.VerifyNoMoreWrites(t)
 }
@@ -141,8 +183,8 @@ func (w *baseWriterForTestingType) VerifyWrite(
 			if actual := nextWrite[0].HostName; host != actual {
 				t.Errorf("Expected host %s, got %s", host, actual)
 			}
-			if actual := nextWrite[0].Path; kPath != actual {
-				t.Errorf("Expected path %s, got %s", kPath, actual)
+			if actual := nextWrite[0].Path; kInt64Path != actual {
+				t.Errorf("Expected path %s, got %s", kInt64Path, actual)
 			}
 			if actual := nextWrite[0].Tags[pstore.TagAppName]; app != actual {
 				t.Errorf("Expected app %s, got %s", app, actual)
@@ -212,7 +254,7 @@ func (n *namedIteratorForTestingType) Next(r *store.Record) bool {
 	if n.numWritten == n.numToWrite {
 		return false
 	}
-	r.Info = kMetricInfo
+	r.Info = kInt64MetricInfo
 	r.Value = int64(n.numWritten)
 	r.TimeStamp = duration.TimeToFloat(kNow)
 	r.Active = true
@@ -226,6 +268,85 @@ func (n *namedIteratorForTestingType) Name() string {
 
 func (n *namedIteratorForTestingType) Commit() {
 	n.commitPoints = append(n.commitPoints, n.numWritten)
+}
+
+type namedIteratorSameValueType struct {
+	name            string
+	numToWrite      int
+	numWritten      int
+	value           interface{}
+	info            *store.MetricInfo
+	lastCommitPoint int
+}
+
+func newNamedIteratorSameValueType(
+	name string,
+	count int,
+	value interface{},
+	info *store.MetricInfo) *namedIteratorSameValueType {
+	return &namedIteratorSameValueType{
+		name:       name,
+		numToWrite: count,
+		value:      value,
+		info:       info}
+}
+
+func (n *namedIteratorSameValueType) VerifyExhausted(t *testing.T) {
+	if n.lastCommitPoint != n.numToWrite {
+		t.Errorf("Iterator %s not exhausted", n.Name())
+	}
+}
+
+func (n *namedIteratorSameValueType) Next(r *store.Record) bool {
+	if n.numWritten == n.numToWrite {
+		return false
+	}
+	r.Info = n.info
+	r.Value = n.value
+	r.TimeStamp = duration.TimeToFloat(kNow)
+	r.Active = true
+	n.numWritten++
+	return true
+}
+
+func (n *namedIteratorSameValueType) Name() string {
+	return n.name
+}
+
+func (n *namedIteratorSameValueType) Commit() {
+	n.lastCommitPoint = n.numWritten
+}
+
+type compoundIteratorType []store.NamedIterator
+
+func (c compoundIteratorType) Next(r *store.Record) bool {
+	for _, iter := range c {
+		if iter.Next(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c compoundIteratorType) Name() string {
+	return "compound"
+}
+
+func (c compoundIteratorType) Commit() {
+	for _, iter := range c {
+		iter.Commit()
+	}
+}
+
+type noStringsNilWriterType struct {
+}
+
+func (w noStringsNilWriterType) Write(records []pstore.Record) error {
+	return nil
+}
+
+func (w noStringsNilWriterType) IsTypeSupported(kind types.Type) bool {
+	return kind != types.String
 }
 
 func assertSuccess(t *testing.T, err error) {

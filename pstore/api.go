@@ -171,7 +171,7 @@ func (a *AsyncConsumer) Flush() {
 type Consumer struct {
 	w             RecordWriter
 	buffer        []Record
-	toBeCommitted map[store.NamedIterator]bool
+	toBeCommitted []store.NamedIterator
 	idx           int
 }
 

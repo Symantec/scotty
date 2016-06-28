@@ -78,6 +78,7 @@ func copyCompleted(
 	return result
 }
 
+// nextStartTimeStamps must not change the state of this iterator.
 func (n *namedIteratorType) nextStartTimeStamps() map[int]float64 {
 	result := make(map[int]float64, len(n.startTimeStamps))
 	for k, v := range n.startTimeStamps {

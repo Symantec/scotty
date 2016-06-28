@@ -66,10 +66,21 @@ func (s *Store) byPrefixAndEndpoint(
 	s.byApplication[endpointId].ByPrefix(prefix, start, end, result)
 }
 
+func (s *Store) timeLeft(name string) float64 {
+	result := 0.0
+	for endpointId := range s.byApplication {
+		current := s.byApplication[endpointId].TimeLeft(name)
+		if current > result {
+			result = current
+		}
+	}
+	return result
+}
+
 func (s *Store) namedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
-	maxFrames int) NamedIterator {
+	maxFrames int) (NamedIterator, float64) {
 	return s.byApplication[endpointId].NewNamedIterator(name, maxFrames)
 }
 
@@ -77,7 +88,7 @@ func (s *Store) namedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},
 	duration time.Duration,
-	maxFrames int) NamedIterator {
+	maxFrames int) (NamedIterator, float64) {
 	return s.byApplication[endpointId].NewNamedIteratorRollUp(
 		name, float64(duration)/float64(time.Second), maxFrames)
 }

@@ -442,14 +442,14 @@ func TestIteratorPageEviction(t *testing.T) {
 		aMetric[1].Value = int64(2*(ts/20) + 1)
 		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
 	}
-	iterator := aStore.NamedIteratorForEndpoint(
+	iterator, _ := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
 	consumer.Iterate(t, iterator)
 	assertValueEquals(t, 20, consumer.Count)
 
 	iterator.Commit()
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
 	consumer.Iterate(t, iterator)
 	assertValueEquals(t, 0, consumer.Count)
@@ -460,7 +460,7 @@ func TestIteratorPageEviction(t *testing.T) {
 		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
 	}
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 5)
 	consumer.Iterate(t, iterator)
 	// 2 time series * max 5 value, timestamp pairs each
@@ -476,7 +476,7 @@ func TestIteratorPageEviction(t *testing.T) {
 		aMetric[1].Value = int64(2*(ts/20) + 1)
 		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
 	}
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
 	consumer.Iterate(t, iterator)
 	if consumer.MinTimeStamp < 360.0 { // max 14 timestamps
@@ -567,7 +567,13 @@ func TestRollUpIterator(t *testing.T) {
 		"near",       // 4th
 		"far", "too", // 5th
 	)
+	// Assume 0 time left when we haven't added anything
+	assertValueEquals(t, 0.0, aStore.TimeLeft("anIterator"))
+
 	playback.Play(aStore, kEndpoint0)
+
+	// 96610.0 - 96000 > 120500.0 - 120000
+	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	expected := newExpectedTsValues()
 	expected.Add("Int", 120059.5, int64(26667))
@@ -589,10 +595,14 @@ func TestRollUpIterator(t *testing.T) {
 
 	beginning := expected.Checkpoint()
 
-	iterator := aStore.NamedIteratorForEndpointRollUp(
+	iterator, timeAfterIterator := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 0)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
+	assertValueEquals(t, 110.0, timeAfterIterator)
+
+	// We never committed progress, so timeLeft remains unchanged
+	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	// Shouldn't get anything else off this iterator
 	expected.Iterate(t, iterator)
@@ -604,29 +614,36 @@ func TestRollUpIterator(t *testing.T) {
 	expected.Restore(beginning)
 
 	// max 3 times per metric
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 3)
 	expected.Iterate(t, iterator)
 	expected.Restore(beginning)
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 3)
 	assertValueEquals(t, 11, expected.Iterate(t, iterator))
+	assertValueEquals(t, 190.0, timeAfterIterator)
 	iterator.Commit()
 
+	assertValueEquals(t, 190.0, aStore.TimeLeft("anIterator"))
+
 	checkpoint := expected.Checkpoint()
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 3)
 	expected.Iterate(t, iterator)
 	expected.Restore(checkpoint)
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 3)
 	assertValueEquals(t, 2, expected.Iterate(t, iterator))
+	assertValueEquals(t, 110.0, timeAfterIterator)
 	iterator.Commit()
+
+	assertValueEquals(t, 110.0, aStore.TimeLeft("anIterator"))
 
 	expected.VerifyDone(t)
 
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 3)
+	assertValueEquals(t, 110.0, timeAfterIterator)
 	// Shouldn't get anything off iterator
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -635,13 +652,13 @@ func TestRollUpIterator(t *testing.T) {
 	// and creating a new iterator. Since we committed the previous
 	// iterator, we have to use a new name to start from the beginning.
 	expected.Restore(beginning)
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
 	assertValueEquals(t, 8, expected.Iterate(
 		t, iteratorLimit(iterator, 8)))
 	iterator.Commit()
 
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
 	assertValueEquals(t, 5, expected.Iterate(
 		t, iteratorLimit(iterator, 8)))
@@ -686,7 +703,7 @@ func TestRollUpIterator(t *testing.T) {
 	expected.Add("String", 96600.0, "far")
 	expected.Add("Inactive", 120500.0, 8.3)
 
-	iterator = aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 2*time.Minute, 0)
 
 	expected.Iterate(t, iterator)
@@ -724,7 +741,7 @@ func TestRollUpIteratorBool(t *testing.T) {
 	expected.Add("path", 30300.0, false)
 	expected.Add("path", 30900.0, true)
 
-	iterator := aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 5*time.Minute, 0)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -761,7 +778,7 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	expected.Add("path", 30400.0, int8(-128))
 	expected.Add("path", 30900.0, int8(127))
 
-	iterator := aStore.NamedIteratorForEndpointRollUp(
+	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator", kEndpoint0, 5*time.Minute, 0)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -894,8 +911,9 @@ func TestIterator(t *testing.T) {
 
 	beginning := expected.Checkpoint()
 
-	iterator := aStore.NamedIteratorForEndpoint(
+	iterator, timeAfterIterator := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
+	assertValueEquals(t, 0.0, timeAfterIterator)
 
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -910,11 +928,12 @@ func TestIterator(t *testing.T) {
 	expected.Restore(beginning)
 
 	// max 2 times per metric
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, timeAfterIterator = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 2)
+	assertValueEquals(t, 800.001, timeAfterIterator)
 	expected.Iterate(t, iterator)
 	expected.Restore(beginning)
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 2)
 	valueCount := expected.Iterate(t, iterator)
 	iterator.Commit()
@@ -923,20 +942,21 @@ func TestIterator(t *testing.T) {
 		if valueCount > 8 {
 			t.Error("Got too many values")
 		}
-		iterator = aStore.NamedIteratorForEndpoint(
+		iterator, _ = aStore.NamedIteratorForEndpoint(
 			"anIterator", kEndpoint0, 2)
 		checkpoint := expected.Checkpoint()
 		expected.Iterate(t, iterator)
 		expected.Restore(checkpoint)
-		iterator = aStore.NamedIteratorForEndpoint(
+		iterator, _ = aStore.NamedIteratorForEndpoint(
 			"anIterator", kEndpoint0, 2)
 		valueCount = expected.Iterate(t, iterator)
 		iterator.Commit()
 	}
 	expected.VerifyDone(t)
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, timeAfterIterator = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 2)
+	assertValueEquals(t, 0.0, timeAfterIterator)
 	expected.Iterate(t, iterator)
 	iterator.Commit()
 	expected.VerifyDone(t)
@@ -946,12 +966,12 @@ func TestIterator(t *testing.T) {
 	// iterator, we have to use a new name to start from the beginning.
 	expected.Restore(beginning)
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anotherIterator", kEndpoint0, 0)
 	valueCount = expected.Iterate(t, iteratorLimit(iterator, 5))
 	iterator.Commit()
 	for valueCount > 0 {
-		iterator = aStore.NamedIteratorForEndpoint(
+		iterator, _ = aStore.NamedIteratorForEndpoint(
 			"anotherIterator", kEndpoint0, 0)
 		newValueCount := expected.Iterate(t, iteratorLimit(iterator, 5))
 		if !(valueCount == 5 || (valueCount < 5 && newValueCount == 0)) {
@@ -968,7 +988,7 @@ func TestIterator(t *testing.T) {
 	filteredExpected.Add("Alice", 200.0, int64(0))
 	filteredExpected.Add("Alice", 300.0, int64(200))
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"aThirdIterator", kEndpoint0, 0)
 	filteredIterator := store.NamedIteratorFilterFunc(
 		iterator,
@@ -979,7 +999,7 @@ func TestIterator(t *testing.T) {
 	filteredExpected.VerifyDone(t)
 	filteredIterator.Commit()
 
-	iterator = aStore.NamedIteratorForEndpoint(
+	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"aThirdIterator", kEndpoint0, 0)
 	filteredExpected.Iterate(t, iterator)
 }
@@ -1254,7 +1274,7 @@ func TestMachineGoneInactive(t *testing.T) {
 	expectedTsValues.Add("/foo/baz", 1920.0, int64(22))
 	expectedTsValues.AddInactive("/foo/baz", 1920.001, int64(0))
 
-	iterator := aStore.NamedIteratorForEndpoint("aname", kEndpoint1, 0)
+	iterator, _ := aStore.NamedIteratorForEndpoint("aname", kEndpoint1, 0)
 
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
@@ -1304,7 +1324,7 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 
 	// Even though we request 2 values per metric, we get nothing
 	// because the first 2 timestamps don't match any value.
-	iterator := aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 2)
+	iterator, _ := aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 2)
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
 
@@ -1314,7 +1334,7 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	expectedTsValues.Add("/foo/bar", 1600.0, int64(16))
 	expectedTsValues.Add("/foo/bar", 1700.0, int64(16))
 
-	iterator = aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
+	iterator, _ = aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
 }

@@ -213,17 +213,16 @@ func (a *AsyncConsumer) flush() {
 
 func newConsumer(w RecordWriter, bufferSize int) *Consumer {
 	return &Consumer{
-		w:             w,
-		buffer:        make([]Record, bufferSize),
-		toBeCommitted: make(map[store.NamedIterator]bool),
+		w:      w,
+		buffer: make([]Record, bufferSize),
 	}
 }
 
 func (c *Consumer) write(
 	n store.NamedIterator, hostName, appName string) error {
 	var r store.Record
+	c.toBeCommitted = append(c.toBeCommitted, n)
 	for n.Next(&r) {
-		c.toBeCommitted[n] = true
 		c.buffer[c.idx] = Record{
 			HostName:  hostName,
 			Tags:      TagGroup{TagAppName: appName},
@@ -239,27 +238,27 @@ func (c *Consumer) write(
 			if err != nil {
 				return err
 			}
+			c.toBeCommitted = append(c.toBeCommitted, n)
 		}
 	}
 	return nil
 }
 
-func (c *Consumer) flush() error {
-	if c.idx == 0 {
-		// fast track: No pending records to write out.
-		return nil
+func (c *Consumer) flush() (err error) {
+	// Write pending records out if there are any.
+	if c.idx != 0 {
+		err = c.w.Write(c.buffer[:c.idx])
+		c.idx = 0
 	}
-	err := c.w.Write(c.buffer[:c.idx])
-	c.idx = 0
+	// Commit pending iterators if no error
 	if err == nil {
-		for k := range c.toBeCommitted {
-			k.Commit()
+		for _, iter := range c.toBeCommitted {
+			iter.Commit()
 		}
 	}
-	for k := range c.toBeCommitted {
-		delete(c.toBeCommitted, k)
-	}
-	return err
+	// Clear out pending iterators
+	c.toBeCommitted = c.toBeCommitted[:0]
+	return
 }
 
 type consumerType interface {

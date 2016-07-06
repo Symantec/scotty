@@ -34,6 +34,7 @@ type EndpointMetric struct {
 	Description string               `json:"description"`
 	Unit        units.Unit           `json:"unit"`
 	Kind        types.Type           `json:"kind"`
+	SubType     types.Type           `json:"subType"`
 	Bits        int                  `json:"bits,omitempty"`
 	Values      TimestampedValueList `json:"values"`
 }

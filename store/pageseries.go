@@ -394,7 +394,7 @@ type timeSeriesType struct {
 	id        *MetricInfo
 	metrics   *storeMetricsType
 	lock      sync.Mutex
-	lastValue [1]tsValueType
+	lastValue tsValueType
 	pages     pageSeriesType
 }
 
@@ -403,8 +403,8 @@ func newTimeSeriesType(
 	ts float64, value interface{},
 	metrics *storeMetricsType) *timeSeriesType {
 	result := &timeSeriesType{id: id, metrics: metrics}
-	result.lastValue[0].TimeStamp = ts
-	result.lastValue[0].Value = value
+	result.lastValue.TimeStamp = ts
+	result.lastValue.Value = value
 	result.pages.Init((*pageWithMetaDataType).ValuePage)
 	result.metrics.NewValueSeries()
 	return result
@@ -448,7 +448,7 @@ func (t *timeSeriesType) PageList() pageListType {
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd bool) {
-	if value == t.lastValue[0].Value || (timestamp <= t.lastValue[0].TimeStamp && value != gInactive) {
+	if value == t.lastValue.Value || (timestamp <= t.lastValue.TimeStamp && value != gInactive) {
 		return false
 	}
 	return true
@@ -489,24 +489,24 @@ func (t *timeSeriesType) Add(
 		return
 	}
 	addSuccessful = true
-	justActivated = t.lastValue[0].Value == gInactive
+	justActivated = t.lastValue.Value == gInactive
 	if newPage {
 		t.metrics.AddEmptyValuePage(oldLen)
 	}
 	latestPage := lastPage.Values()
-	latestPage.Add(t.lastValue[0])
+	latestPage.Add(t.lastValue)
 	// Ensure that timestamps are monotone increasing. We could get an
 	// earlier timestamp if we are getting an inactive marker.
-	if timestamp <= t.lastValue[0].TimeStamp {
+	if timestamp <= t.lastValue.TimeStamp {
 		// If current timestamp is earlier, make it be 1ms more than
 		// last timestamp. Adding 1ms makes the timestamp
 		// greater for any timestamp < 2^43 seconds past Jan 1 1970
 		// which is millinea into the future.
-		t.lastValue[0].TimeStamp = incTs(t.lastValue[0].TimeStamp)
+		t.lastValue.TimeStamp = incTs(t.lastValue.TimeStamp)
 	} else {
-		t.lastValue[0].TimeStamp = timestamp
+		t.lastValue.TimeStamp = timestamp
 	}
-	t.lastValue[0].Value = value
+	t.lastValue.Value = value
 	return
 }
 
@@ -523,14 +523,14 @@ func (t *timeSeriesType) Fetch(
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	// Only include latest value if it comes before end timestamp.
-	if t.lastValue[0].TimeStamp < end {
-		record.TimeStamp = t.lastValue[0].TimeStamp
-		record.setValue(t.lastValue[0].Value)
+	if t.lastValue.TimeStamp < end {
+		record.TimeStamp = t.lastValue.TimeStamp
+		record.setValue(t.lastValue.Value)
 		if !result.Append(&record) {
 			return
 		}
 	}
-	if t.lastValue[0].TimeStamp > start {
+	if t.lastValue.TimeStamp > start {
 		t.pages.Fetch(start, end, &record, result)
 	}
 }
@@ -546,16 +546,16 @@ func (t *timeSeriesType) FetchForward(
 		Info:       t.id}
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	if t.lastValue[0].TimeStamp > start {
+	if t.lastValue.TimeStamp > start {
 		// We have to look at the pages
 		if !t.pages.FetchForward(start, end, &record, result) {
 			return
 		}
 	}
 	// Only include latest value if it comes before end timestamp.
-	if t.lastValue[0].TimeStamp < end {
-		record.TimeStamp = t.lastValue[0].TimeStamp
-		record.setValue(t.lastValue[0].Value)
+	if t.lastValue.TimeStamp < end {
+		record.TimeStamp = t.lastValue.TimeStamp
+		record.setValue(t.lastValue.Value)
 		result.Append(&record)
 	}
 }

@@ -21,6 +21,7 @@ var (
 	kEndpoint3      = scotty.NewEndpoint("host4", 1002)
 	kError          = errors.New("An error")
 	kUsualTimeStamp = time.Date(2016, 7, 8, 14, 11, 0, 0, time.Local)
+	kNoMetaData     = newExpectedMetaData()
 )
 
 type playbackType struct {
@@ -232,8 +233,38 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	assertValueEquals(t, 14, int(total))
 }
 
+type descendingCheckerType struct {
+	visited       map[*store.MetricInfo]bool
+	visiting      *store.MetricInfo
+	lastTimeStamp float64
+}
+
+func newDescendingChecker() *descendingCheckerType {
+	return &descendingCheckerType{visited: make(map[*store.MetricInfo]bool)}
+}
+
+func (c *descendingCheckerType) Check(t *testing.T, r *store.Record) {
+	if r.Info == c.visiting {
+		if r.TimeStamp >= c.lastTimeStamp {
+			t.Errorf(
+				"Timestamp %f comes after %f",
+				r.TimeStamp, c.lastTimeStamp)
+		} else {
+			c.lastTimeStamp = r.TimeStamp
+		}
+	} else if c.visited[r.Info] {
+		t.Errorf("Records for %s not contiguous.", r.Info.Path())
+	} else {
+		if c.visiting != nil {
+			c.visited[c.visiting] = true
+		}
+		c.visiting = r.Info
+		c.lastTimeStamp = r.TimeStamp
+	}
+}
+
 type sanityCheckerType struct {
-	lastTsMap map[string]float64
+	lastTsMap map[*store.MetricInfo]float64
 }
 
 func newSanityChecker() *sanityCheckerType {
@@ -243,11 +274,11 @@ func newSanityChecker() *sanityCheckerType {
 }
 
 func (c *sanityCheckerType) Init() {
-	c.lastTsMap = make(map[string]float64)
+	c.lastTsMap = make(map[*store.MetricInfo]float64)
 }
 
 func (c *sanityCheckerType) copyTo(dest *sanityCheckerType) {
-	dest.lastTsMap = make(map[string]float64, len(c.lastTsMap))
+	dest.lastTsMap = make(map[*store.MetricInfo]float64, len(c.lastTsMap))
 	for k, v := range c.lastTsMap {
 		dest.lastTsMap[k] = v
 	}
@@ -255,18 +286,84 @@ func (c *sanityCheckerType) copyTo(dest *sanityCheckerType) {
 
 func (c *sanityCheckerType) Check(
 	t *testing.T, r *store.Record) (lastTs float64, ok bool) {
-	name := r.Info.Path()
 	ts := r.TimeStamp
-	lastTs, ok = c.lastTsMap[name]
-	c.lastTsMap[name] = ts
+	lastTs, ok = c.lastTsMap[r.Info]
+	c.lastTsMap[r.Info] = ts
 	if ok && ts <= lastTs {
 		t.Errorf(
 			"(%s %f) does not come after %f",
-			name,
+			r.Info.Path(),
 			ts,
 			lastTs)
 	}
 	return
+}
+
+type expectedMetaDataType struct {
+	descriptions map[string]string
+	units        map[string]units.Unit
+	kinds        map[string]types.Type
+	subTypes     map[string]types.Type
+	bits         map[string]int
+	groupIds     map[string]int
+}
+
+func newExpectedMetaData() *expectedMetaDataType {
+	return &expectedMetaDataType{
+		descriptions: make(map[string]string),
+		units:        make(map[string]units.Unit),
+		kinds:        make(map[string]types.Type),
+		subTypes:     make(map[string]types.Type),
+		bits:         make(map[string]int),
+		groupIds:     make(map[string]int),
+	}
+}
+
+func (e *expectedMetaDataType) AddDescription(path string, description string) {
+	e.descriptions[path] = description
+}
+
+func (e *expectedMetaDataType) AddUnit(path string, unit units.Unit) {
+	e.units[path] = unit
+}
+
+func (e *expectedMetaDataType) AddKind(path string, kind types.Type) {
+	e.kinds[path] = kind
+}
+
+func (e *expectedMetaDataType) AddSubType(
+	path string, subType types.Type) {
+	e.subTypes[path] = subType
+}
+
+func (e *expectedMetaDataType) AddBits(path string, bits int) {
+	e.bits[path] = bits
+}
+
+func (e *expectedMetaDataType) AddGroupId(path string, groupId int) {
+	e.groupIds[path] = groupId
+}
+
+func (e *expectedMetaDataType) Verify(t *testing.T, m *store.MetricInfo) {
+	path := m.Path()
+	if desc, ok := e.descriptions[path]; ok {
+		assertValueEquals(t, desc, m.Description())
+	}
+	if unit, ok := e.units[path]; ok {
+		assertValueEquals(t, unit, m.Unit())
+	}
+	if kind, ok := e.kinds[path]; ok {
+		assertValueEquals(t, kind, m.Kind())
+	}
+	if subType, ok := e.subTypes[path]; ok {
+		assertValueEquals(t, subType, m.SubType())
+	}
+	if bits, ok := e.bits[path]; ok {
+		assertValueEquals(t, bits, m.Bits())
+	}
+	if groupId, ok := e.groupIds[path]; ok {
+		assertValueEquals(t, groupId, m.GroupId())
+	}
 }
 
 type nameAndTsType struct {
@@ -280,19 +377,27 @@ type interfaceAndActiveType struct {
 }
 
 type expectedTsValuesType struct {
+	metaData      *expectedMetaDataType
 	sanityChecker sanityCheckerType
 	values        map[nameAndTsType]interfaceAndActiveType
 }
 
 func newExpectedTsValues() *expectedTsValuesType {
+	return newExpectedTsValuesWithMetaData(kNoMetaData)
+}
+
+func newExpectedTsValuesWithMetaData(
+	metaData *expectedMetaDataType) *expectedTsValuesType {
 	result := &expectedTsValuesType{
-		values: make(map[nameAndTsType]interfaceAndActiveType),
+		metaData: metaData,
+		values:   make(map[nameAndTsType]interfaceAndActiveType),
 	}
 	result.sanityChecker.Init()
 	return result
 }
 
 func (e *expectedTsValuesType) copyTo(dest *expectedTsValuesType) {
+	dest.metaData = e.metaData
 	e.sanityChecker.copyTo(&dest.sanityChecker)
 	dest.values = make(
 		map[nameAndTsType]interfaceAndActiveType, len(e.values))
@@ -324,45 +429,75 @@ func (e *expectedTsValuesType) AddInactive(
 		Value: value, Active: false}
 }
 
+func (e *expectedTsValuesType) checkContents(
+	t *testing.T, r *store.Record) {
+	name := r.Info.Path()
+	ts := r.TimeStamp
+	nameTs := nameAndTsType{name, ts}
+	value := r.Value
+	active := r.Active
+	expectedVal, ok := e.values[nameTs]
+	if !ok {
+		t.Errorf("(%s, %f) not expected", name, ts)
+	} else {
+		if !r.Info.ValuesAreEqual(expectedVal.Value, value) {
+			t.Errorf(
+				"Expected %v for (%s, %f) got %v",
+				expectedVal.Value,
+				name,
+				ts,
+				value)
+		}
+		if active != expectedVal.Active {
+			if expectedVal.Active {
+				t.Errorf(
+					"Expected active for (%s, %f)",
+					name,
+					ts)
+			} else {
+				t.Errorf(
+					"Expected inactive for (%s, %f)",
+					name,
+					ts)
+			}
+
+		}
+		delete(e.values, nameTs)
+	}
+}
+
+// checks that results slice is equivalent to this instance. Unlike Iterate,
+// this method does not change the state of this instance.
+func (e *expectedTsValuesType) CheckSlice(
+	t *testing.T, results []store.Record) (count int) {
+	descendingChecker := newDescendingChecker()
+	ecopy := newExpectedTsValues()
+	e.copyTo(ecopy)
+	var lastInfo *store.MetricInfo
+	for i := range results {
+		descendingChecker.Check(t, &results[i])
+		if results[i].Info != lastInfo {
+			ecopy.metaData.Verify(t, results[i].Info)
+			lastInfo = results[i].Info
+		}
+		ecopy.checkContents(t, &results[i])
+	}
+	ecopy.VerifyDone(t)
+	return len(results)
+}
+
 func (e *expectedTsValuesType) Iterate(
 	t *testing.T, iterator store.Iterator) (count int) {
 	var r store.Record
+	var lastInfo *store.MetricInfo
 	for iterator.Next(&r) {
 		e.sanityChecker.Check(t, &r)
-		count++
-		name := r.Info.Path()
-		ts := r.TimeStamp
-		nameTs := nameAndTsType{name, ts}
-		value := r.Value
-		active := r.Active
-		expectedVal, ok := e.values[nameTs]
-		if !ok {
-			t.Errorf("(%s, %f) not expected", name, ts)
-		} else {
-			if value != expectedVal.Value {
-				t.Errorf(
-					"Expected %v for (%s, %f) got %v",
-					expectedVal.Value,
-					name,
-					ts,
-					value)
-			}
-			if active != expectedVal.Active {
-				if expectedVal.Active {
-					t.Errorf(
-						"Expected active for (%s, %f)",
-						name,
-						ts)
-				} else {
-					t.Errorf(
-						"Expected inactive for (%s, %f)",
-						name,
-						ts)
-				}
-
-			}
-			delete(e.values, nameTs)
+		if r.Info != lastInfo {
+			e.metaData.Verify(t, r.Info)
+			lastInfo = r.Info
 		}
+		count++
+		e.checkContents(t, &r)
 	}
 	return
 }
@@ -1415,6 +1550,134 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	expectedTsValues.Add("/foo/bar", 1700.0, int64(16))
 
 	iterator, _ = aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
+}
+
+func TestWithLists(t *testing.T) {
+	aStore := store.NewStore(10, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+
+	aMetric := metrics.SimpleList{
+		{
+			Path:    "/list/uint32",
+			GroupId: 5,
+		},
+		{
+			Path:    "/list/string",
+			GroupId: 7,
+		},
+	}
+	expectedMetaData := newExpectedMetaData()
+	expectedMetaData.AddBits("/list/uint32", 32)
+	expectedMetaData.AddGroupId("/list/uint32", 5)
+	expectedMetaData.AddKind("/list/uint32", types.List)
+	expectedMetaData.AddSubType("/list/uint32", types.Uint32)
+	expectedMetaData.AddBits("/list/string", 0)
+	expectedMetaData.AddGroupId("/list/string", 7)
+	expectedMetaData.AddKind("/list/string", types.List)
+	expectedMetaData.AddSubType("/list/string", types.String)
+
+	playback := newPlaybackType(aMetric[:], 8)
+	playback.AddTimes(
+		5,
+		1700.0, 1750.0, 1800.0, 1850.0, 1900.0,
+		1950.0, 2000.0, 2050.0)
+	var nilUint32List []uint32
+	playback.Add(
+		"/list/uint32",
+		nilUint32List,
+		[]uint32{2, 3, 5, 7},
+		[]uint32{2, 3, 5, 7},
+		nilUint32List,
+		nilUint32List,
+		nil,
+		nil,
+		nil,
+	)
+	playback.AddTimes(
+		7,
+		2700.0, 2750.0, 2800.0, 2850.0, 2900.0,
+		2950.0, 3000.0, 3050.0)
+	playback.Add(
+		"/list/string",
+		[]string{"hello", "goodbye"},
+		[]string{"foo", "bar", "baz"},
+		[]string{"foo", "bar", "baz"},
+		[]string{"foo", "bar", "baz"},
+		nil,
+		nil,
+		nil,
+		[]string{"hello", "goodbye"},
+	)
+	var nilStringList []string
+	playback.Play(aStore, kEndpoint0)
+	expectedTsValues := newExpectedTsValuesWithMetaData(expectedMetaData)
+	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1750.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1850.0, nilUint32List)
+	// no time reported for group
+	expectedTsValues.AddInactive(
+		"/list/uint32", 1900.001, nilUint32List)
+
+	expectedTsValues.Add(
+		"/list/string", 2700.0, []string{"hello", "goodbye"})
+	expectedTsValues.Add(
+		"/list/string", 2750.0, []string{"foo", "bar", "baz"})
+	// no time reported for group
+	expectedTsValues.AddInactive(
+		"/list/string", 2850.001, nilStringList)
+	expectedTsValues.Add(
+		"/list/string", 3050.0, []string{"hello", "goodbye"})
+
+	var result []store.Record
+	aStore.ByEndpoint(
+		kEndpoint0, 0, 10000.0, store.AppendTo(&result))
+	expectedTsValues.CheckSlice(t, result)
+
+	// Test iterator
+	expectedTsValues = newExpectedTsValuesWithMetaData(expectedMetaData)
+
+	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1750.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1800.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1850.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1900.0, nilUint32List)
+	expectedTsValues.AddInactive("/list/uint32", 1900.001, nilUint32List)
+
+	expectedTsValues.Add(
+		"/list/string", 2700.0, []string{"hello", "goodbye"})
+	expectedTsValues.Add(
+		"/list/string", 2750.0, []string{"foo", "bar", "baz"})
+	expectedTsValues.Add(
+		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
+	expectedTsValues.Add(
+		"/list/string", 2850.0, []string{"foo", "bar", "baz"})
+	expectedTsValues.AddInactive(
+		"/list/string", 2850.001, nilStringList)
+	expectedTsValues.Add(
+		"/list/string", 3050.0, []string{"hello", "goodbye"})
+
+	iterator, _ := aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
+
+	// Test rolled up iterator
+	expectedTsValues = newExpectedTsValuesWithMetaData(expectedMetaData)
+
+	// Remember, iterator never emits rolled up value from last time
+	// period as more values could come in.
+	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1800.0, []uint32{2, 3, 5, 7})
+
+	expectedTsValues.Add(
+		"/list/string", 2700.0, []string{"hello", "goodbye"})
+	expectedTsValues.Add(
+		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
+
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
+		"aRollUpIterator", kEndpoint0, 100*time.Second, 0)
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
 }

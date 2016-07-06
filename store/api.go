@@ -21,7 +21,7 @@ type MetricInfo struct {
 	description string
 	unit        units.Unit
 	kind        types.Type
-	bits        int
+	subType     types.Type
 	groupId     int
 }
 
@@ -45,14 +45,27 @@ func (m *MetricInfo) Kind() types.Type {
 	return m.kind
 }
 
+func (m *MetricInfo) SubType() types.Type {
+	return m.subType
+}
+
 // The number of bits. Only set for Int and Uint, and Float metrics.
 func (m *MetricInfo) Bits() int {
-	return m.bits
+	if m.kind.UsesSubType() {
+		return m.subType.Bits()
+	}
+	return m.kind.Bits()
 }
 
 // The group ID of this metric
 func (m *MetricInfo) GroupId() int {
 	return m.groupId
+}
+
+// ValuesAreEqual returns true if lhs is equivalent to rhs.
+// lhs and rhs must be values from the metric having this information.
+func (m *MetricInfo) ValuesAreEqual(lhs, rhs interface{}) bool {
+	return m.valuesAreEqual(lhs, rhs)
 }
 
 // MetricInfoBuilder creates a brand new MetricInfo instance from scratch.
@@ -62,7 +75,6 @@ type MetricInfoBuilder struct {
 	Description string
 	Unit        units.Unit
 	Kind        types.Type
-	Bits        int
 	GroupId     int
 }
 
@@ -72,7 +84,6 @@ func (m *MetricInfoBuilder) Build() *MetricInfo {
 		description: m.Description,
 		unit:        m.Unit,
 		kind:        m.Kind,
-		bits:        m.Bits,
 		groupId:     m.GroupId}
 }
 

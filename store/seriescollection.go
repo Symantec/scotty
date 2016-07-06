@@ -25,17 +25,21 @@ func (m *metricInfoStoreType) Init() {
 
 // Register returns the correct MetricInfo instance from the pool for
 // passed in metric and type. Register will always return a non nil value.
-func (m *metricInfoStoreType) Register(metric *metrics.Value, kind types.Type) (
+func (m *metricInfoStoreType) Register(
+	metric *metrics.Value, kind, subType types.Type) (
 	result *MetricInfo) {
 	if kind == types.Unknown {
 		panic("Got Unknown type")
+	}
+	if kind.UsesSubType() && subType == types.Unknown {
+		panic("Got unknown sub-type when it is required")
 	}
 	infoStruct := MetricInfo{
 		path:        metric.Path,
 		description: metric.Description,
 		unit:        metric.Unit,
 		kind:        kind,
-		bits:        kind.Bits(),
+		subType:     subType,
 		groupId:     metric.GroupId}
 	result, alreadyExists := m.ByInfo[infoStruct]
 	if alreadyExists {
@@ -274,12 +278,12 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	for i := 0; i < mlen; i++ {
 		var avalue metrics.Value
 		indexOf(mlist, i, &avalue)
-		kind := types.FromGoValue(avalue.Value)
+		kind, subType := types.FromGoValueWithSubType(avalue.Value)
 		// TODO: Allow distribution metrics later.
 		if kind == types.Dist {
 			continue
 		}
-		id := c.metricInfoStore.Register(&avalue, kind)
+		id := c.metricInfoStore.Register(&avalue, kind, subType)
 		valueByMetric[id] = avalue.Value
 		groupIds[id.GroupId()] = true
 		if !avalue.TimeStamp.IsZero() {

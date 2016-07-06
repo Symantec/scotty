@@ -24,7 +24,6 @@ var (
 
 var (
 	kInt64MetricInfo = (&store.MetricInfoBuilder{
-		Bits:        64,
 		Description: kDescription,
 		Kind:        types.Int64,
 		Path:        kInt64Path,

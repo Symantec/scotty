@@ -3,7 +3,6 @@ package pstore
 import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
-	"github.com/Symantec/tricorder/go/tricorder/types"
 	"time"
 )
 
@@ -228,6 +227,7 @@ func (c *Consumer) write(
 			Tags:      TagGroup{TagAppName: appName},
 			Path:      r.Info.Path(),
 			Kind:      r.Info.Kind(),
+			SubType:   r.Info.SubType(),
 			Unit:      r.Info.Unit(),
 			Value:     r.Value,
 			Timestamp: duration.FloatToTime(r.TimeStamp),
@@ -318,9 +318,17 @@ func (s *ConsumerMetricsStore) addToRecordCount(count uint64) {
 	s.recordCount += count
 }
 
-func toFilterer(typeFilter func(types.Type) bool) store.Filterer {
+func toFilterer(w LimitedRecordWriter) store.Filterer {
+	withSubType, ok := w.(LimitedBySubTypeRecordWriter)
+	if ok {
+		f := func(r *store.Record) bool {
+			return withSubType.IsTypeAndSubTypeSupported(
+				r.Info.Kind(), r.Info.SubType()) && r.Active
+		}
+		return store.FiltererFunc(f)
+	}
 	f := func(r *store.Record) bool {
-		return typeFilter(r.Info.Kind()) && r.Active
+		return w.IsTypeSupported(r.Info.Kind()) && r.Active
 	}
 	return store.FiltererFunc(f)
 }
@@ -334,7 +342,7 @@ func newConsumerWithMetricsBuilder(
 			Concurrency: 1},
 		metricsStore: &ConsumerMetricsStore{
 			w:        writerWithMetrics,
-			filterer: toFilterer(w.IsTypeSupported),
+			filterer: toFilterer(w),
 		},
 	}
 	return &ConsumerWithMetricsBuilder{c: ptr}

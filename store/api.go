@@ -75,6 +75,7 @@ type MetricInfoBuilder struct {
 	Description string
 	Unit        units.Unit
 	Kind        types.Type
+	SubType     types.Type
 	GroupId     int
 }
 
@@ -84,6 +85,7 @@ func (m *MetricInfoBuilder) Build() *MetricInfo {
 		description: m.Description,
 		unit:        m.Unit,
 		kind:        m.Kind,
+		subType:     m.SubType,
 		groupId:     m.GroupId}
 }
 

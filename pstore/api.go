@@ -47,6 +47,8 @@ type Record struct {
 	Tags TagGroup
 	// Kind of metric
 	Kind types.Type
+	// Subtype of metric
+	SubType types.Type
 	// Unit of metric
 	Unit units.Unit
 	// Value of metric
@@ -56,7 +58,7 @@ type Record struct {
 }
 
 func (r Record) String() string {
-	return fmt.Sprintf("{HostName: %s, Path: %s, Tags: %v, Kind: %v, Unit: %v, Value: %v, Timestamp: %v}", r.HostName, r.Path, r.Tags, r.Kind, r.Unit, r.Value, r.Timestamp)
+	return fmt.Sprintf("{HostName: %s, Path: %s, Tags: %v, Kind: %v, SubType: %v, Unit: %v, Value: %v, Timestamp: %v}", r.HostName, r.Path, r.Tags, r.Kind, r.SubType, r.Unit, r.Value, r.Timestamp)
 }
 
 // RecordWriter is the interface for writing to persistent store.
@@ -75,11 +77,17 @@ type LimitedRecordWriter interface {
 	IsTypeSupported(kind types.Type) bool
 }
 
-// ThrottledLimitedRecordWriter instances throttle writes.
-type ThrottledLimitedRecordWriter interface {
+// LimitedBySubTypeRecordWriter is a sub interface of LimitedRecordWriter
+// that allows filtering by both kind and sub-type. For instance, if a
+// RecordWriter can write lists of int64s but not lists of strings, it
+// should implement this interface.
+type LimitedBySubTypeRecordWriter interface {
+	// IsTypeSupported(kind) =
+	// IsTypeAndSubTypeSupported(kind, types.Unknown)
 	LimitedRecordWriter
-	// Returns max records to write per second. 0 means no limit.
-	RecordsPerSecond() int
+	// IsTypeAndSubTypeSupported returns true if this writer supports
+	// metrics of a particular kind.
+	IsTypeAndSubTypeSupported(kind, subType types.Type) bool
 }
 
 // RecordWriterMetrics represents writing metrics

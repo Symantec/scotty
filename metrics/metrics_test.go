@@ -73,8 +73,8 @@ func TestSomeTimeStampsMissing(t *testing.T) {
 			TimeStamp: kNow,
 		},
 	}
-	if err := metrics.VerifyList(list); err == nil {
-		t.Error("Expected error: some missing timestamps.")
+	if err := metrics.VerifyList(list); err != nil {
+		t.Error("Expected no error: Should tolerate some timestamps missing")
 	}
 }
 

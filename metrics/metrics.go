@@ -8,15 +8,13 @@ import (
 )
 
 var (
-	errTimeStamp = errors.New("metrics: TimeStamp must be present in all values or absent in all values.")
-	errGroupId   = errors.New("metrics: Invalid GroupId found.")
+	errGroupId = errors.New("metrics: Conflicting Timestamps for group Id.")
 )
 
 func verifyList(list List) error {
 	length := list.Len()
 	pathSet := make(map[string]bool, length)
 	groupIdToTimeStamp := make(map[int]time.Time)
-	var zeroTsFound, nonZeroTsFound bool
 	for i := 0; i < length; i++ {
 		var value Value
 		list.Index(i, &value)
@@ -29,22 +27,7 @@ func verifyList(list List) error {
 			return errors.New(
 				fmt.Sprintf("Bad value: %v", value.Value))
 		}
-		if value.TimeStamp.IsZero() {
-			if nonZeroTsFound {
-				return errTimeStamp
-			}
-			zeroTsFound = true
-		} else {
-			if zeroTsFound {
-				return errTimeStamp
-			}
-			nonZeroTsFound = true
-		}
-		if zeroTsFound {
-			if value.GroupId != 0 {
-				return errGroupId
-			}
-		} else {
+		if !value.TimeStamp.IsZero() {
 			lastTs, ok := groupIdToTimeStamp[value.GroupId]
 			if !ok {
 				groupIdToTimeStamp[value.GroupId] = value.TimeStamp

@@ -267,6 +267,7 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	}
 	valueByMetric := make(map[*MetricInfo]interface{})
 	timestampByGroupId := make(map[int]float64)
+	groupIds := make(map[int]bool)
 	fetched = make(map[*timeSeriesType]interface{})
 	fetchedTimeStamps = make(map[*timestampSeriesType]float64)
 	mlen := mlist.Len()
@@ -280,10 +281,16 @@ func (c *timeSeriesCollectionType) LookupBatch(
 		}
 		id := c.metricInfoStore.Register(&avalue, kind)
 		valueByMetric[id] = avalue.Value
-		if avalue.TimeStamp.IsZero() {
-			timestampByGroupId[id.GroupId()] = timestamp
-		} else {
+		groupIds[id.GroupId()] = true
+		if !avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = duration.TimeToFloat(avalue.TimeStamp)
+		}
+	}
+	// If a group ID is missing a timestamp, give it the
+	// timestamp from scotty.
+	for groupId := range groupIds {
+		if _, ok := timestampByGroupId[groupId]; !ok {
+			timestampByGroupId[groupId] = timestamp
 		}
 	}
 	// populate notFetched

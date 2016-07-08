@@ -15,11 +15,12 @@ import (
 )
 
 var (
-	kEndpoint0 = scotty.NewEndpoint("host1", 1001)
-	kEndpoint1 = scotty.NewEndpoint("host2", 1002)
-	kEndpoint2 = scotty.NewEndpoint("host3", 1001)
-	kEndpoint3 = scotty.NewEndpoint("host4", 1002)
-	kError     = errors.New("An error")
+	kEndpoint0      = scotty.NewEndpoint("host1", 1001)
+	kEndpoint1      = scotty.NewEndpoint("host2", 1002)
+	kEndpoint2      = scotty.NewEndpoint("host3", 1001)
+	kEndpoint3      = scotty.NewEndpoint("host4", 1002)
+	kError          = errors.New("An error")
+	kUsualTimeStamp = time.Date(2016, 7, 8, 14, 11, 0, 0, time.Local)
 )
 
 type playbackType struct {
@@ -1288,6 +1289,85 @@ func TestMachineGoneInactive(t *testing.T) {
 	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); err != nil {
 		t.Error("Expected AddBatch to succeed")
 	}
+}
+
+func TestSomeMissingSomePresentTimeStamps(t *testing.T) {
+	aStore := store.NewStore(1, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "/zero/noTimeStamp",
+			Description: "No time stamp",
+			Value:       int64(1),
+		},
+		{
+			Path:        "/zero/yesTimeStamp",
+			Description: "Yes time stamp",
+			TimeStamp:   kUsualTimeStamp,
+			Value:       int64(2),
+		},
+		{
+			Path:        "/zero/noTimeStamp2",
+			Description: "No time stamp",
+			Value:       int64(3),
+		},
+		{
+			Path:        "/zero/noTimeStamp3",
+			Description: "No time stamp",
+			Value:       int64(4),
+		},
+		{
+			Path:        "/zero/noTimeStamp4",
+			Description: "No time stamp",
+			Value:       int64(5),
+		},
+		{
+			Path:        "/one/noTimeStamp",
+			Description: "no time stamp",
+			GroupId:     1,
+			Value:       int64(101),
+		},
+		{
+			Path:        "/one/noTimeStamp2",
+			Description: "no time stamp",
+			GroupId:     1,
+			Value:       int64(102),
+		},
+	}
+
+	aStore.AddBatch(kEndpoint0, 1300.0, aMetric)
+	expectedTsValues := newExpectedTsValues()
+	expectedTsValues.Add(
+		"/zero/noTimeStamp",
+		duration.TimeToFloat(kUsualTimeStamp),
+		int64(1))
+	expectedTsValues.Add(
+		"/zero/noTimeStamp3",
+		duration.TimeToFloat(kUsualTimeStamp),
+		int64(4))
+	expectedTsValues.Add(
+		"/zero/noTimeStamp4",
+		duration.TimeToFloat(kUsualTimeStamp),
+		int64(5))
+	expectedTsValues.Add(
+		"/zero/noTimeStamp2",
+		duration.TimeToFloat(kUsualTimeStamp),
+		int64(3))
+	expectedTsValues.Add(
+		"/zero/yesTimeStamp",
+		duration.TimeToFloat(kUsualTimeStamp),
+		int64(2))
+	expectedTsValues.Add(
+		"/one/noTimeStamp",
+		1300.0,
+		int64(101))
+	expectedTsValues.Add(
+		"/one/noTimeStamp2",
+		1300.0,
+		int64(102))
+	iterator, _ := aStore.NamedIteratorForEndpoint("aname", kEndpoint0, 0)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
 }
 
 func TestLMMDropOffEarlyTimestamps(t *testing.T) {

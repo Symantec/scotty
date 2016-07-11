@@ -580,11 +580,15 @@ func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMe
 func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	if r.Info != a.lastInfo {
 		a.lastInfo = r.Info
-		jsonValue, jsonKind := trimessages.AsJson(
-			r.Value, a.lastInfo.Kind(), a.lastInfo.Unit())
+		jsonValue, jsonKind, jsonSubType := trimessages.AsJsonWithSubType(
+			r.Value,
+			a.lastInfo.Kind(),
+			a.lastInfo.SubType(),
+			a.lastInfo.Unit())
 		a.lastMetric = &messages.EndpointMetric{
 			Path:        a.lastInfo.Path(),
 			Kind:        jsonKind,
+			SubType:     jsonSubType,
 			Description: a.lastInfo.Description(),
 			Bits:        a.lastInfo.Bits(),
 			Unit:        a.lastInfo.Unit(),
@@ -596,12 +600,16 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 			}}}
 		*a.endpointMetrics = append(*a.endpointMetrics, a.lastMetric)
 	} else {
-		jsonValue, _ := trimessages.AsJson(
-			r.Value, a.lastInfo.Kind(), a.lastInfo.Unit())
+		jsonValue, _, _ := trimessages.AsJsonWithSubType(
+			r.Value,
+			a.lastInfo.Kind(),
+			a.lastInfo.SubType(),
+			a.lastInfo.Unit())
 		newTimestampedValue := &messages.TimestampedValue{
-			Timestamp: duration.SinceEpochFloat(r.TimeStamp).String(),
-			Value:     jsonValue,
-			Active:    r.Active,
+			Timestamp: duration.SinceEpochFloat(
+				r.TimeStamp).String(),
+			Value:  jsonValue,
+			Active: r.Active,
 		}
 		a.lastMetric.Values = append(
 			a.lastMetric.Values, newTimestampedValue)

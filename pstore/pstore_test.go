@@ -13,9 +13,11 @@ import (
 )
 
 const (
-	kDescription = "A Description"
-	kInt64Path   = "/some/int64/path"
-	kStringPath  = "/some/string/path"
+	kDescription    = "A Description"
+	kInt64Path      = "/some/int64/path"
+	kStringPath     = "/some/string/path"
+	kListInt64Path  = "/some/list/int64/path"
+	kListStringPath = "/some/list/string/path"
 )
 
 var (
@@ -35,8 +37,58 @@ var (
 		Path:        kStringPath,
 		Unit:        units.None,
 	}).Build()
+	kListInt64MetricInfo = (&store.MetricInfoBuilder{
+		Description: kDescription,
+		Kind:        types.List,
+		SubType:     types.Int64,
+		Path:        kListInt64Path,
+		Unit:        units.None,
+	}).Build()
+	kListStringMetricInfo = (&store.MetricInfoBuilder{
+		Description: kDescription,
+		Kind:        types.List,
+		SubType:     types.String,
+		Path:        kListInt64Path,
+		Unit:        units.None,
+	}).Build()
 	kWriteError = errors.New("An error")
 )
+
+func TestSubTypes(t *testing.T) {
+	writer := &noListStringWriterType{}
+	builder := pstore.NewConsumerWithMetricsBuilder(writer)
+	consumer := builder.Build()
+
+	// list int64 values that can be written to pstore
+	listInt64Iterator := newNamedIteratorSameValueType(
+		"listInt64Iterator",
+		3,
+		[]int64{},
+		kListInt64MetricInfo)
+	// list string values that cannot be written to pstore
+	listStringIterator := newNamedIteratorSameValueType(
+		"listStringIterator",
+		2,
+		[]string{},
+		kListStringMetricInfo)
+	// Final iterator yields 3 list int64 values
+	// followed by 2 list string values.
+	iterator := compoundIteratorType{
+		listInt64Iterator, listStringIterator}
+
+	consumer.Write(iterator, "someHost", "someApp")
+	consumer.Flush()
+
+	// three values should be written
+	if assertValueEquals(t, 3, len(writer.Written)) {
+		for i := 0; i < 3; i++ {
+			assertValueEquals(
+				t, types.List, writer.Written[i].Kind)
+			assertValueEquals(
+				t, types.Int64, writer.Written[i].SubType)
+		}
+	}
+}
 
 // Test that consumer exhausts iterators even in the corner case where
 // the write buffer fills up and all that is left on the iterator are
@@ -348,6 +400,24 @@ func (w noStringsNilWriterType) IsTypeSupported(kind types.Type) bool {
 	return kind != types.String
 }
 
+type noListStringWriterType struct {
+	Written []pstore.Record
+}
+
+func (w *noListStringWriterType) Write(records []pstore.Record) error {
+	w.Written = append(w.Written, records...)
+	return nil
+}
+
+func (w *noListStringWriterType) IsTypeSupported(kind types.Type) bool {
+	return w.IsTypeAndSubTypeSupported(kind, types.Unknown)
+}
+
+func (w *noListStringWriterType) IsTypeAndSubTypeSupported(
+	kind, subType types.Type) bool {
+	return kind != types.List || subType != types.String
+}
+
 func assertSuccess(t *testing.T, err error) {
 	if err != nil {
 		t.Errorf("Expected success, got %v", err)
@@ -358,4 +428,12 @@ func assertFailure(t *testing.T, err error) {
 	if err == nil {
 		t.Error("Expected failure")
 	}
+}
+
+func assertValueEquals(t *testing.T, expected, actual interface{}) bool {
+	if expected != actual {
+		t.Errorf("Expected %v, got %v", expected, actual)
+		return false
+	}
+	return true
 }

@@ -26,6 +26,11 @@ type ApplicationStatus struct {
 	// A zero value means no successful poll
 	PollTime time.Duration
 
+	// The last encountered error. nil mean no error.
+	LastError error
+	// Time of last encountered error. Zero value means no error.
+	LastErrorTime time.Time
+
 	// Initial metric count
 	InitialMetricCount int
 
@@ -34,6 +39,11 @@ type ApplicationStatus struct {
 
 	changedMetrics_Sum   int64
 	changedMetrics_Count int64
+}
+
+// Returns last error time as 2006-01-02T15:04:05
+func (a *ApplicationStatus) LastErrorTimeStr() string {
+	return a.LastErrorTime.Format("2006-01-02T15:04:05")
 }
 
 // AverageChangedMetrics returns how many metrics change value.
@@ -103,6 +113,16 @@ func (a *ApplicationStatuses) ApplicationList() *ApplicationList {
 func (a *ApplicationStatuses) Update(
 	e *scotty.Endpoint, newState *scotty.State) {
 	a.update(e, newState)
+}
+
+// ReportError reports an error for the given endpoint.
+// This instance must have prior knowledge of e. That is, e must come from
+// a method such as ActiveEndpointIds(). Otherwise, this method panics.
+// To clear the error for an endpoint, caller passes nil for err. ts is the
+// time the error occurred, or if err == nil, the time it was cleared.
+func (a *ApplicationStatuses) ReportError(
+	e *scotty.Endpoint, err error, ts time.Time) {
+	a.reportError(e, err, ts)
 }
 
 // MarkHostsActiveExclusively marks all applications / endpoints each host

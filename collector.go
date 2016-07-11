@@ -176,7 +176,7 @@ func (e *Endpoint) logNoError(state *State, logger Logger) {
 	if logger != nil {
 		logger.LogStateChange(e, oldState, state)
 		if hadError {
-			logger.LogError(e, nil, nil)
+			logger.LogError(e, nil, state)
 		}
 	}
 }

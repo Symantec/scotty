@@ -509,6 +509,7 @@ func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector
 	} else {
 		l.ConnectionErrors.Set(e, err, state.Timestamp())
 	}
+	l.AppStats.ReportError(e, err, state.Timestamp())
 }
 
 func (l *loggerType) LogResponse(

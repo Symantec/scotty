@@ -3,16 +3,25 @@ package store
 import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"time"
 )
+
+func (m *MetricInfo) zeroValue() interface{} {
+	kind := m.Kind()
+	if kind == types.List {
+		return m.SubType().NilSlice()
+	}
+	return kind.ZeroValue()
+}
 
 // This file contains the top level code for the store package.
 
 func (r *Record) setValue(value interface{}) {
 	if value == gInactive {
 		r.Active = false
-		r.Value = r.Info.Kind().ZeroValue()
+		r.Value = r.Info.zeroValue()
 	} else {
 		r.Active = true
 		r.Value = value

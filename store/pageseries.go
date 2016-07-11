@@ -3,6 +3,7 @@ package store
 import (
 	"container/list"
 	"math"
+	"reflect"
 	"sync"
 )
 
@@ -17,6 +18,13 @@ var gInactive inactiveType
 var (
 	kPlusInf = math.Inf(1)
 )
+
+func (m *MetricInfo) valuesAreEqual(lhs, rhs interface{}) bool {
+	if lhs != gInactive && rhs != gInactive && !m.kind.SupportsEquality() {
+		return reflect.DeepEqual(lhs, rhs)
+	}
+	return lhs == rhs
+}
 
 // pageOwnerType is the interface for any data structure that can own
 // pages.
@@ -446,9 +454,15 @@ func (t *timeSeriesType) PageList() pageListType {
 	}
 }
 
+func (t *timeSeriesType) valuesAreEqual(lhs, rhs interface{}) bool {
+	return t.id.valuesAreEqual(lhs, rhs)
+}
+
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd bool) {
-	if value == t.lastValue.Value || (timestamp <= t.lastValue.TimeStamp && value != gInactive) {
+	// Let a new gInactive value come in even if its timestamp
+	// is earlier than the last.
+	if (timestamp <= t.lastValue.TimeStamp && value != gInactive) || t.valuesAreEqual(value, t.lastValue.Value) {
 		return false
 	}
 	return true

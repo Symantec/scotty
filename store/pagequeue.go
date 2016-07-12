@@ -49,55 +49,56 @@ func (s *pageQueueType) PageQueueStats(stats *btreepq.PageQueueStats) {
 	s.pq.Stats(stats)
 }
 
-func (s *pageQueueType) RegisterMetrics() (err error) {
+func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
+	err error) {
 	var queueStats btreepq.PageQueueStats
 	queueGroup := tricorder.NewGroup()
 	queueGroup.RegisterUpdateFunc(func() time.Time {
 		s.PageQueueStats(&queueStats)
 		return time.Now()
 	})
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/highPriorityCount",
+	if err = d.RegisterMetricInGroup(
+		"/highPriorityCount",
 		&queueStats.HighPriorityCount,
 		queueGroup,
 		units.None,
 		"Number of pages in high priority queue"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/lowPriorityCount",
+	if err = d.RegisterMetricInGroup(
+		"/lowPriorityCount",
 		&queueStats.LowPriorityCount,
 		queueGroup,
 		units.None,
 		"Number of pages in low priority queue"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/nextLowPrioritySeqNo",
+	if err = d.RegisterMetricInGroup(
+		"/nextLowPrioritySeqNo",
 		&queueStats.NextLowPrioritySeqNo,
 		queueGroup,
 		units.None,
 		"Next seq no in low priority queue, 0 if empty"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/nextHighPrioritySeqNo",
+	if err = d.RegisterMetricInGroup(
+		"/nextHighPrioritySeqNo",
 		&queueStats.NextHighPrioritySeqNo,
 		queueGroup,
 		units.None,
 		"Next seq no in high priority queue, 0 if empty"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/endSeqNo",
+	if err = d.RegisterMetricInGroup(
+		"/endSeqNo",
 		&queueStats.EndSeqNo,
 		queueGroup,
 		units.None,
 		"All seq no smaller than this. Marks end of both queues."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/highPriorityRatio",
+	if err = d.RegisterMetricInGroup(
+		"/highPriorityRatio",
 		queueStats.HighPriorityRatio,
 		queueGroup,
 		units.None,
@@ -105,29 +106,29 @@ func (s *pageQueueType) RegisterMetrics() (err error) {
 		return
 	}
 
-	if err = tricorder.RegisterMetric(
-		"/store/totalPages",
+	if err = d.RegisterMetric(
+		"/totalPages",
 		&s.pageCount,
 		units.None,
 		"Total number of pages."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetric(
-		"/store/maxValuesPerPage",
+	if err = d.RegisterMetric(
+		"/maxValuesPerPage",
 		&s.valueCountPerPage,
 		units.None,
 		"Maximum number ofvalues that can fit in a page."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetric(
-		"/store/inactiveThreshhold",
+	if err = d.RegisterMetric(
+		"/inactiveThreshhold",
 		&s.inactiveThreshhold,
 		units.None,
 		"The ratio of inactive pages needed before they are reclaimed first"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetric(
-		"/store/btreeDegree",
+	if err = d.RegisterMetric(
+		"/btreeDegree",
 		&s.degree,
 		units.None,
 		"The degree of the btrees in the queue"); err != nil {

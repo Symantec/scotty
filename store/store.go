@@ -133,16 +133,16 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 	return
 }
 
-func (s *Store) registerMetrics() (err error) {
-	if err = s.supplier.RegisterMetrics(); err != nil {
+func (s *Store) registerMetrics(d *tricorder.DirectorySpec) (err error) {
+	if err = s.supplier.RegisterMetrics(d); err != nil {
 		return
 	}
 	// Allow this store instance to be GCed
 	maxValuesPerPage := s.supplier.MaxValuesPerPage()
 	metrics := s.metrics
 
-	if err = tricorder.RegisterMetric(
-		"/store/pagesPerMetric",
+	if err = d.RegisterMetric(
+		"/pagesPerMetric",
 		metrics.PagesPerMetricDist,
 		units.None,
 		"Number of pages used per metric"); err != nil {
@@ -154,8 +154,8 @@ func (s *Store) registerMetrics() (err error) {
 		metrics.Metrics(&primitiveMetrics)
 		return time.Now()
 	})
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/pageUtilization",
+	if err = d.RegisterMetricInGroup(
+		"/pageUtilization",
 		func() float64 {
 			metricValueCount := primitiveMetrics.UniqueMetricValueCount
 			pagesInUseCount := metrics.PagesPerMetricDist.Sum()
@@ -168,32 +168,32 @@ func (s *Store) registerMetrics() (err error) {
 		"Page utilization 0.0 - 1.0"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/metricValueCount",
+	if err = d.RegisterMetricInGroup(
+		"/metricValueCount",
 		&primitiveMetrics.UniqueMetricValueCount,
 		storeGroup,
 		units.None,
 		"Number of unique metrics values"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/valuePageCount",
+	if err = d.RegisterMetricInGroup(
+		"/valuePageCount",
 		metrics.PagesPerMetricDist.Sum,
 		storeGroup,
 		units.None,
 		"Number of pages used for values."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/timestampPageCount",
+	if err = d.RegisterMetricInGroup(
+		"/timestampPageCount",
 		&primitiveMetrics.TimeStampPageCount,
 		storeGroup,
 		units.None,
 		"Number of pages used for timestamps."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
-		"/store/totalPagesInUseCount",
+	if err = d.RegisterMetricInGroup(
+		"/totalPagesInUseCount",
 		func() int64 {
 			return primitiveMetrics.TimeStampPageCount + int64(metrics.PagesPerMetricDist.Sum())
 		},

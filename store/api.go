@@ -4,6 +4,7 @@ package store
 import (
 	"errors"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"time"
@@ -468,11 +469,11 @@ func (s *Store) VisitAllEndpoints(v Visitor) error {
 	return s.visitAllEndpoints(v)
 }
 
-// RegisterMetrics registers metrics associated with this Store instance
-// Calling this covers any new store created by calling ShallowCopy on
+// RegisterMetrics registers metrics under d associated with this Store
+// instance Calling this covers any new store created by calling ShallowCopy on
 // this instance.
-func (s *Store) RegisterMetrics() error {
-	return s.registerMetrics()
+func (s *Store) RegisterMetrics(d *tricorder.DirectorySpec) error {
+	return s.registerMetrics(d)
 }
 
 // MarkEndpointInactive marks all time series for given endpint as inactive by

@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/tricorder/go/tricorder"
 	"math"
 	"reflect"
 	"sort"
@@ -159,12 +160,31 @@ func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
 	}
 }
 
+func newStore(
+	t *testing.T,
+	testName string,
+	valueCount,
+	pageCount int,
+	inactiveThreshhold float64,
+	degree int) *store.Store {
+	result := store.NewStore(
+		valueCount, pageCount, inactiveThreshhold, degree)
+	dirSpec, err := tricorder.RegisterDirectory("/" + testName)
+	if err != nil {
+		t.Fatalf("Duplicate test: %s", testName)
+	}
+	result.RegisterMetrics(dirSpec)
+	return result
+}
+
 func TestMarkHostsActiveExclusively(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
 	alBuilder.Add(35, "AnApp", trisource.GetConnector())
 	alBuilder.Add(92, "AnotherApp", snmpsource.NewConnector("community"))
 	appList := alBuilder.Build()
-	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 100, 1.0, 10))
+	appStatus := NewApplicationStatuses(
+		appList,
+		newStore(t, "TestMarkHostsActiveExclusively", 1, 100, 1.0, 10))
 	appStatus.MarkHostsActiveExclusively(
 		92.5,
 		[]string{"host1", "host2", "host3"})
@@ -343,7 +363,10 @@ func TestHighPriorityEviction(t *testing.T) {
 	alBuilder.Add(37, "AnApp", trisource.GetConnector())
 	appList := alBuilder.Build()
 	// 9 values
-	appStatus := NewApplicationStatuses(appList, store.NewStore(1, 6, 1.0, 10))
+	appStatus := NewApplicationStatuses(
+		appList,
+		newStore(
+			t, "TestHighPriorityEviction", 1, 6, 1.0, 10))
 	// host1, host2, host3 marked active
 	// 2 values to AnApp:/foo on host1, host2 and host3
 	// 3rd value to anApp:/foo on host1, host2 only
@@ -371,7 +394,9 @@ func TestHighPriorityEviction(t *testing.T) {
 	}
 
 	// 9 values
-	appStatus = NewApplicationStatuses(appList, store.NewStore(1, 6, 0.0, 10))
+	appStatus = NewApplicationStatuses(
+		appList,
+		newStore(t, "TestHighPriorityEviction2", 1, 6, 0.0, 10))
 	// host1, host2, host3 marked active
 	// 3 values to AnApp:/foo on host1, host2 and host3
 	// host1 and host2 only marked active

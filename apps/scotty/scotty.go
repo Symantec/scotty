@@ -921,7 +921,11 @@ func createApplicationStats(
 		astore = store.NewStoreBytesPerPage(
 			*fBytesPerPage, *fPageCount, *fThreshhold, *fDegree)
 	}
-	if err := astore.RegisterMetrics(); err != nil {
+	dirSpec, err := tricorder.RegisterDirectory("/store")
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := astore.RegisterMetrics(dirSpec); err != nil {
 		log.Fatal(err)
 	}
 	stats := datastructs.NewApplicationStatuses(appList, astore)

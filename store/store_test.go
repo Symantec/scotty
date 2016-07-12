@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -177,8 +178,25 @@ func (a *appenderToTestClientType) Verify(t *testing.T) bool {
 	return true
 }
 
+func newStore(
+	t *testing.T,
+	testName string,
+	valueCount,
+	pageCount int,
+	inactiveThreshhold float64,
+	degree int) *store.Store {
+	result := store.NewStore(
+		valueCount, pageCount, inactiveThreshhold, degree)
+	dirSpec, err := tricorder.RegisterDirectory("/" + testName)
+	if err != nil {
+		t.Fatalf("Duplicate test: %s", testName)
+	}
+	result.RegisterMetrics(dirSpec)
+	return result
+}
+
 func TestVisitorError(t *testing.T) {
-	aStore := store.NewStore(1, 8, 1.0, 10)
+	aStore := newStore(t, "TestVisitorError", 1, 8, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 	var ev errVisitor
@@ -186,7 +204,8 @@ func TestVisitorError(t *testing.T) {
 }
 
 func TestAggregateAppenderAndVisitor(t *testing.T) {
-	aStore := store.NewStore(10, 100, 1.0, 10)
+	aStore := newStore(
+		t, "TestAggregateAppenderAndVisitor", 10, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -559,7 +578,7 @@ func TestIteratorPageEviction(t *testing.T) {
 	// (3 pages for values for each metric) * (2 metrics) = 6 pages
 	// plus 7 pages for 14 timestamps) = 7 pages
 	// 6 pages + 7 pages = 13 pages
-	aStore := store.NewStore(2, 13, 1.0, 10)
+	aStore := newStore(t, "TestIteratorPageEviction", 2, 13, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -632,7 +651,7 @@ func floatToTime(f float64) time.Time {
 }
 
 func TestRollUpIterator(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestRollUpIterator", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -847,7 +866,7 @@ func TestRollUpIterator(t *testing.T) {
 }
 
 func TestRollUpIteratorBool(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestRollUpIteratorBool", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -884,7 +903,7 @@ func TestRollUpIteratorBool(t *testing.T) {
 }
 
 func TestRollUpIteratorInt8(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestRollUpIteratorInt8", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -921,7 +940,7 @@ func TestRollUpIteratorInt8(t *testing.T) {
 }
 
 func TestIterator(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestIterator", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -1141,7 +1160,7 @@ func TestIterator(t *testing.T) {
 }
 
 func TestMissingValue(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestMissingValue", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	// Missing value.
 	aMetric := metrics.SimpleList{
@@ -1157,7 +1176,7 @@ func TestMissingValue(t *testing.T) {
 }
 
 func TestDuplicateValue(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestDuplicateValue", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	// duplicate value.
 	aMetric := metrics.SimpleList{
@@ -1179,7 +1198,7 @@ func TestDuplicateValue(t *testing.T) {
 }
 
 func TestBadValue(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestBadValue", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	// bad value.
 	aMetric := metrics.SimpleList{
@@ -1196,7 +1215,7 @@ func TestBadValue(t *testing.T) {
 }
 
 func TestMetaData(t *testing.T) {
-	aStore := store.NewStore(2, 100, 1.0, 10)
+	aStore := newStore(t, "TestMetaData", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -1253,7 +1272,7 @@ func TestMetaData(t *testing.T) {
 }
 
 func TestIndivMetricGoneInactive(t *testing.T) {
-	aStore := store.NewStore(1, 100, 1.0, 10)
+	aStore := newStore(t, "TestIndivMetricGoneInactive", 1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -1318,7 +1337,7 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 }
 
 func TestMachineGoneInactive(t *testing.T) {
-	aStore := store.NewStore(1, 100, 1.0, 10)
+	aStore := newStore(t, "TestMachineGoneInactive", 1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 	aMetric := metrics.SimpleList{
@@ -1427,7 +1446,8 @@ func TestMachineGoneInactive(t *testing.T) {
 }
 
 func TestSomeMissingSomePresentTimeStamps(t *testing.T) {
-	aStore := store.NewStore(1, 100, 1.0, 10)
+	aStore := newStore(
+		t, "TestSomeMissingSomePresentTimeStamps", 1, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -1514,7 +1534,7 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	// The result will be that the timestamps go earlier than the values.
 	// We want to be sure that the iterator starts at the earliest value
 	// not the earliest timestamp.
-	aStore := store.NewStore(2, 4, 1.0, 10)
+	aStore := newStore(t, "TestLMMDropOffEarlyTimestamps", 2, 4, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aMetric := metrics.SimpleList{
 		{
@@ -1555,7 +1575,7 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 }
 
 func TestWithLists(t *testing.T) {
-	aStore := store.NewStore(10, 100, 1.0, 10)
+	aStore := newStore(t, "TestWithLists", 10, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 
 	aMetric := metrics.SimpleList{
@@ -1683,7 +1703,8 @@ func TestWithLists(t *testing.T) {
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {
-	aStore := store.NewStore(2, 10, 1.0, 10)
+	aStore := newStore(
+		t, "TestByNameAndEndpointAndEndpoint", 2, 10, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 	aStore.RegisterEndpoint(kEndpoint1)
 
@@ -2043,7 +2064,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 
 func TestHighPriorityEviction(t *testing.T) {
 	// Holds 9 values
-	aStore := store.NewStore(1, 6, 1.0, 10)
+	aStore := newStore(t, "TestHighPriorithyEviction", 1, 6, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 
 	// 2 values to /foo, /bar, /baz
@@ -2065,7 +2086,7 @@ func TestHighPriorityEviction(t *testing.T) {
 	}
 
 	// Holds 9 values
-	aStore = store.NewStore(1, 6, 0.0, 10)
+	aStore = newStore(t, "TestHighPriorityEviction2", 1, 6, 0.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
 
 	// 3 values to /foo, /bar, /baz

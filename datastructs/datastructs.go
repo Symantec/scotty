@@ -67,10 +67,24 @@ func (a *ApplicationStatuses) update(
 	record.Status = newState.Status()
 	if record.Status == scotty.Synced {
 		record.PollTime = newState.TimeSpentPolling()
-		record.LastReadTime = time.Now()
-		record.Down = false
-	} else if record.Status < 0 {
+		record.LastReadTime = newState.Timestamp()
+	}
+}
+
+func (a *ApplicationStatuses) reportError(
+	e *scotty.Endpoint, err error, ts time.Time) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	record := a.byEndpoint[e]
+	if record == nil {
+		panic("Unknown endpoint in ReportError.")
+	}
+	if err != nil {
+		record.LastError = err
+		record.LastErrorTime = ts
 		record.Down = true
+	} else {
+		record.Down = false
 	}
 }
 

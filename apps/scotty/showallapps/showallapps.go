@@ -39,8 +39,17 @@ const (
 	    <td>{{.EndpointId.Port}}</td>
 	    <td><a href="{{$top.Link .}}">{{.Name}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
-	    <td>{{if .Down}}Yes{{else}}&nbsp;{{end}}</td>
-	    <td>{{.Status}}</td>
+	    \ {{if .Down}} \
+	      <td>Yes</td>
+	      <td>
+	        {{.Status}}<br>
+                {{.LastErrorTimeStr}}<br>
+		{{.LastError}}
+              </td>
+	    \ {{else}} \
+	      <td>No</td>
+	      <td>{{.Status}}</td>
+	    \ {{end}} \
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
 	    <td>{{with .InitialMetricCount}}{{.}}{{else}}&nbsp;{{end}}</td>
 	    <td>{{with .AverageChangedMetrics}}{{$top.Float32 .}}{{else}}&nbsp;{{end}}</td>

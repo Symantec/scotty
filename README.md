@@ -1,8 +1,14 @@
 # Scotty
 Scotty is a high performance, scalable collector for the
 [tricorder](https://github.com/Symantec/tricorder) metrics publishing library.
-Scotty provides a RESTful API to grab the latest polled metrics and it can
-push metrics to Kafka.
+Scotty provides a RESTful API to grab the latest polled metrics, and it can
+push metrics to various persistent stores.
+
+Please see the
+[design document](https://docs.google.com/document/d/142Llj30LplgxWhOLOprqH59hS01EJ9iC1THV3no5oy0/pub)
+and the
+[online code documentation](https://godoc.org/github.com/Symantec/scotty)
+for more information.
 
 ## Contributions
 

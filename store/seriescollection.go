@@ -4,7 +4,6 @@ import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"github.com/Symantec/tricorder/go/tricorder/units"
 	"strings"
 	"sync"
 )
@@ -235,13 +234,6 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 	return
 }
 
-func indexOf(mlist metrics.List, i int, avalue *metrics.Value) {
-	mlist.Index(i, avalue)
-	if avalue.Unit == "" {
-		avalue.Unit = units.None
-	}
-}
-
 // LookupBatch looks up all the metrics in one go and returns the
 // following:
 // fetched: timeSeries already in this collection keyed by Metric.
@@ -277,7 +269,7 @@ func (c *timeSeriesCollectionType) LookupBatch(
 	mlen := mlist.Len()
 	for i := 0; i < mlen; i++ {
 		var avalue metrics.Value
-		indexOf(mlist, i, &avalue)
+		mlist.Index(i, &avalue)
 		kind, subType := types.FromGoValueWithSubType(avalue.Value)
 		// TODO: Allow distribution metrics later.
 		if kind == types.Dist {

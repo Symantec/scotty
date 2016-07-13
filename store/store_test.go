@@ -1262,7 +1262,7 @@ func TestMetaData(t *testing.T) {
 	assertValueEquals(t, "none", result[0].Info.Description())
 	assertValueEquals(t, 0, result[0].Info.GroupId())
 	assertValueEquals(t, types.Uint8, result[0].Info.Kind())
-	assertValueEquals(t, units.None, result[0].Info.Unit())
+	assertValueEquals(t, units.Unknown, result[0].Info.Unit())
 
 	result = nil
 	aStore.ByNameAndEndpoint(

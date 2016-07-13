@@ -4,7 +4,6 @@ package scotty
 import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
-	"github.com/Symantec/scotty/sources/trisource"
 	"time"
 )
 
@@ -128,12 +127,6 @@ type Endpoint struct {
 	onePollAtATime chan bool
 	state          *State
 	errored        bool
-}
-
-// NewEndpoint is deprecated. See NewEndpointWithConnector.
-func NewEndpoint(
-	hostname string, port int) *Endpoint {
-	return newEndpoint(hostname, port, trisource.GetConnector())
 }
 
 // NewEndpointWithConnector creates a new endpoint for given host, port

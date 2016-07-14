@@ -21,8 +21,10 @@ type Range struct {
 //
 // The Value field of the TimestampedValue struct will hold
 // a *Distribution for distributions. For the earliest reported timestamp,
-// Value always contains a nil *Distribution pointer since in that case
-// there is no previous distribution.
+// Value always contains, the zero distribution, a nil *Distribution pointer,
+// since in that case there is no previous distribution. Likewise, if an
+// endpoint is restarted between collections, scotty will store the zero
+// distribution to indicate a restart
 //
 // Distribution instances should be treated as immutable.
 type Distribution struct {
@@ -45,7 +47,8 @@ type TimestampedValue struct {
 	Timestamp string `json:"timestamp"`
 	// value stored here. zero equivalent stored for inactive markers.
 	// For lists, the zero equivalent is an empty list.
-	// For distributions, the zero equivalent is nil or for JSON, None.
+	// For distributions, the zero equivalent is nil *Distribution
+	// or for JSON, None.
 	Value interface{} `json:"value"`
 	// True for real values, false for inactive markers. Used to
 	// distinguish inactive markers from real 0 values.

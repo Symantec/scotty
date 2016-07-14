@@ -2,6 +2,7 @@ package store
 
 import (
 	"container/list"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"math"
 	"reflect"
 	"sync"
@@ -24,6 +25,20 @@ func (m *MetricInfo) valuesAreEqual(lhs, rhs interface{}) bool {
 		return reflect.DeepEqual(lhs, rhs)
 	}
 	return lhs == rhs
+}
+
+// isNewValueNeeded returns true if scotty needs to store newValue.
+// Generally scotty needs to store newValue if and only if
+// newValue != previousValue. But if this is a distribution metric, newValue
+// must be stored as long as it isn't zero like because for distributions,
+// we store deltas in scotty.
+func (m *MetricInfo) isNewValueNeeded(
+	newValue, previousValue interface{}) bool {
+	if m.kind == types.Dist && newValue != gInactive {
+		difference := newValue.(*DistributionDelta)
+		return difference != nil && !difference.IsZero()
+	}
+	return !m.valuesAreEqual(newValue, previousValue)
 }
 
 // pageOwnerType is the interface for any data structure that can own
@@ -454,15 +469,16 @@ func (t *timeSeriesType) PageList() pageListType {
 	}
 }
 
-func (t *timeSeriesType) valuesAreEqual(lhs, rhs interface{}) bool {
-	return t.id.valuesAreEqual(lhs, rhs)
+func (t *timeSeriesType) isNewValueNeeded(
+	newValue, previousValue interface{}) bool {
+	return t.id.isNewValueNeeded(newValue, previousValue)
 }
 
 func (t *timeSeriesType) needToAdd(timestamp float64, value interface{}) (
 	needToAdd bool) {
 	// Let a new gInactive value come in even if its timestamp
 	// is earlier than the last.
-	if (timestamp <= t.lastValue.TimeStamp && value != gInactive) || t.valuesAreEqual(value, t.lastValue.Value) {
+	if (timestamp <= t.lastValue.TimeStamp && value != gInactive) || !t.isNewValueNeeded(value, t.lastValue.Value) {
 		return false
 	}
 	return true
@@ -600,7 +616,7 @@ func (t *timeSeriesType) FetchForwardWithTimeStamps(
 		// and just get ignored.
 		timestamps[timestampLen-1]+1.0,
 		appender)
-	appender.Finalize()
+	appender.Flush()
 }
 
 // A convenience method for adding a value to a series.

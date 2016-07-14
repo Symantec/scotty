@@ -24,6 +24,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
 	"log"
@@ -583,13 +584,34 @@ func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMe
 	return &endpointMetricsAppender{endpointMetrics: result}
 }
 
+func asJsonWithSubType(
+	value interface{}, kind, subType types.Type, unit units.Unit) (
+	jsonValue interface{}, jsonKind, jsonSubType types.Type) {
+	if kind == types.Dist {
+		distdelta := value.(*store.DistributionDelta)
+		jsonValue = &messages.Distribution{
+			Sum:    distdelta.SumChange(),
+			Count:  distdelta.TotalCountChange(),
+			Counts: distdelta.CountChanges(),
+		}
+		jsonKind = kind
+		jsonSubType = subType
+		return
+	}
+	return trimessages.AsJsonWithSubType(value, kind, subType, unit)
+}
+
 func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	if !store.GroupMetricByKey.Equal(r.Info, a.lastInfo) {
-		jsonValue, jsonKind, jsonSubType := trimessages.AsJsonWithSubType(
+		jsonValue, jsonKind, jsonSubType := asJsonWithSubType(
 			r.Value,
 			r.Info.Kind(),
 			r.Info.SubType(),
 			r.Info.Unit())
+		var upperLimits []float64
+		if r.Info.Kind() == types.Dist {
+			upperLimits = r.Info.Ranges().UpperLimits
+		}
 		a.lastMetric = &messages.EndpointMetric{
 			Path:        r.Info.Path(),
 			Kind:        jsonKind,
@@ -602,10 +624,13 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 					r.TimeStamp).String(),
 				Value:  jsonValue,
 				Active: r.Active,
-			}}}
+			}},
+			IsNotCumulative: r.Info.IsNotCumulative(),
+			UpperLimits:     upperLimits,
+		}
 		*a.endpointMetrics = append(*a.endpointMetrics, a.lastMetric)
 	} else {
-		jsonValue, _, _ := trimessages.AsJsonWithSubType(
+		jsonValue, _, _ := asJsonWithSubType(
 			r.Value,
 			r.Info.Kind(),
 			r.Info.SubType(),
@@ -640,7 +665,8 @@ func gatherDataForEndpoint(
 	isSingleton bool) (result messages.EndpointMetricList) {
 	result = make(messages.EndpointMetricList, 0)
 	now := duration.TimeToFloat(time.Now())
-	appender := newEndpointMetricsAppender(&result)
+	appender := store.FoldDistributions(
+		newEndpointMetricsAppender(&result))
 	if path == "" {
 		metricStore.ByEndpointStrategy(
 			endpoint,
@@ -667,6 +693,7 @@ func gatherDataForEndpoint(
 		}
 
 	}
+	appender.Flush()
 	sortMetricsByPath(result)
 	return
 }

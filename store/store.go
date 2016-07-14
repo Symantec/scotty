@@ -10,10 +10,15 @@ import (
 
 func (m *MetricInfo) zeroValue() interface{} {
 	kind := m.Kind()
-	if kind == types.List {
+	switch kind {
+	case types.List:
 		return m.SubType().NilSlice()
+	case types.Dist:
+		var nilDelta *DistributionDelta
+		return nilDelta
+	default:
+		return kind.ZeroValue()
 	}
-	return kind.ZeroValue()
 }
 
 // This file contains the top level code for the store package.

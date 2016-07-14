@@ -32,9 +32,9 @@ type EndpointMetric struct {
 	HostName    string               `json:"hostName,omitempty"`
 	Path        string               `json:"path,omitempty"`
 	Description string               `json:"description"`
-	Unit        units.Unit           `json:"unit"`
+	Unit        units.Unit           `json:"unit,omitempty"`
 	Kind        types.Type           `json:"kind"`
-	SubType     types.Type           `json:"subType"`
+	SubType     types.Type           `json:"subType,omitempty"`
 	Bits        int                  `json:"bits,omitempty"`
 	Values      TimestampedValueList `json:"values"`
 }

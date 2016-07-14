@@ -6,6 +6,35 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 )
 
+// Range represents a range for distribution values
+type Range struct {
+	// Represents the lower bound of the range inclusive.
+	// Ignore for the first (lowest) range which never has a lower bound.
+	Lower float64 `json:"lower"`
+	// Represents the upper bound of the range exclusive.
+	// Ignore for the highest (last) range which never has a upper bound.
+	Upper float64 `json:"upper"`
+}
+
+// Distribution represents a distribution of values since the previous
+// distribution.
+//
+// The Value field of the TimestampedValue struct will hold
+// a *Distribution for distributions. For the earliest reported timestamp,
+// Value always contains a nil *Distribution pointer since in that case
+// there is no previous distribution.
+//
+// Distribution instances should be treated as immutable.
+type Distribution struct {
+	// The sum since last recorded distribution
+	Sum float64 `json:"sum"`
+	// The total number of values since last recorded distribution
+	Count uint64 `json:"count"`
+	// The number of values within each range. Always the same length as
+	// the Buckets field in the EndpointMetric structure
+	Counts []int64 `json:"counts"`
+}
+
 // Timestamped value represents a single timestamped value.
 // The type of value stored in the value field depends on the kind field
 // of the enclosing EndpointMetric struct.
@@ -14,7 +43,9 @@ import (
 type TimestampedValue struct {
 	// The timestamp of the value in seconds past Jan 1, 1970 GMT
 	Timestamp string `json:"timestamp"`
-	// value stored here. 0 equivalent stored for inactive markers.
+	// value stored here. zero equivalent stored for inactive markers.
+	// For lists, the zero equivalent is an empty list.
+	// For distributions, the zero equivalent is nil or for JSON, None.
 	Value interface{} `json:"value"`
 	// True for real values, false for inactive markers. Used to
 	// distinguish inactive markers from real 0 values.
@@ -29,7 +60,10 @@ type TimestampedValueList []*TimestampedValue
 
 // EndpointMetric represents the values of a metric on an endpoint
 type EndpointMetric struct {
-	HostName    string               `json:"hostName,omitempty"`
+	// The hostname, appname combination identify the endpoint
+	HostName string `json:"hostName,omitempty"`
+	AppName  string `json:"appName,omitempty"`
+
 	Path        string               `json:"path,omitempty"`
 	Description string               `json:"description"`
 	Unit        units.Unit           `json:"unit,omitempty"`
@@ -37,6 +71,12 @@ type EndpointMetric struct {
 	SubType     types.Type           `json:"subType,omitempty"`
 	Bits        int                  `json:"bits,omitempty"`
 	Values      TimestampedValueList `json:"values"`
+	// The following fields only apply to distribution metrics.
+
+	// This field is true if this distribution is not cumulative.
+	IsNotCumulative bool `json:"isNotCumulative,omitempty"`
+	// The buckets for the distribution.
+	Buckets []Range `json:"buckets,omitempty"`
 }
 
 // EndpointMetricList represents a list of EndpointMetric. Client should

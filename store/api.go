@@ -69,6 +69,15 @@ func (m *MetricInfo) ValuesAreEqual(lhs, rhs interface{}) bool {
 	return m.valuesAreEqual(lhs, rhs)
 }
 
+// Key returns the key for this instance. Two MetricInfo instances return
+// equal keys if and only if they are the same except for their group id.
+func (m *MetricInfo) Key() interface{} {
+	var result MetricInfoBuilder
+	result.Init(m)
+	result.GroupId = 0
+	return result
+}
+
 // MetricInfoBuilder creates a brand new MetricInfo instance from scratch.
 // Used for testing.
 type MetricInfoBuilder struct {
@@ -80,6 +89,16 @@ type MetricInfoBuilder struct {
 	GroupId     int
 }
 
+// Init initializes this builder from an existing MetricInfo instance.
+func (m *MetricInfoBuilder) Init(info *MetricInfo) {
+	m.Path = info.Path()
+	m.Description = info.Description()
+	m.Unit = info.Unit()
+	m.Kind = info.Kind()
+	m.SubType = info.SubType()
+	m.GroupId = info.GroupId()
+}
+
 func (m *MetricInfoBuilder) Build() *MetricInfo {
 	return &MetricInfo{
 		path:        m.Path,
@@ -88,6 +107,38 @@ func (m *MetricInfoBuilder) Build() *MetricInfo {
 		kind:        m.Kind,
 		subType:     m.SubType,
 		groupId:     m.GroupId}
+}
+
+// MetricGroupingStrategy type describes the strategy for grouping like metrics
+// together. Two metrics are grouped together if and only if this instance
+// returns equal values for each metric's MetricInfo field.
+type MetricGroupingStrategy func(*MetricInfo) interface{}
+
+var (
+	// Groups metrics together if and only if their *MetricInfo field are
+	// exactly the same.
+	GroupMetricExactly MetricGroupingStrategy = func(m *MetricInfo) interface{} {
+		return m
+	}
+
+	// Groups metrics together if and only if calling Key() on
+	// their *MetricInfo field yields the same result.
+	GroupMetricByKey MetricGroupingStrategy = func(m *MetricInfo) interface{} {
+		return m.Key()
+	}
+)
+
+// Equal returns true if and only if this strategy would group two metrics
+// with the given MetricInfo fields together.
+func (m MetricGroupingStrategy) Equal(
+	maybeNilLeft, maybeNilRight *MetricInfo) bool {
+	if maybeNilLeft == maybeNilRight {
+		return true
+	}
+	if maybeNilLeft == nil || maybeNilRight == nil {
+		return false
+	}
+	return m(maybeNilLeft) == m(maybeNilRight)
 }
 
 // Record represents one value for one particular metric at a particular
@@ -323,7 +374,7 @@ func (s *Store) AddBatch(
 // the value of the metric is known at time start.
 // start and end are seconds after Jan 1, 1970 GMT
 // ByNameAndEndpoint appends the records to result first grouped by metric
-// then sorted by time in descending order within each metric.
+// exactly then sorted by time in descending order within each group.
 // It is possible, but unlikely, that two different metrics exist with the
 // same path. This could happen if the definition of a metric changes.
 func (s *Store) ByNameAndEndpoint(
@@ -332,7 +383,29 @@ func (s *Store) ByNameAndEndpoint(
 	start, end float64,
 	result Appender) {
 	s.byNameAndEndpoint(
-		path, endpointId, start, end, result)
+		path,
+		endpointId,
+		start,
+		end,
+		GroupMetricExactly,
+		result)
+}
+
+// ByNameAndEndpointStrategy work like ByNameAndEndpoint except that it appends
+// records grouped by given strategy sorted from latest to earliest.
+func (s *Store) ByNameAndEndpointStrategy(
+	path string,
+	endpointId interface{},
+	start, end float64,
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	s.byNameAndEndpoint(
+		path,
+		endpointId,
+		start,
+		end,
+		strategy,
+		result)
 }
 
 // ByPrefixAndEndpoint returns records for metrics by endpoint and
@@ -341,7 +414,7 @@ func (s *Store) ByNameAndEndpoint(
 // the value of the metric is known at time start.
 // start and end are seconds after Jan 1, 1970 GMT
 // ByPrefixAndEndpoint appends the records to result first grouped by metric
-// then sorted by time in descending order within each metric.
+// exactly then sorted by time in descending order within each group.
 // It is possible, but unlikely, that two different metrics exist with the
 // same path. This could happen if the definition of a metric changes.
 func (s *Store) ByPrefixAndEndpoint(
@@ -350,7 +423,29 @@ func (s *Store) ByPrefixAndEndpoint(
 	start, end float64,
 	result Appender) {
 	s.byPrefixAndEndpoint(
-		prefix, endpointId, start, end, result)
+		prefix,
+		endpointId,
+		start,
+		end,
+		GroupMetricExactly,
+		result)
+}
+
+// ByPrefixAndEndpointStrategy work like ByPrefixAndEndpoint except that it
+// appends records grouped by given strategy sorted from latest to earliest.
+func (s *Store) ByPrefixAndEndpointStrategy(
+	prefix string,
+	endpointId interface{},
+	start, end float64,
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	s.byPrefixAndEndpoint(
+		prefix,
+		endpointId,
+		start,
+		end,
+		strategy,
+		result)
 }
 
 // ByEndpoint returns records for a metrics by endpoint and
@@ -358,14 +453,33 @@ func (s *Store) ByPrefixAndEndpoint(
 // ByEndpoint will go back just before start when possible so that
 // the value of the metrics is known at time start.
 // start and end are seconds after Jan 1, 1970 GMT
-// ByEndpoint appends the records to result first grouped by metric
+// ByEndpoint appends the records to result first grouped by metric exactly
 // then sorted by time in descending order within each metric.
-// The endpoints and metrics are in no particular order.
 func (s *Store) ByEndpoint(
 	endpointId interface{},
 	start, end float64,
 	result Appender) {
-	s.byEndpoint(endpointId, start, end, result)
+	s.byEndpoint(
+		endpointId,
+		start,
+		end,
+		GroupMetricExactly,
+		result)
+}
+
+// ByEndpointStrategy work like ByEndpoint except that it
+// appends records grouped by given strategy sorted from latest to earliest.
+func (s *Store) ByEndpointStrategy(
+	endpointId interface{},
+	start, end float64,
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	s.byEndpoint(
+		endpointId,
+		start,
+		end,
+		strategy,
+		result)
 }
 
 // TimeLeft returns the the approximate maximum timespan measured in seconds

@@ -1,5 +1,9 @@
 package store
 
+import (
+	"container/heap"
+)
+
 // This file contains the code for implementing Appenders.
 
 type limitAppenderType struct {
@@ -149,4 +153,153 @@ func (m *mergeWithTimestampsType) Finalize() {
 		}
 		m.timestampIdx++
 	}
+}
+
+func biggerFloatsFirst(first, second float64) bool {
+	return first > second
+}
+
+func smallerFloatsFirst(first, second float64) bool {
+	return first < second
+}
+
+// mergeNewestFirst Appends records from multiple record slices to given
+// appender latest to earliest.
+// Each slice in recordSeries must be sorted by time from latest to earliest.
+// meregeNewestFirst is intended to merge records of grouped metrics so if
+// two records have the same timestamp, it emits ony one of them to a, an
+// active record if possible.
+func mergeNewestFirst(recordSeries [][]Record, a Appender) {
+	mergeSomeWay(
+		recordSeries,
+		biggerFloatsFirst,
+		a)
+}
+
+// mergeOldestFirst Appends records from multiple record slices to given
+// appender earliest to latest.
+// Each slice in recordSeries must be sorted by time from earliest to latest.
+// meregeOldestFirst is intended to merge records of grouped metrics so if
+// two records have the same timestamp, it emits ony one of them to a, an
+// active record if possible.
+func mergeOldestFirst(recordSeries [][]Record, a Appender) {
+	mergeSomeWay(
+		recordSeries,
+		smallerFloatsFirst,
+		a)
+}
+
+func trimEmptyRecordLists(series [][]Record) [][]Record {
+	result := make([][]Record, len(series))
+	idx := 0
+	for i := range series {
+		if len(series[i]) > 0 {
+			result[idx] = series[i]
+			idx++
+		}
+	}
+	return result[:idx]
+}
+
+func mergeSomeWay(
+	recordSeries [][]Record,
+	comesBefore func(self, other float64) bool,
+	appender Appender) {
+	preferActiveAppender := newPreferActiveAppender(appender)
+	aHeapWithLess := &recordHeapTypeWithLess{
+		recordHeapType: trimEmptyRecordLists(recordSeries),
+		before:         comesBefore,
+	}
+	heap.Init(aHeapWithLess)
+	for !aHeapWithLess.isEmpty() {
+		alist := heap.Pop(aHeapWithLess).([]Record)
+		if !preferActiveAppender.Append(&alist[0]) {
+			return
+		}
+		alist = alist[1:]
+		if len(alist) > 0 {
+			heap.Push(aHeapWithLess, alist)
+		}
+	}
+	preferActiveAppender.Flush()
+}
+
+type recordHeapType [][]Record
+
+func (h recordHeapType) Len() int {
+	return len(h)
+}
+
+func (h recordHeapType) Swap(i, j int) {
+	h[j], h[i] = h[i], h[j]
+}
+
+func (h *recordHeapType) Push(x interface{}) {
+	*h = append(*h, x.([]Record))
+}
+
+func (h *recordHeapType) Pop() interface{} {
+	old := *h
+	n := len(old)
+	*h = old[0 : n-1]
+	return old[n-1]
+}
+
+func (h recordHeapType) isEmpty() bool {
+	return len(h) == 0
+}
+
+type recordHeapTypeWithLess struct {
+	recordHeapType
+	before func(lhs, rhs float64) bool
+}
+
+func (h *recordHeapTypeWithLess) Less(i, j int) bool {
+	return h.before(
+		h.recordHeapType[i][0].TimeStamp,
+		h.recordHeapType[j][0].TimeStamp)
+}
+
+type preferActiveAppenderType struct {
+	wrapped           Appender
+	lastTs            float64
+	inactive          Record
+	inactivePopulated bool
+	active            Record
+	activePopulated   bool
+}
+
+func newPreferActiveAppender(wrapped Appender) *preferActiveAppenderType {
+	return &preferActiveAppenderType{wrapped: wrapped}
+}
+
+func (a *preferActiveAppenderType) Flush() (result bool) {
+	switch {
+	case a.activePopulated:
+		result = a.wrapped.Append(&a.active)
+	case a.inactivePopulated:
+		result = a.wrapped.Append(&a.inactive)
+	default:
+		result = true
+	}
+	a.activePopulated = false
+	a.inactivePopulated = false
+	return
+}
+
+func (a *preferActiveAppenderType) Append(r *Record) (result bool) {
+	if r.TimeStamp != a.lastTs {
+		result = a.Flush()
+	} else {
+		result = true
+	}
+	if r.Active {
+		a.active = *r
+		a.activePopulated = true
+	} else {
+		a.inactive = *r
+		a.inactivePopulated = true
+	}
+	a.lastTs = r.TimeStamp
+	return
 }

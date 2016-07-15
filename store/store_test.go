@@ -258,17 +258,22 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 }
 
 type descendingCheckerType struct {
-	visited       map[*store.MetricInfo]bool
-	visiting      *store.MetricInfo
+	visited       map[interface{}]bool
+	visiting      interface{}
 	lastTimeStamp float64
+	strategy      store.MetricGroupingStrategy
 }
 
-func newDescendingChecker() *descendingCheckerType {
-	return &descendingCheckerType{visited: make(map[*store.MetricInfo]bool)}
+func newDescendingChecker(
+	strategy store.MetricGroupingStrategy) *descendingCheckerType {
+	return &descendingCheckerType{
+		visited:  make(map[interface{}]bool),
+		strategy: strategy}
 }
 
 func (c *descendingCheckerType) Check(t *testing.T, r *store.Record) {
-	if r.Info == c.visiting {
+	key := c.strategy(r.Info)
+	if key == c.visiting {
 		if r.TimeStamp >= c.lastTimeStamp {
 			t.Errorf(
 				"Timestamp %f comes after %f",
@@ -276,43 +281,48 @@ func (c *descendingCheckerType) Check(t *testing.T, r *store.Record) {
 		} else {
 			c.lastTimeStamp = r.TimeStamp
 		}
-	} else if c.visited[r.Info] {
+	} else if c.visited[key] {
 		t.Errorf("Records for %s not contiguous.", r.Info.Path())
 	} else {
 		if c.visiting != nil {
 			c.visited[c.visiting] = true
 		}
-		c.visiting = r.Info
+		c.visiting = key
 		c.lastTimeStamp = r.TimeStamp
 	}
 }
 
 type sanityCheckerType struct {
-	lastTsMap map[*store.MetricInfo]float64
+	lastTsMap map[interface{}]float64
+	strategy  store.MetricGroupingStrategy
 }
 
-func newSanityChecker() *sanityCheckerType {
+func newSanityChecker(
+	strategy store.MetricGroupingStrategy) *sanityCheckerType {
 	var result sanityCheckerType
-	result.Init()
+	result.Init(strategy)
 	return &result
 }
 
-func (c *sanityCheckerType) Init() {
-	c.lastTsMap = make(map[*store.MetricInfo]float64)
+func (c *sanityCheckerType) Init(strategy store.MetricGroupingStrategy) {
+	c.lastTsMap = make(map[interface{}]float64)
+	c.strategy = strategy
 }
 
 func (c *sanityCheckerType) copyTo(dest *sanityCheckerType) {
-	dest.lastTsMap = make(map[*store.MetricInfo]float64, len(c.lastTsMap))
+	dest.lastTsMap = make(map[interface{}]float64, len(c.lastTsMap))
 	for k, v := range c.lastTsMap {
 		dest.lastTsMap[k] = v
 	}
+	dest.strategy = c.strategy
 }
 
 func (c *sanityCheckerType) Check(
 	t *testing.T, r *store.Record) (lastTs float64, ok bool) {
 	ts := r.TimeStamp
-	lastTs, ok = c.lastTsMap[r.Info]
-	c.lastTsMap[r.Info] = ts
+	key := c.strategy(r.Info)
+	lastTs, ok = c.lastTsMap[key]
+	c.lastTsMap[key] = ts
 	if ok && ts <= lastTs {
 		t.Errorf(
 			"(%s %f) does not come after %f",
@@ -407,16 +417,24 @@ type expectedTsValuesType struct {
 }
 
 func newExpectedTsValues() *expectedTsValuesType {
-	return newExpectedTsValuesWithMetaData(kNoMetaData)
+	return newExpectedTsValuesWithMetaDataAndStrategy(
+		kNoMetaData, store.GroupMetricExactly)
 }
 
 func newExpectedTsValuesWithMetaData(
 	metaData *expectedMetaDataType) *expectedTsValuesType {
+	return newExpectedTsValuesWithMetaDataAndStrategy(
+		metaData, store.GroupMetricExactly)
+}
+
+func newExpectedTsValuesWithMetaDataAndStrategy(
+	metaData *expectedMetaDataType,
+	strategy store.MetricGroupingStrategy) *expectedTsValuesType {
 	result := &expectedTsValuesType{
 		metaData: metaData,
 		values:   make(map[nameAndTsType]interfaceAndActiveType),
 	}
-	result.sanityChecker.Init()
+	result.sanityChecker.Init(strategy)
 	return result
 }
 
@@ -494,7 +512,7 @@ func (e *expectedTsValuesType) checkContents(
 // this method does not change the state of this instance.
 func (e *expectedTsValuesType) CheckSlice(
 	t *testing.T, results []store.Record) (count int) {
-	descendingChecker := newDescendingChecker()
+	descendingChecker := newDescendingChecker(e.sanityChecker.strategy)
 	ecopy := newExpectedTsValues()
 	e.copyTo(ecopy)
 	var lastInfo *store.MetricInfo
@@ -541,7 +559,7 @@ type iteratorPageEvictionTestType struct {
 func (c *iteratorPageEvictionTestType) Iterate(
 	t *testing.T, iter store.Iterator) {
 	*c = iteratorPageEvictionTestType{}
-	sanityChecker := newSanityChecker()
+	sanityChecker := newSanityChecker(store.GroupMetricExactly)
 	var r store.Record
 	for iter.Next(&r) {
 		lastTs, ok := sanityChecker.Check(t, &r)
@@ -1705,6 +1723,87 @@ func TestWithLists(t *testing.T) {
 		"aRollUpIterator", kEndpoint0, 100*time.Second, 0)
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
+}
+
+func TestByNameAndEndpointStrategy(t *testing.T) {
+	astore := newStore(
+		t, "TestByNameAndEndpointMergeGroups", 10, 100, 1.0, 10)
+	astore.RegisterEndpoint(kEndpoint0)
+	firstMetric := metrics.SimpleList{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			GroupId:     5,
+		},
+	}
+	secondMetric := metrics.SimpleList{
+		{
+			Path:        "/foo/bar",
+			Description: "A description",
+			GroupId:     7,
+		},
+	}
+
+	firstMetric[0].Value = int64(0)
+	firstMetric[0].TimeStamp = duration.FloatToTime(1000.0)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	firstMetric[0].Value = int64(10)
+	firstMetric[0].TimeStamp = duration.FloatToTime(1010.0)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+
+	secondMetric[0].Value = int64(20)
+	secondMetric[0].TimeStamp = duration.FloatToTime(1020.0)
+	astore.AddBatch(kEndpoint0, 100.0, secondMetric)
+	secondMetric[0].Value = int64(30)
+	secondMetric[0].TimeStamp = duration.FloatToTime(1030.0)
+	astore.AddBatch(kEndpoint0, 100.0, secondMetric)
+
+	firstMetric[0].Value = int64(40)
+	firstMetric[0].TimeStamp = duration.FloatToTime(1040.0)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	firstMetric[0].Value = int64(50)
+	firstMetric[0].TimeStamp = duration.FloatToTime(1050.0)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+
+	expected := newExpectedTsValuesWithMetaDataAndStrategy(
+		kNoMetaData, store.GroupMetricByKey)
+	expected.Add("/foo/bar", 1000.0, int64(0))
+	expected.Add("/foo/bar", 1010.0, int64(10))
+	expected.AddInactive("/foo/bar", 1010.001, int64(0))
+	expected.Add("/foo/bar", 1020.0, int64(20))
+	expected.Add("/foo/bar", 1030.0, int64(30))
+	expected.AddInactive("/foo/bar", 1030.001, int64(0))
+	expected.Add("/foo/bar", 1040.0, int64(40))
+	expected.Add("/foo/bar", 1050.0, int64(50))
+
+	var result []store.Record
+	astore.ByNameAndEndpointStrategy(
+		"/foo/bar",
+		kEndpoint0,
+		0.0,
+		10000.0,
+		store.GroupMetricByKey,
+		store.AppendTo(&result))
+	expected.CheckSlice(t, result)
+
+	result = nil
+	astore.ByEndpointStrategy(
+		kEndpoint0,
+		0.0,
+		10000.0,
+		store.GroupMetricByKey,
+		store.AppendTo(&result))
+	expected.CheckSlice(t, result)
+
+	result = nil
+	astore.ByPrefixAndEndpointStrategy(
+		"/foo",
+		kEndpoint0,
+		0.0,
+		10000.0,
+		store.GroupMetricByKey,
+		store.AppendTo(&result))
+	expected.CheckSlice(t, result)
 }
 
 func TestByNameAndEndpointAndEndpoint(t *testing.T) {

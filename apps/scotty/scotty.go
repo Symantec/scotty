@@ -579,20 +579,19 @@ func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMe
 }
 
 func (a *endpointMetricsAppender) Append(r *store.Record) bool {
-	if r.Info != a.lastInfo {
-		a.lastInfo = r.Info
+	if !store.GroupMetricByKey.Equal(r.Info, a.lastInfo) {
 		jsonValue, jsonKind, jsonSubType := trimessages.AsJsonWithSubType(
 			r.Value,
-			a.lastInfo.Kind(),
-			a.lastInfo.SubType(),
-			a.lastInfo.Unit())
+			r.Info.Kind(),
+			r.Info.SubType(),
+			r.Info.Unit())
 		a.lastMetric = &messages.EndpointMetric{
-			Path:        a.lastInfo.Path(),
+			Path:        r.Info.Path(),
 			Kind:        jsonKind,
 			SubType:     jsonSubType,
-			Description: a.lastInfo.Description(),
-			Bits:        a.lastInfo.Bits(),
-			Unit:        a.lastInfo.Unit(),
+			Description: r.Info.Description(),
+			Bits:        r.Info.Bits(),
+			Unit:        r.Info.Unit(),
 			Values: []*messages.TimestampedValue{{
 				Timestamp: duration.SinceEpochFloat(
 					r.TimeStamp).String(),
@@ -603,9 +602,9 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	} else {
 		jsonValue, _, _ := trimessages.AsJsonWithSubType(
 			r.Value,
-			a.lastInfo.Kind(),
-			a.lastInfo.SubType(),
-			a.lastInfo.Unit())
+			r.Info.Kind(),
+			r.Info.SubType(),
+			r.Info.Unit())
 		newTimestampedValue := &messages.TimestampedValue{
 			Timestamp: duration.SinceEpochFloat(
 				r.TimeStamp).String(),
@@ -615,6 +614,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 		a.lastMetric.Values = append(
 			a.lastMetric.Values, newTimestampedValue)
 	}
+	a.lastInfo = r.Info
 	return true
 }
 
@@ -637,20 +637,27 @@ func gatherDataForEndpoint(
 	now := duration.TimeToFloat(time.Now())
 	appender := newEndpointMetricsAppender(&result)
 	if path == "" {
-		metricStore.ByEndpoint(endpoint, now-60.0*float64(history), math.Inf(1), appender)
+		metricStore.ByEndpointStrategy(
+			endpoint,
+			now-60.0*float64(history),
+			math.Inf(1),
+			store.GroupMetricByKey,
+			appender)
 	} else {
-		metricStore.ByNameAndEndpoint(
+		metricStore.ByNameAndEndpointStrategy(
 			path,
 			endpoint,
 			now-60.0*float64(history),
 			math.Inf(1),
+			store.GroupMetricByKey,
 			appender)
 		if !isSingleton {
-			metricStore.ByPrefixAndEndpoint(
+			metricStore.ByPrefixAndEndpointStrategy(
 				path+"/",
 				endpoint,
 				now-60.0*float64(history),
 				math.Inf(1),
+				store.GroupMetricByKey,
 				appender)
 		}
 

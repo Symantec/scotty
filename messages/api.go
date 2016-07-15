@@ -6,16 +6,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 )
 
-// Range represents a range for distribution values
-type Range struct {
-	// Represents the lower bound of the range inclusive.
-	// Ignore for the first (lowest) range which never has a lower bound.
-	Lower float64 `json:"lower"`
-	// Represents the upper bound of the range exclusive.
-	// Ignore for the highest (last) range which never has a upper bound.
-	Upper float64 `json:"upper"`
-}
-
 // Distribution represents a distribution of values since the previous
 // distribution.
 //
@@ -32,8 +22,8 @@ type Distribution struct {
 	Sum float64 `json:"sum"`
 	// The total number of values since last recorded distribution
 	Count uint64 `json:"count"`
-	// The number of values within each range. Always the same length as
-	// the Buckets field in the EndpointMetric structure
+	// The number of values within each range. Length is always one more
+	// than length of UpperLimis field in the EndpointMetric structure
 	Counts []int64 `json:"counts"`
 }
 
@@ -78,8 +68,8 @@ type EndpointMetric struct {
 
 	// This field is true if this distribution is not cumulative.
 	IsNotCumulative bool `json:"isNotCumulative,omitempty"`
-	// The buckets for the distribution.
-	Buckets []Range `json:"buckets,omitempty"`
+	// The upper limits for the distribution buckets.
+	UpperLimits []float64 `json:"upperLimits,omitempty"`
 }
 
 // EndpointMetricList represents a list of EndpointMetric. Client should

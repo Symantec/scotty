@@ -63,16 +63,20 @@ func (s *Store) byNameAndEndpoint(
 	name string,
 	endpointId interface{},
 	start, end float64,
+	strategy MetricGroupingStrategy,
 	result Appender) {
-	s.byApplication[endpointId].ByName(name, start, end, result)
+	s.byApplication[endpointId].ByName(
+		name, start, end, strategy, result)
 }
 
 func (s *Store) byPrefixAndEndpoint(
 	prefix string,
 	endpointId interface{},
 	start, end float64,
+	strategy MetricGroupingStrategy,
 	result Appender) {
-	s.byApplication[endpointId].ByPrefix(prefix, start, end, result)
+	s.byApplication[endpointId].ByPrefix(
+		prefix, start, end, strategy, result)
 }
 
 func (s *Store) timeLeft(name string) float64 {
@@ -105,8 +109,10 @@ func (s *Store) namedIteratorForEndpointRollUp(
 func (s *Store) byEndpoint(
 	endpointId interface{},
 	start, end float64,
+	strategy MetricGroupingStrategy,
 	result Appender) {
-	s.byApplication[endpointId].ByPrefix("", start, end, result)
+	s.byApplication[endpointId].ByPrefix(
+		"", start, end, strategy, result)
 }
 
 func (s *Store) markEndpointInactive(

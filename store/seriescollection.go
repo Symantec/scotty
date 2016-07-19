@@ -477,38 +477,59 @@ func (c *timeSeriesCollectionType) AddBatch(
 	return
 }
 
-// Unique values by metric name in descending order happening before end and
-// continuing until on or before start.
-func (c *timeSeriesCollectionType) ByName(
-	name string, start, end float64, result Appender) {
+func (c *timeSeriesCollectionType) byWhateverGroupBy(
+	timeSeries []*timeSeriesType,
+	partition partitionType,
+	start, end float64,
+	result Appender) {
 	// no-op if start exceeds end
 	if start >= end {
 		return
 	}
+	merger := newMerger()
+	tslen := len(timeSeries)
 	doneAppender := &doneAppenderType{Wrapped: result}
-	for _, timeSeries := range c.TsByName(name) {
-		timeSeries.Fetch(c.applicationId, start, end, doneAppender)
+	for startIdx, endIdx := 0, 0; startIdx < tslen; startIdx = endIdx {
+		endIdx = nextSubset(partition, startIdx)
+		group := timeSeries[startIdx:endIdx]
+		merger.MergeNewestFirst(
+			group,
+			func(ts *timeSeriesType, appender Appender) {
+				ts.Fetch(
+					c.applicationId,
+					start,
+					end,
+					appender)
+			},
+			doneAppender)
 		if doneAppender.Done {
 			return
 		}
 	}
 }
 
+// Unique values by metric name in descending order happening before end and
+// continuing until on or before start.
+func (c *timeSeriesCollectionType) ByName(
+	name string,
+	start, end float64,
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	timeSeries := c.TsByName(name)
+	partition := strategy.orderedPartition(timeSeries)
+	c.byWhateverGroupBy(timeSeries, partition, start, end, result)
+}
+
 // Unique values by metric prefix in descending order happening before end and
 // continuing until on or before start.
 func (c *timeSeriesCollectionType) ByPrefix(
-	prefix string, start, end float64, result Appender) {
-	// no-op if start exceeds end
-	if start >= end {
-		return
-	}
-	doneAppender := &doneAppenderType{Wrapped: result}
-	for _, timeSeries := range c.TsByPrefix(prefix) {
-		timeSeries.Fetch(c.applicationId, start, end, doneAppender)
-		if doneAppender.Done {
-			return
-		}
-	}
+	prefix string,
+	start, end float64,
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	timeSeries := c.TsByPrefix(prefix)
+	partition := strategy.orderedPartition(timeSeries)
+	c.byWhateverGroupBy(timeSeries, partition, start, end, result)
 }
 
 // Latest values for this instance.

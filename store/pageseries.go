@@ -664,3 +664,103 @@ func inactivateTimeStampSeries(
 	}
 	return
 }
+
+func (m MetricGroupingStrategy) partition(
+	ts []*timeSeriesType) partitionType {
+	return &timeSeriesPartitionType{timeSeries: ts, strategy: m}
+}
+
+func (m MetricGroupingStrategy) orderedPartition(
+	ts []*timeSeriesType) partitionType {
+	result := &timeSeriesPartitionType{timeSeries: ts, strategy: m}
+	formPartition(result)
+	return result
+}
+
+type timeSeriesPartitionType struct {
+	timeSeries []*timeSeriesType
+	strategy   MetricGroupingStrategy
+}
+
+func (t *timeSeriesPartitionType) Len() int {
+	return len(t.timeSeries)
+}
+
+func (t *timeSeriesPartitionType) SubsetId(idx int) interface{} {
+	return t.strategy(t.timeSeries[idx].id)
+}
+
+func (t *timeSeriesPartitionType) Swap(i, j int) {
+	t.timeSeries[i], t.timeSeries[j] = t.timeSeries[j], t.timeSeries[i]
+}
+
+// mergerType merges records from several time series together.
+// Using the same mergerType instance to do multiple merges amortizes heap
+// allocations. The zero value of mergerType is a ready to use instance.
+type mergerType struct {
+	records      []Record
+	recordSlices [][]Record
+}
+
+func newMerger() *mergerType {
+	return &mergerType{}
+}
+
+// MergeOldestFirst merges from oldest to newest.
+// series is all the time series
+// producer produces the records for one time series. producer must produce
+// records oldest to newest. dest is where the merged records are appended.
+func (m *mergerType) MergeOldestFirst(
+	series []*timeSeriesType,
+	producer func(ts *timeSeriesType, a Appender),
+	dest Appender) {
+	m.mergeSomeWay(
+		series,
+		producer,
+		mergeOldestFirst,
+		dest)
+}
+
+// MergeOldestFirst merges from newest to oldest.
+// series is all the time series
+// producer produces the records for one time series. producer must produce
+// records newest to oldest. dest is where the merged records are appended.
+func (m *mergerType) MergeNewestFirst(
+	series []*timeSeriesType,
+	producer func(ts *timeSeriesType, a Appender),
+	dest Appender) {
+	m.mergeSomeWay(
+		series,
+		producer,
+		mergeNewestFirst,
+		dest)
+}
+
+func (m *mergerType) mergeSomeWay(
+	series []*timeSeriesType,
+	producer func(ts *timeSeriesType, a Appender),
+	finalMerger func(recordSeries [][]Record, a Appender),
+	dest Appender) {
+	if len(series) == 1 {
+		producer(series[0], dest)
+	} else {
+		m.records = m.records[:0]
+		m.recordSlices = m.recordSlices[:0]
+		sliceAppender := AppendTo(&m.records)
+		startIdx := 0
+		for _, ts := range series {
+			producer(ts, sliceAppender)
+			m.recordSlices = append(
+				m.recordSlices, m.records[startIdx:])
+			startIdx = len(m.records)
+		}
+		finalMerger(m.recordSlices, dest)
+		m.cleanUpForGC()
+	}
+}
+
+func (m *mergerType) cleanUpForGC() {
+	for i := range m.records {
+		m.records[i] = Record{}
+	}
+}

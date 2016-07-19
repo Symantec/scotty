@@ -61,6 +61,10 @@ func (n *namedIteratorType) moreRecords() bool {
 		func(x int) bool {
 			return ourTimestamps[x] > lastWrittenTimestamp
 		})
+	// Help out GC. Record structs can hold onto slices or distributions.
+	for i := range n.records {
+		n.records[i] = Record{}
+	}
 	n.records = n.records[:0]
 	n.currentTimeSeries.FetchForwardWithTimeStamps(
 		n.timeSeriesCollection.applicationId,

@@ -256,6 +256,10 @@ func (c *Consumer) flush() (err error) {
 			iter.Commit()
 		}
 	}
+	// Help out the GC
+	for i := range c.toBeCommitted {
+		c.toBeCommitted[i] = nil
+	}
 	// Clear out pending iterators
 	c.toBeCommitted = c.toBeCommitted[:0]
 	return

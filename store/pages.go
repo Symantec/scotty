@@ -43,6 +43,11 @@ func (p tsPageType) IsFull() bool {
 }
 
 func (p *tsPageType) Clear() {
+	// Help out the GC. tsValueType structs can hold onto slices or
+	// distributions.
+	for i := range *p {
+		(*p)[i] = tsValueType{}
+	}
 	*p = (*p)[:0]
 }
 

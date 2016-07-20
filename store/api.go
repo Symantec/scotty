@@ -15,6 +15,12 @@ var (
 	ErrInactive = errors.New("store: endpoint inactive.")
 )
 
+// Ranges depicts the ranges for a distributions.
+// Instances of this type must be treated as immutable
+type Ranges struct {
+	Ranges []float64
+}
+
 // MetricInfo represents the meta data for a metric
 // MetricInfo instances are immutable by contract
 type MetricInfo struct {
@@ -23,7 +29,14 @@ type MetricInfo struct {
 	unit        units.Unit
 	kind        types.Type
 	subType     types.Type
-	groupId     int
+	// A pointer so that MetricInfo can be a map key. If the path field
+	// differs between two structs, this field will differ also even
+	// if the ranges are logically equal. However, if the path field
+	// is equal between two structs, this field will also be equal if
+	// and only if the ranges are logically equivalent.
+	ranges          *Ranges
+	isNotCumulative bool
+	groupId         int
 }
 
 // Path returns the path of the metric
@@ -56,6 +69,18 @@ func (m *MetricInfo) Bits() int {
 		return m.subType.Bits()
 	}
 	return m.kind.Bits()
+}
+
+// Ranges returns the ranges of the distribution when Kind() == types.Dist,
+// otherwise returns nil.
+func (m *MetricInfo) Ranges() *Ranges {
+	return m.ranges
+}
+
+// IsNotCumulative returns true when Kind() == types.Dist and distribution
+// is not cumulative. Returns false in all other cases.
+func (m *MetricInfo) IsNotCumulative() bool {
+	return m.isNotCumulative
 }
 
 // The group ID of this metric

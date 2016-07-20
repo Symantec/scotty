@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
+	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"sync"
@@ -11,15 +12,90 @@ import (
 // This file contains the code for keeping a collection of series per
 // endpoint.
 
+func rangesLogicallyEqual(left, right []float64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// rangesListType is an associative cache of ranges designed to store ranges
+// used for a single particular metric path.
+// rangesListType uses a linear, adaptive search moving hits found to the
+// front of the list. We expect the desired ranges always to be at
+// the front of the list providing O(1) lookup. The only time this won't
+// be the case is when the ranges change for a distribution which is very
+// seldom.
+type rangesListType struct {
+	rangesList []*Ranges
+}
+
+func newRangesList() *rangesListType {
+	return &rangesListType{}
+}
+
+func (r *rangesListType) Get(ranges []float64) *Ranges {
+	idx := r.find(ranges)
+	if idx == -1 {
+		rangesCopy := make([]float64, len(ranges))
+		copy(rangesCopy, ranges)
+		r.rangesList = append(r.rangesList, &Ranges{rangesCopy})
+		idx = len(r.rangesList) - 1
+	}
+	if idx > 0 {
+		r.rangesList[idx], r.rangesList[0] = r.rangesList[0], r.rangesList[idx]
+	}
+	return r.rangesList[0]
+}
+
+func (r *rangesListType) find(ranges []float64) int {
+	for i := range r.rangesList {
+		if rangesLogicallyEqual(r.rangesList[i].Ranges, ranges) {
+			return i
+		}
+	}
+	return -1
+}
+
+// rangeCacheType caches ranges by path. It guarantees that it will always
+// produce the same *Ranges pointer for logically equivalent ranges
+// for the same path. However, it will produce different *Ranges pointers
+// for logically equivalent ranges if the paths are different.
+type rangesCacheType struct {
+	rangesByPath map[string]*rangesListType
+}
+
+func (r *rangesCacheType) Init() {
+	r.rangesByPath = make(map[string]*rangesListType)
+}
+
+// Get produces a *Ranges pointer for the given path and range.
+func (r *rangesCacheType) Get(
+	path string, ranges []float64) *Ranges {
+	rangesList := r.rangesByPath[path]
+	if rangesList == nil {
+		rangesList = newRangesList()
+		r.rangesByPath[path] = rangesList
+	}
+	return rangesList.Get(ranges)
+}
+
 // metricInfoStoreType keeps a pool of pointers to unique MetricInfo instances
 type metricInfoStoreType struct {
-	ByInfo map[MetricInfo]*MetricInfo
-	ByName map[string][]*MetricInfo
+	ByInfo      map[MetricInfo]*MetricInfo
+	ByName      map[string][]*MetricInfo
+	rangesCache rangesCacheType
 }
 
 func (m *metricInfoStoreType) Init() {
 	m.ByInfo = make(map[MetricInfo]*MetricInfo)
 	m.ByName = make(map[string][]*MetricInfo)
+	m.rangesCache.Init()
 }
 
 // Register returns the correct MetricInfo instance from the pool for
@@ -33,13 +109,26 @@ func (m *metricInfoStoreType) Register(
 	if kind.UsesSubType() && subType == types.Unknown {
 		panic("Got unknown sub-type when it is required")
 	}
+	var ranges *Ranges
+	var isNotCumulative bool
+	if kind == types.Dist {
+		// TODO: Maybe later this shouldn't be tricorder specific,
+		// but for now tricorder is the only thing we know that
+		// has distributions.
+		distribution := metric.Value.(*messages.Distribution)
+		isNotCumulative = distribution.IsNotCumulative
+		rangeSlice := distExtractRanges(distribution)
+		ranges = m.rangesCache.Get(metric.Path, rangeSlice)
+	}
 	infoStruct := MetricInfo{
-		path:        metric.Path,
-		description: metric.Description,
-		unit:        metric.Unit,
-		kind:        kind,
-		subType:     subType,
-		groupId:     metric.GroupId}
+		path:            metric.Path,
+		description:     metric.Description,
+		unit:            metric.Unit,
+		kind:            kind,
+		subType:         subType,
+		ranges:          ranges,
+		isNotCumulative: isNotCumulative,
+		groupId:         metric.GroupId}
 	result, alreadyExists := m.ByInfo[infoStruct]
 	if alreadyExists {
 		return
@@ -48,6 +137,18 @@ func (m *metricInfoStoreType) Register(
 	m.ByInfo[infoStruct] = result
 	m.ByName[infoStruct.path] = append(m.ByName[infoStruct.path], result)
 	return
+}
+
+type distributionBundleType struct {
+	Ranges     *Ranges
+	Counts     []int64
+	Generation uint64
+}
+
+func (d *distributionBundleType) ComputeDifferences(
+	last *distributionBundleType) []int64 {
+	// TODO
+	return nil
 }
 
 // timeSeriesCollectionType represents all the values and timestamps for
@@ -63,24 +164,26 @@ type timeSeriesCollectionType struct {
 	// lock of this instance.
 	statusChangeLock sync.Mutex
 	// Normal lock of this instance.
-	lock            sync.Mutex
-	timeSeries      map[*MetricInfo]*timeSeriesType
-	timestampSeries map[int]*timestampSeriesType
-	metricInfoStore metricInfoStoreType
-	active          bool
-	iterators       map[string]*namedIteratorDataType
+	lock                    sync.Mutex
+	timeSeries              map[*MetricInfo]*timeSeriesType
+	timestampSeries         map[int]*timestampSeriesType
+	metricInfoStore         metricInfoStoreType
+	active                  bool
+	iterators               map[string]*namedIteratorDataType
+	lastDistributionBundles map[string]*distributionBundleType
 }
 
 func newTimeSeriesCollectionType(
 	app interface{},
 	metrics *storeMetricsType) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
-		applicationId:   app,
-		metrics:         metrics,
-		timeSeries:      make(map[*MetricInfo]*timeSeriesType),
-		timestampSeries: make(map[int]*timestampSeriesType),
-		active:          true,
-		iterators:       make(map[string]*namedIteratorDataType),
+		applicationId:           app,
+		metrics:                 metrics,
+		timeSeries:              make(map[*MetricInfo]*timeSeriesType),
+		timestampSeries:         make(map[int]*timestampSeriesType),
+		active:                  true,
+		iterators:               make(map[string]*namedIteratorDataType),
+		lastDistributionBundles: make(map[string]*distributionBundleType),
 	}
 	result.metricInfoStore.Init()
 	return result
@@ -271,12 +374,22 @@ func (c *timeSeriesCollectionType) LookupBatch(
 		var avalue metrics.Value
 		mlist.Index(i, &avalue)
 		kind, subType := types.FromGoValueWithSubType(avalue.Value)
-		// TODO: Allow distribution metrics later.
-		if kind == types.Dist {
-			continue
-		}
 		id := c.metricInfoStore.Register(&avalue, kind, subType)
-		valueByMetric[id] = avalue.Value
+		if kind == types.Dist {
+			lastDistributionBundle := c.lastDistributionBundles[avalue.Path]
+			distribution := avalue.Value.(*messages.Distribution)
+			currentDistributionBundle := &distributionBundleType{
+				Ranges:     id.Ranges(),
+				Counts:     distExtractCounts(distribution),
+				Generation: distribution.Generation,
+			}
+			valueByMetric[id] = currentDistributionBundle.ComputeDifferences(
+				lastDistributionBundle)
+			c.lastDistributionBundles[avalue.Path] = currentDistributionBundle
+		} else {
+			c.lastDistributionBundles[avalue.Path] = nil
+			valueByMetric[id] = avalue.Value
+		}
 		groupIds[id.GroupId()] = true
 		if !avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = duration.TimeToFloat(avalue.TimeStamp)

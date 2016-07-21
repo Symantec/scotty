@@ -665,9 +665,19 @@ func inactivateTimeStampSeries(
 	return
 }
 
+type pathAndNumeric struct {
+	Path      string
+	IsNumeric bool
+}
+
 func (m MetricGroupingStrategy) partition(
 	ts []*timeSeriesType) partitionType {
 	return &timeSeriesPartitionType{timeSeries: ts, strategy: m}
+}
+
+func (m MetricGroupingStrategy) partitionByReference(
+	tsRef *[]*timeSeriesType) partitionType {
+	return &timeSeriesByReferencePartitionType{tsRef: tsRef, strategy: m}
 }
 
 func (m MetricGroupingStrategy) orderedPartition(
@@ -692,6 +702,19 @@ func (t *timeSeriesPartitionType) SubsetId(idx int) interface{} {
 
 func (t *timeSeriesPartitionType) Swap(i, j int) {
 	t.timeSeries[i], t.timeSeries[j] = t.timeSeries[j], t.timeSeries[i]
+}
+
+type timeSeriesByReferencePartitionType struct {
+	tsRef    *[]*timeSeriesType
+	strategy MetricGroupingStrategy
+}
+
+func (t *timeSeriesByReferencePartitionType) Len() int {
+	return len(*t.tsRef)
+}
+
+func (t *timeSeriesByReferencePartitionType) SubsetId(idx int) interface{} {
+	return t.strategy((*t.tsRef)[idx].id)
 }
 
 // mergerType merges records from several time series together.

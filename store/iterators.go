@@ -32,46 +32,60 @@ func (c *changedNamedIteratorType) Next(r *Record) bool {
 // Designed to be immutable
 type namedIteratorDataType struct {
 	startTimeStamps map[int]float64
-	completed       map[*timeSeriesType]float64
+	completed       map[*MetricInfo]float64
 }
 
 type namedIteratorType struct {
 	name                 string
 	timeSeriesCollection *timeSeriesCollectionType
 	// startTimeStamps does not change during this instance's lifetime
-	startTimeStamps   map[int]float64
-	timestamps        map[int][]float64
-	completed         map[*timeSeriesType]float64
-	timeSeries        []*timeSeriesType
-	records           []Record
-	recordIdx         int
-	currentTimeSeries *timeSeriesType
+	startTimeStamps map[int]float64
+	timestamps      map[int][]float64
+	completed       map[*MetricInfo]float64
+	timeSeries      []*timeSeriesType
+	strategy        MetricGroupingStrategy
+	partition       partitionType
+	merger          mergerType
+	records         []Record
+	recordIdx       int
+}
+
+func (n *namedIteratorType) recordsFromSingleTimeSeries(
+	ts *timeSeriesType, appender Appender) {
+	ourTimestamps := n.timestamps[ts.GroupId()]
+	lastWrittenTimestamp := n.completed[ts.id]
+	index := sort.Search(
+		len(ourTimestamps),
+		func(x int) bool {
+			return ourTimestamps[x] > lastWrittenTimestamp
+		})
+	ts.FetchForwardWithTimeStamps(
+		n.timeSeriesCollection.applicationId,
+		ourTimestamps[index:],
+		appender)
 }
 
 func (n *namedIteratorType) moreRecords() bool {
 	if len(n.timeSeries) == 0 {
 		return false
 	}
-	n.currentTimeSeries = n.timeSeries[0]
-	n.timeSeries = n.timeSeries[1:]
-	ourTimestamps := n.timestamps[n.currentTimeSeries.GroupId()]
-	lastWrittenTimestamp := n.completed[n.currentTimeSeries]
-	index := sort.Search(
-		len(ourTimestamps),
-		func(x int) bool {
-			return ourTimestamps[x] > lastWrittenTimestamp
-		})
+	if n.partition == nil {
+		n.partition = n.strategy.partitionByReference(&n.timeSeries)
+	}
+	subsetLen := nextSubset(n.partition, 0)
+	currentSubset := n.timeSeries[:subsetLen]
+	n.timeSeries = n.timeSeries[subsetLen:]
 	n.records = n.records[:0]
-	n.currentTimeSeries.FetchForwardWithTimeStamps(
-		n.timeSeriesCollection.applicationId,
-		ourTimestamps[index:],
+	n.merger.MergeOldestFirst(
+		currentSubset,
+		n.recordsFromSingleTimeSeries,
 		AppendTo(&n.records))
 	return true
 }
 
 func copyCompleted(
-	original map[*timeSeriesType]float64) map[*timeSeriesType]float64 {
-	result := make(map[*timeSeriesType]float64, len(original))
+	original map[*MetricInfo]float64) map[*MetricInfo]float64 {
+	result := make(map[*MetricInfo]float64, len(original))
 	for k, v := range original {
 		result[k] = v
 	}
@@ -139,7 +153,7 @@ func (n *namedIteratorType) Next(r *Record) bool {
 	*r = n.records[n.recordIdx]
 	n.recordIdx++
 	// Mark current progress
-	n.completed[n.currentTimeSeries] = r.TimeStamp
+	n.completed[r.Info] = r.TimeStamp
 	return true
 }
 
@@ -190,9 +204,6 @@ func (a *aggregatorType) Add(r *Record) {
 	if !r.Active {
 		panic("This aggregator can aggregate only active records.")
 	}
-	if a.count > 0 && r.Info != a.record.Info {
-		panic("Trying to aggregate heterogeneous records")
-	}
 	if a.count == 0 {
 		a.record = *r
 	}
@@ -205,7 +216,8 @@ func (a *aggregatorType) Add(r *Record) {
 
 type rollUpNamedIteratorType struct {
 	*namedIteratorType
-	Interval   float64
+	interval   float64
+	strategy   MetricGroupingStrategy
 	aggregator aggregatorType
 }
 
@@ -219,8 +231,8 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 			continue
 		}
 		if !n.aggregator.IsEmpty() {
-			frameId := getFrameId(record.TimeStamp, n.Interval)
-			if record.Info != n.aggregator.FirstInfo() || frameId != getFrameId(n.aggregator.FirstTs(), n.Interval) {
+			frameId := getFrameId(record.TimeStamp, n.interval)
+			if !n.strategy.Equal(record.Info, n.aggregator.FirstInfo()) || frameId != getFrameId(n.aggregator.FirstTs(), n.interval) {
 				n.aggregator.Result(result)
 				n.aggregator.Clear()
 				return true

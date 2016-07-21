@@ -418,13 +418,13 @@ type expectedTsValuesType struct {
 
 func newExpectedTsValues() *expectedTsValuesType {
 	return newExpectedTsValuesWithMetaDataAndStrategy(
-		kNoMetaData, store.GroupMetricExactly)
+		kNoMetaData, store.GroupMetricByPathAndNumeric)
 }
 
 func newExpectedTsValuesWithMetaData(
 	metaData *expectedMetaDataType) *expectedTsValuesType {
 	return newExpectedTsValuesWithMetaDataAndStrategy(
-		metaData, store.GroupMetricExactly)
+		metaData, store.GroupMetricByPathAndNumeric)
 }
 
 func newExpectedTsValuesWithMetaDataAndStrategy(
@@ -559,7 +559,7 @@ type iteratorPageEvictionTestType struct {
 func (c *iteratorPageEvictionTestType) Iterate(
 	t *testing.T, iter store.Iterator) {
 	*c = iteratorPageEvictionTestType{}
-	sanityChecker := newSanityChecker(store.GroupMetricExactly)
+	sanityChecker := newSanityChecker(store.GroupMetricByPathAndNumeric)
 	var r store.Record
 	for iter.Next(&r) {
 		lastTs, ok := sanityChecker.Check(t, &r)
@@ -774,7 +774,11 @@ func TestRollUpIterator(t *testing.T) {
 	beginning := expected.Checkpoint()
 
 	iterator, timeAfterIterator := aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 0)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
 	assertValueEquals(t, 110.0, timeAfterIterator)
@@ -793,11 +797,19 @@ func TestRollUpIterator(t *testing.T) {
 
 	// max 3 times per metric
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 3)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		3,
+		store.GroupMetricByPathAndNumeric)
 	expected.Iterate(t, iterator)
 	expected.Restore(beginning)
 	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 3)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		3,
+		store.GroupMetricByPathAndNumeric)
 	assertValueEquals(t, 11, expected.Iterate(t, iterator))
 	assertValueEquals(t, 190.0, timeAfterIterator)
 	iterator.Commit()
@@ -806,11 +818,19 @@ func TestRollUpIterator(t *testing.T) {
 
 	checkpoint := expected.Checkpoint()
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 3)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		3,
+		store.GroupMetricByPathAndNumeric)
 	expected.Iterate(t, iterator)
 	expected.Restore(checkpoint)
 	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 3)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		3,
+		store.GroupMetricByPathAndNumeric)
 	assertValueEquals(t, 2, expected.Iterate(t, iterator))
 	assertValueEquals(t, 110.0, timeAfterIterator)
 	iterator.Commit()
@@ -820,7 +840,11 @@ func TestRollUpIterator(t *testing.T) {
 	expected.VerifyDone(t)
 
 	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 3)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		3,
+		store.GroupMetricByPathAndNumeric)
 	assertValueEquals(t, 110.0, timeAfterIterator)
 	// Shouldn't get anything off iterator
 	expected.Iterate(t, iterator)
@@ -831,13 +855,21 @@ func TestRollUpIterator(t *testing.T) {
 	// iterator, we have to use a new name to start from the beginning.
 	expected.Restore(beginning)
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
+		"anotherIterator",
+		kEndpoint0,
+		2*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
 	assertValueEquals(t, 8, expected.Iterate(
 		t, iteratorLimit(iterator, 8)))
 	iterator.Commit()
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"anotherIterator", kEndpoint0, 2*time.Minute, 0)
+		"anotherIterator",
+		kEndpoint0,
+		2*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
 	assertValueEquals(t, 5, expected.Iterate(
 		t, iteratorLimit(iterator, 8)))
 	iterator.Commit()
@@ -882,7 +914,11 @@ func TestRollUpIterator(t *testing.T) {
 	expected.Add("Inactive", 120500.0, 8.3)
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 2*time.Minute, 0)
+		"anIterator",
+		kEndpoint0,
+		2*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
 
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -920,7 +956,11 @@ func TestRollUpIteratorBool(t *testing.T) {
 	expected.Add("path", 30900.0, true)
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 5*time.Minute, 0)
+		"anIterator",
+		kEndpoint0,
+		5*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
 }
@@ -957,7 +997,99 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	expected.Add("path", 30900.0, int8(127))
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
-		"anIterator", kEndpoint0, 5*time.Minute, 0)
+		"anIterator",
+		kEndpoint0,
+		5*time.Minute,
+		0,
+		store.GroupMetricByPathAndNumeric)
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+}
+
+func TestIteratorSamePathDifferentTypeRollUp(t *testing.T) {
+	aStore := newStore(
+		t, "TestIteratorSamePathDifferentTypeRollUp", 2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "foo",
+			Description: "An int64 or float64 or string",
+		},
+	}
+	playback := newPlaybackType(aMetric, 13)
+	playback.AddTimes(
+		0,
+		1200.0, 1210.0, 1220.0, 1230.0, 1240.0, 1250.0,
+		1260.0, 1270.0, 1280.0, 1290.0, 1300.0, 1310.0,
+		// Here to force first two periods to get written out
+		1320.0,
+	)
+	playback.Add(
+		"foo",
+		int64(1000), int64(1010), int64(1020),
+		float64(2030.0), float64(2040.0), float64(2050.0),
+		float64(2060.0), float64(2070.0), float64(2080.0),
+		"hello", "how", int64(1110),
+		"yo",
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	expected := newExpectedTsValues()
+
+	expected.Add("foo", 1225.0, int64(1525))
+	expected.Add("foo", 1280.0, float64(1830.0))
+	expected.Add("foo", 1290.0, "hello")
+
+	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
+		"anIterator",
+		kEndpoint0,
+		60*time.Second,
+		0,
+		store.GroupMetricByPathAndNumeric)
+	expected.Iterate(t, iterator)
+	expected.VerifyDone(t)
+}
+
+func TestIteratorSamePathDifferentType(t *testing.T) {
+	aStore := newStore(
+		t, "TestIteratorSamePathDifferentType", 2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "foo",
+			Description: "An int64 or int32",
+		},
+		{
+			Path:        "bar",
+			Description: "an int 16",
+		},
+	}
+	playback := newPlaybackType(aMetric, 3)
+	playback.AddTimes(
+		0,
+		1010.0, 1020.0, 1030.0,
+	)
+	playback.Add(
+		"foo",
+		int64(10), int32(20), int64(30),
+	)
+	playback.Add(
+		"bar",
+		int16(11), int16(21), int16(31),
+	)
+	playback.Play(aStore, kEndpoint0)
+
+	expected := newExpectedTsValues()
+
+	expected.Add("foo", 1010.0, int64(10))
+	expected.Add("bar", 1010.0, int16(11))
+	expected.Add("foo", 1020.0, int32(20))
+	expected.Add("bar", 1020.0, int16(21))
+	expected.Add("foo", 1030.0, int64(30))
+	expected.Add("bar", 1030.0, int16(31))
+
+	iterator, _ := aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
 }
@@ -1720,7 +1852,11 @@ func TestWithLists(t *testing.T) {
 		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
-		"aRollUpIterator", kEndpoint0, 100*time.Second, 0)
+		"aRollUpIterator",
+		kEndpoint0,
+		100*time.Second,
+		0,
+		store.GroupMetricByPathAndNumeric)
 	expectedTsValues.Iterate(t, iterator)
 	expectedTsValues.VerifyDone(t)
 }

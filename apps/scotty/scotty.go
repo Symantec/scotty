@@ -466,11 +466,16 @@ func createNamedIterator(
 			kLookAheadWritingToPStore,
 		)
 	}
+	// TODO: Strategy hard coded for now, but really the pstore writer
+	// in use should dictate the grouping strategy. For now, all our
+	// pstore writers convert numeric metrics to float64 which is why
+	// the store.GroupByPathAndNumeric strategy works for now.
 	return theStore.NamedIteratorForEndpointRollUp(
 		iteratorName,
 		endpointId,
 		rollUpSpan,
 		kLookAheadWritingToPStore,
+		store.GroupMetricByPathAndNumeric,
 	)
 }
 

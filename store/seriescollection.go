@@ -87,9 +87,11 @@ func newTimeSeriesCollectionType(
 }
 
 func (c *timeSeriesCollectionType) NewNamedIterator(
-	name string, maxFrames int) (NamedIterator, float64) {
+	name string,
+	maxFrames int,
+	strategy MetricGroupingStrategy) (NamedIterator, float64) {
 	var startTimes map[int]float64
-	var completed map[*timeSeriesType]float64
+	var completed map[*MetricInfo]float64
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	snapshot := c.iterators[name]
@@ -102,13 +104,16 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		timesByGroup[groupId] = series.FindAfter(
 			startTimes[groupId], maxFrames)
 	}
+	allTimeSeries := c.tsAll()
+	strategy.orderedPartition(allTimeSeries)
 	result := &namedIteratorType{
 		name:                 name,
 		timeSeriesCollection: c,
 		startTimeStamps:      startTimes,
 		timestamps:           timesByGroup,
 		completed:            copyCompleted(completed),
-		timeSeries:           c.tsAll(),
+		timeSeries:           allTimeSeries,
+		strategy:             strategy,
 	}
 	timeLeft := c.timeLeft(result.nextStartTimeStamps())
 	return result, timeLeft
@@ -142,10 +147,13 @@ func (c *timeSeriesCollectionType) TimeLeft(name string) float64 {
 }
 
 func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
-	name string, duration float64, maxFrames int) (
+	name string,
+	duration float64,
+	maxFrames int,
+	strategy MetricGroupingStrategy) (
 	NamedIterator, float64) {
 	var startTimes map[int]float64
-	var completed map[*timeSeriesType]float64
+	var completed map[*MetricInfo]float64
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	snapshot := c.iterators[name]
@@ -160,6 +168,8 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		chopForRollUp(duration, maxFrames, &nextTimes)
 		timesByGroup[groupId] = nextTimes
 	}
+	allTimeSeries := c.tsAll()
+	strategy.orderedPartition(allTimeSeries)
 	result := &rollUpNamedIteratorType{
 		namedIteratorType: &namedIteratorType{
 			name:                 name,
@@ -167,9 +177,11 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 			startTimeStamps:      startTimes,
 			timestamps:           timesByGroup,
 			completed:            copyCompleted(completed),
-			timeSeries:           c.tsAll(),
+			timeSeries:           allTimeSeries,
+			strategy:             strategy,
 		},
-		Interval: duration,
+		strategy: strategy,
+		interval: duration,
 	}
 	timeLeft := c.timeLeft(result.nextStartTimeStamps())
 	return result, timeLeft

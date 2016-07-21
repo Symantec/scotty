@@ -126,6 +126,16 @@ var (
 	GroupMetricByKey MetricGroupingStrategy = func(m *MetricInfo) interface{} {
 		return m.Key()
 	}
+
+	// Groups metrics together by their path and whether or not they
+	// are numeric
+	GroupMetricByPathAndNumeric MetricGroupingStrategy = func(
+		m *MetricInfo) interface{} {
+		return pathAndNumeric{
+			Path:      m.Path(),
+			IsNumeric: m.Kind().CanToFromFloat(),
+		}
+	}
 )
 
 // Equal returns true if and only if this strategy would group two metrics
@@ -493,7 +503,9 @@ func (s *Store) TimeLeft(name string) (seconds float64) {
 // iterates over metric values for all known timestamps for the given endpoint.
 // Although returned iterator iterates over values and timestamps in no
 // particular order, it will iterate over values of the same metric by
-// increasing timestamp.
+// increasing timestamp. For now, this method uses the
+// store.GroupMetricByPathAndNumeric strategy to determine whether or not
+// two metrics are the same.
 //
 // The second value returned is the approximate maximum timespan measured
 // in seconds of the remaining values left to be iterated once returned
@@ -553,6 +565,12 @@ func (s *Store) NamedIteratorForEndpoint(
 // hints to the returned iterator that it should iterate over at most maxFrames
 // time periods, not values, per metric.
 //
+// strategy describes how NamedIteratorForEndpointRollUp groups metrics for
+// aggregation. Generally, caller will pass store.GroupMetricByPathAndNumeric,
+// but if a persistent store writer wishes to store additional metric data
+// in rolled up metrics besides just its path, it will need to use a
+// different strategy.
+//
 // To avoid reporting summarised values for a time period before all the values
 // are in, NamedIteratorForEndpointRollup will not report a summarised value
 // for a given time period for a metric unless values for a later time period
@@ -561,10 +579,11 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},
 	dur time.Duration,
-	maxFrames int) (
+	maxFrames int,
+	strategy MetricGroupingStrategy) (
 	iterator NamedIterator, remainingValuesInSeconds float64) {
 	return s.namedIteratorForEndpointRollUp(
-		name, endpointId, dur, maxFrames)
+		name, endpointId, dur, maxFrames, strategy)
 }
 
 // LatestByEndpoint returns the latest records for each metric for a

@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
+	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"strings"
 	"sync"
@@ -13,13 +14,15 @@ import (
 
 // metricInfoStoreType keeps a pool of pointers to unique MetricInfo instances
 type metricInfoStoreType struct {
-	ByInfo map[MetricInfo]*MetricInfo
-	ByName map[string][]*MetricInfo
+	ByInfo      map[MetricInfo]*MetricInfo
+	ByName      map[string][]*MetricInfo
+	rangesCache rangesCacheType
 }
 
 func (m *metricInfoStoreType) Init() {
 	m.ByInfo = make(map[MetricInfo]*MetricInfo)
 	m.ByName = make(map[string][]*MetricInfo)
+	m.rangesCache.Init()
 }
 
 // Register returns the correct MetricInfo instance from the pool for
@@ -33,13 +36,26 @@ func (m *metricInfoStoreType) Register(
 	if kind.UsesSubType() && subType == types.Unknown {
 		panic("Got unknown sub-type when it is required")
 	}
+	var ranges *Ranges
+	var isNotCumulative bool
+	if kind == types.Dist {
+		// TODO: Maybe later this shouldn't be tricorder specific,
+		// but for now tricorder is the only thing we know that
+		// has distributions.
+		distribution := metric.Value.(*messages.Distribution)
+		isNotCumulative = distribution.IsNotCumulative
+		upperLimitSlice := distExtractUpperLimits(distribution)
+		ranges = m.rangesCache.Get(metric.Path, upperLimitSlice)
+	}
 	infoStruct := MetricInfo{
-		path:        metric.Path,
-		description: metric.Description,
-		unit:        metric.Unit,
-		kind:        kind,
-		subType:     subType,
-		groupId:     metric.GroupId}
+		path:            metric.Path,
+		description:     metric.Description,
+		unit:            metric.Unit,
+		kind:            kind,
+		subType:         subType,
+		ranges:          ranges,
+		isNotCumulative: isNotCumulative,
+		groupId:         metric.GroupId}
 	result, alreadyExists := m.ByInfo[infoStruct]
 	if alreadyExists {
 		return
@@ -63,24 +79,26 @@ type timeSeriesCollectionType struct {
 	// lock of this instance.
 	statusChangeLock sync.Mutex
 	// Normal lock of this instance.
-	lock            sync.Mutex
-	timeSeries      map[*MetricInfo]*timeSeriesType
-	timestampSeries map[int]*timestampSeriesType
-	metricInfoStore metricInfoStoreType
-	active          bool
-	iterators       map[string]*namedIteratorDataType
+	lock                             sync.Mutex
+	timeSeries                       map[*MetricInfo]*timeSeriesType
+	timestampSeries                  map[int]*timestampSeriesType
+	metricInfoStore                  metricInfoStoreType
+	active                           bool
+	iterators                        map[string]*namedIteratorDataType
+	previousDistributionValuesByPath map[string]*distributionValuesType
 }
 
 func newTimeSeriesCollectionType(
 	app interface{},
 	metrics *storeMetricsType) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
-		applicationId:   app,
-		metrics:         metrics,
-		timeSeries:      make(map[*MetricInfo]*timeSeriesType),
-		timestampSeries: make(map[int]*timestampSeriesType),
-		active:          true,
-		iterators:       make(map[string]*namedIteratorDataType),
+		applicationId:                    app,
+		metrics:                          metrics,
+		timeSeries:                       make(map[*MetricInfo]*timeSeriesType),
+		timestampSeries:                  make(map[int]*timestampSeriesType),
+		active:                           true,
+		iterators:                        make(map[string]*namedIteratorDataType),
+		previousDistributionValuesByPath: make(map[string]*distributionValuesType),
 	}
 	result.metricInfoStore.Init()
 	return result
@@ -283,12 +301,23 @@ func (c *timeSeriesCollectionType) LookupBatch(
 		var avalue metrics.Value
 		mlist.Index(i, &avalue)
 		kind, subType := types.FromGoValueWithSubType(avalue.Value)
-		// TODO: Allow distribution metrics later.
-		if kind == types.Dist {
-			continue
-		}
 		id := c.metricInfoStore.Register(&avalue, kind, subType)
-		valueByMetric[id] = avalue.Value
+		if kind == types.Dist {
+			previousDistributionValues := c.previousDistributionValuesByPath[avalue.Path]
+			distribution := avalue.Value.(*messages.Distribution)
+			currentDistributionValues := &distributionValuesType{
+				Ranges:     id.Ranges(),
+				Counts:     distExtractCounts(distribution),
+				Sum:        distribution.Sum,
+				Generation: distribution.Generation,
+			}
+			valueByMetric[id] = currentDistributionValues.ComputeDifferences(
+				previousDistributionValues)
+			c.previousDistributionValuesByPath[avalue.Path] = currentDistributionValues
+		} else {
+			c.previousDistributionValuesByPath[avalue.Path] = nil
+			valueByMetric[id] = avalue.Value
+		}
 		groupIds[id.GroupId()] = true
 		if !avalue.TimeStamp.IsZero() {
 			timestampByGroupId[id.GroupId()] = duration.TimeToFloat(avalue.TimeStamp)

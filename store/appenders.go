@@ -2,6 +2,7 @@ package store
 
 import (
 	"container/heap"
+	"github.com/Symantec/tricorder/go/tricorder/types"
 )
 
 // This file contains the code for implementing Appenders.
@@ -139,9 +140,9 @@ func (m *mergeWithTimestampsType) Append(r *Record) bool {
 	return false
 }
 
-// Caller must always call Finalize when done with this instance.
-// Finalize may emit additional items to the underlying appender.
-func (m *mergeWithTimestampsType) Finalize() {
+// Caller must always call Flush when done with this instance.
+// Flush may emit additional items to the underlying appender.
+func (m *mergeWithTimestampsType) Flush() {
 	tsLen := len(m.timestamps)
 	if !m.lastRecordSet {
 		return
@@ -206,6 +207,7 @@ func mergeSomeWay(
 	comesBefore func(self, other float64) bool,
 	appender Appender) {
 	preferActiveAppender := newPreferActiveAppender(appender)
+	defer preferActiveAppender.Flush()
 	aHeapWithLess := &recordHeapTypeWithLess{
 		recordHeapType: trimEmptyRecordLists(recordSeries),
 		before:         comesBefore,
@@ -221,7 +223,6 @@ func mergeSomeWay(
 			heap.Push(aHeapWithLess, alist)
 		}
 	}
-	preferActiveAppender.Flush()
 }
 
 type recordHeapType [][]Record
@@ -269,11 +270,15 @@ type preferActiveAppenderType struct {
 	activePopulated   bool
 }
 
-func newPreferActiveAppender(wrapped Appender) *preferActiveAppenderType {
+func newPreferActiveAppender(wrapped Appender) AppendFlusher {
 	return &preferActiveAppenderType{wrapped: wrapped}
 }
 
-func (a *preferActiveAppenderType) Flush() (result bool) {
+func (a *preferActiveAppenderType) Flush() {
+	a.flush()
+}
+
+func (a *preferActiveAppenderType) flush() (result bool) {
 	switch {
 	case a.activePopulated:
 		result = a.wrapped.Append(&a.active)
@@ -287,11 +292,11 @@ func (a *preferActiveAppenderType) Flush() (result bool) {
 	return
 }
 
-func (a *preferActiveAppenderType) Append(r *Record) (result bool) {
+func (a *preferActiveAppenderType) Append(r *Record) bool {
 	if r.TimeStamp != a.lastTs {
-		result = a.Flush()
-	} else {
-		result = true
+		if !a.flush() {
+			return false
+		}
 	}
 	if r.Active {
 		a.active = *r
@@ -301,5 +306,78 @@ func (a *preferActiveAppenderType) Append(r *Record) (result bool) {
 		a.inactivePopulated = true
 	}
 	a.lastTs = r.TimeStamp
+	return true
+}
+
+type foldDistributionsType struct {
+	wrapped  Appender
+	lastInfo *MetricInfo
+	records  []Record
+}
+
+func (a *foldDistributionsType) flush() (result bool) {
+	if len(a.records) == 0 {
+		// Nothing to flush
+		return true
+	}
+	if a.lastInfo.Kind() == types.Dist {
+		result = a.addDistRecord()
+	} else {
+		result = a.addNormalRecords()
+	}
+	a.records = a.records[:0]
 	return
+}
+
+func (a *foldDistributionsType) addNormalRecords() bool {
+	for i := range a.records {
+		if !a.wrapped.Append(&a.records[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *foldDistributionsType) addDistRecord() bool {
+	length := len(a.records)
+	latestActiveIdx := 0
+	for ; latestActiveIdx < length && !a.records[latestActiveIdx].Active; latestActiveIdx++ {
+	}
+	// If we have all inactives, just skip
+	if latestActiveIdx == length {
+		return true
+	}
+	var sum *DistributionDelta
+	avalue := a.records[latestActiveIdx].Value.(*DistributionDelta)
+	if avalue == nil {
+		sum = NewDistributionDelta(
+			// bucket count always one more than upper limit count
+			make([]int64, len(a.lastInfo.Ranges().UpperLimits)+1),
+			0.0)
+	} else {
+		sum = avalue.Copy()
+	}
+	for i := latestActiveIdx + 1; i < length; i++ {
+		avalue := a.records[i].Value.(*DistributionDelta)
+		if avalue != nil {
+			sum.Add(avalue)
+		}
+	}
+	a.records[latestActiveIdx].Value = sum
+	return a.wrapped.Append(&a.records[latestActiveIdx])
+}
+
+func (a *foldDistributionsType) Append(r *Record) bool {
+	if !GroupMetricByKey.Equal(r.Info, a.lastInfo) {
+		if !a.flush() {
+			return false
+		}
+	}
+	a.records = append(a.records, *r)
+	a.lastInfo = r.Info
+	return true
+}
+
+func (a *foldDistributionsType) Flush() {
+	a.flush()
 }

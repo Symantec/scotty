@@ -15,15 +15,79 @@ var (
 	ErrInactive = errors.New("store: endpoint inactive.")
 )
 
+// DistributionDelta represents the change in distribution since the
+// last recorded DistributionDelta.
+type DistributionDelta struct {
+	counts []int64
+	sum    float64
+}
+
+// NewDistributionDelta creaes a new distribution delta.
+// countChange are the changes in bucket counts.
+// sumChange is the change in the distribution sum
+func NewDistributionDelta(
+	countChanges []int64, sumChange float64) *DistributionDelta {
+	result := &DistributionDelta{
+		counts: make([]int64, len(countChanges)),
+		sum:    sumChange}
+	copy(result.counts, countChanges)
+	return result
+}
+
+// IsZero returns true if this instance represents no change in distribution.
+func (d *DistributionDelta) IsZero() bool {
+	return d.isZero()
+}
+
+// TotalCountChange returns the change in the value count of a distribution
+func (d *DistributionDelta) TotalCountChange() (result int64) {
+	return d.totalCountChange()
+}
+
+// CountChanges returns the changes in bucket counts of a distribution
+func (d *DistributionDelta) CountChanges() []int64 {
+	return d.countChanges()
+}
+
+// SumChange returns the change in the sum of a distribution
+func (d *DistributionDelta) SumChange() float64 {
+	return d.sum
+}
+
+// Copy returns a deep copy of this instance.
+func (d *DistributionDelta) Copy() *DistributionDelta {
+	return NewDistributionDelta(d.counts, d.sum)
+}
+
+// Add adds x to this instance and changes this instance in place
+func (d *DistributionDelta) Add(x *DistributionDelta) {
+	d.add(x)
+}
+
+// Ranges depicts the ranges for a distributions.
+// Instances of this type must be treated as immutable
+type Ranges struct {
+	// The upper limits of the buckets.
+	UpperLimits []float64
+}
+
 // MetricInfo represents the meta data for a metric
 // MetricInfo instances are immutable by contract
+// MetricInfo instances must always support equality
 type MetricInfo struct {
 	path        string
 	description string
 	unit        units.Unit
 	kind        types.Type
 	subType     types.Type
-	groupId     int
+	// A pointer so that MetricInfo can be a map key. If the path field
+	// differs between two structs, this field will differ also even
+	// if the ranges are logically equal. However, if the path field
+	// is equal between two structs, this field will also be equal if
+	// and only if the ranges are logically equivalent.
+	ranges          *Ranges
+	isNotCumulative bool
+	groupId         int
 }
 
 // Path returns the path of the metric
@@ -58,6 +122,18 @@ func (m *MetricInfo) Bits() int {
 	return m.kind.Bits()
 }
 
+// Ranges returns the ranges of the distribution when Kind() == types.Dist,
+// otherwise returns nil.
+func (m *MetricInfo) Ranges() *Ranges {
+	return m.ranges
+}
+
+// IsNotCumulative returns true when Kind() == types.Dist and distribution
+// is not cumulative. Returns false in all other cases.
+func (m *MetricInfo) IsNotCumulative() bool {
+	return m.isNotCumulative
+}
+
 // The group ID of this metric
 func (m *MetricInfo) GroupId() int {
 	return m.groupId
@@ -81,12 +157,14 @@ func (m *MetricInfo) Key() interface{} {
 // MetricInfoBuilder creates a brand new MetricInfo instance from scratch.
 // Used for testing.
 type MetricInfoBuilder struct {
-	Path        string
-	Description string
-	Unit        units.Unit
-	Kind        types.Type
-	SubType     types.Type
-	GroupId     int
+	Path            string
+	Description     string
+	Unit            units.Unit
+	Kind            types.Type
+	SubType         types.Type
+	Ranges          *Ranges
+	IsNotCumulative bool
+	GroupId         int
 }
 
 // Init initializes this builder from an existing MetricInfo instance.
@@ -96,17 +174,21 @@ func (m *MetricInfoBuilder) Init(info *MetricInfo) {
 	m.Unit = info.Unit()
 	m.Kind = info.Kind()
 	m.SubType = info.SubType()
+	m.Ranges = info.ranges
+	m.IsNotCumulative = info.isNotCumulative
 	m.GroupId = info.GroupId()
 }
 
 func (m *MetricInfoBuilder) Build() *MetricInfo {
 	return &MetricInfo{
-		path:        m.Path,
-		description: m.Description,
-		unit:        m.Unit,
-		kind:        m.Kind,
-		subType:     m.SubType,
-		groupId:     m.GroupId}
+		path:            m.Path,
+		description:     m.Description,
+		unit:            m.Unit,
+		kind:            m.Kind,
+		subType:         m.SubType,
+		ranges:          m.Ranges,
+		isNotCumulative: m.IsNotCumulative,
+		groupId:         m.GroupId}
 }
 
 // MetricGroupingStrategy type describes the strategy for grouping like metrics
@@ -158,6 +240,9 @@ type Record struct {
 	Info       *MetricInfo
 	TimeStamp  float64
 	// The equivalent of 0 for inactive flags.
+	// If Value contains a reference type, as is the case for lists or
+	// distributions, client code must treat what it references as
+	// immutable.
 	Value interface{}
 	// true if active, false if an inactive flag
 	Active bool
@@ -186,6 +271,13 @@ type Appender interface {
 	Append(r *Record) bool
 }
 
+type AppendFlusher interface {
+	Appender
+	// Caller must call this after appending all values even if Append
+	// returns false
+	Flush()
+}
+
 // AppendTo returns an Appender that appends Record instances to result.
 func AppendTo(result *[]Record) Appender {
 	return (*recordListType)(result)
@@ -205,6 +297,18 @@ func AppenderLimit(wrapped Appender, limit int) Appender {
 		return &limitAppenderType{limit: limit, wrapped: wrapped}
 	}
 	return wrapped
+}
+
+// FoldDistributions returns an appender just like wrapped except that it
+// folds together records representing distribution values. It does this
+// by adding together the *DistributionDelta values in all the records for
+// a distirubtion metric and emits a single record like the first record for
+// that distribution metric but containing the sum of the
+// *DistributionDelta values for all records belonging to that metric.
+// FoldDistributions uses the GroupMetricByKey strategy to decide whether or
+// not two distributions are the same.
+func FoldDistributions(wrapped Appender) AppendFlusher {
+	return &foldDistributionsType{wrapped: wrapped}
 }
 
 // Visitor visits endpoints registered with a Store instance.
@@ -520,6 +624,9 @@ func (s *Store) TimeLeft(name string) (seconds float64) {
 // values for a metric even if that metric has additional values.
 // Caller must commit progress and create a new iterator with the
 // same name for the same endpoint to see the rest of the values.
+//
+// For now, the returned instance does not emit values of distribution
+// metrics.
 func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
@@ -575,6 +682,9 @@ func (s *Store) NamedIteratorForEndpoint(
 // are in, NamedIteratorForEndpointRollup will not report a summarised value
 // for a given time period for a metric unless values for a later time period
 // for that same metric are present.
+//
+// For now, the returned instance does not emit values of distribution
+// metrics.
 func (s *Store) NamedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},

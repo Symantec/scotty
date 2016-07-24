@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
+	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"math"
@@ -334,22 +335,24 @@ func (c *sanityCheckerType) Check(
 }
 
 type expectedMetaDataType struct {
-	descriptions map[string]string
-	units        map[string]units.Unit
-	kinds        map[string]types.Type
-	subTypes     map[string]types.Type
-	bits         map[string]int
-	groupIds     map[string]int
+	descriptions     map[string]string
+	units            map[string]units.Unit
+	kinds            map[string]types.Type
+	subTypes         map[string]types.Type
+	isNotCumulatives map[string]bool
+	bits             map[string]int
+	groupIds         map[string]int
 }
 
 func newExpectedMetaData() *expectedMetaDataType {
 	return &expectedMetaDataType{
-		descriptions: make(map[string]string),
-		units:        make(map[string]units.Unit),
-		kinds:        make(map[string]types.Type),
-		subTypes:     make(map[string]types.Type),
-		bits:         make(map[string]int),
-		groupIds:     make(map[string]int),
+		descriptions:     make(map[string]string),
+		units:            make(map[string]units.Unit),
+		kinds:            make(map[string]types.Type),
+		subTypes:         make(map[string]types.Type),
+		isNotCumulatives: make(map[string]bool),
+		bits:             make(map[string]int),
+		groupIds:         make(map[string]int),
 	}
 }
 
@@ -368,6 +371,11 @@ func (e *expectedMetaDataType) AddKind(path string, kind types.Type) {
 func (e *expectedMetaDataType) AddSubType(
 	path string, subType types.Type) {
 	e.subTypes[path] = subType
+}
+
+func (e *expectedMetaDataType) AddIsNotCumulative(
+	path string, isNotCumulative bool) {
+	e.isNotCumulatives[path] = isNotCumulative
 }
 
 func (e *expectedMetaDataType) AddBits(path string, bits int) {
@@ -391,6 +399,9 @@ func (e *expectedMetaDataType) Verify(t *testing.T, m *store.MetricInfo) {
 	}
 	if subType, ok := e.subTypes[path]; ok {
 		assertValueEquals(t, subType, m.SubType())
+	}
+	if isNotCumulative, ok := e.isNotCumulatives[path]; ok {
+		assertValueEquals(t, isNotCumulative, m.IsNotCumulative())
 	}
 	if bits, ok := e.bits[path]; ok {
 		assertValueEquals(t, bits, m.Bits())
@@ -480,7 +491,7 @@ func (e *expectedTsValuesType) checkContents(
 	active := r.Active
 	expectedVal, ok := e.values[nameTs]
 	if !ok {
-		t.Errorf("(%s, %f) not expected", name, ts)
+		t.Errorf("(%s, %f) = %v not expected", name, ts, value)
 	} else {
 		if !r.Info.ValuesAreEqual(expectedVal.Value, value) {
 			t.Errorf(
@@ -1729,6 +1740,576 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	expectedTsValues.VerifyDone(t)
 }
 
+func TestWithDistributions(t *testing.T) {
+	aStore := newStore(t, "TestWithDistributions", 10, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:    "/dist/cumulative",
+			GroupId: 5,
+		},
+		{
+			Path:    "/dist/noncumulative",
+			GroupId: 6,
+		},
+		{
+			Path:    "mint",
+			GroupId: 7,
+		},
+	}
+	// cumulative distribution has two different types of buckets
+	cumulativeA := []*messages.Distribution{
+		{
+			Generation: 1,
+			Sum:        200.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 9,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 15,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 10,
+				},
+				{
+					Lower: 10.0,
+					Count: 3,
+				},
+			},
+		},
+		{
+			Generation: 3,
+			Sum:        270.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 13,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 21,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 15,
+				},
+				{
+					Lower: 10.0,
+					Count: 5,
+				},
+			},
+		},
+		{
+			Generation: 2,
+			Sum:        6.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 2,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 3,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 0,
+				},
+				{
+					Lower: 10.0,
+					Count: 0,
+				},
+			},
+		},
+		{
+			Generation: 4,
+			Sum:        36.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 2,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 5,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 0,
+				},
+				{
+					Lower: 10.0,
+					Count: 1,
+				},
+			},
+		},
+		{
+			Generation: 6,
+			Sum:        36.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 2,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 5,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 0,
+				},
+				{
+					Lower: 10.0,
+					Count: 1,
+				},
+			},
+		},
+		{
+			Generation: 1,
+			Sum:        35.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 0,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 0,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 1,
+				},
+				{
+					Lower: 10.0,
+					Count: 2,
+				},
+			},
+		},
+		{
+			Generation: 11,
+			Sum:        38.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 2.0,
+					Count: 2,
+				},
+				{
+					Lower: 2.0,
+					Upper: 5.0,
+					Count: 1,
+				},
+				{
+					Lower: 5.0,
+					Upper: 10.0,
+					Count: 1,
+				},
+				{
+					Lower: 10.0,
+					Count: 2,
+				},
+			},
+		},
+	}
+
+	cumulativeB := []*messages.Distribution{
+		{
+			Generation: 1,
+			Sum:        360.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 30.0,
+					Count: 6,
+				},
+				{
+					Lower: 30.0,
+					Upper: 60.0,
+					Count: 4,
+				},
+				{
+					Lower: 60.0,
+					Count: 2,
+				},
+			},
+		},
+		{
+			Generation: 11,
+			Sum:        2860.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 30.0,
+					Count: 18,
+				},
+				{
+					Lower: 30.0,
+					Upper: 60.0,
+					Count: 4,
+				},
+				{
+					Lower: 60.0,
+					Count: 22,
+				},
+			},
+		},
+		{
+			Generation: 21,
+			Sum:        3080.0,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 30.0,
+					Count: 18,
+				},
+				{
+					Lower: 30.0,
+					Upper: 60.0,
+					Count: 5,
+				},
+				{
+					Lower: 60.0,
+					Count: 25,
+				},
+			},
+		},
+	}
+	nonCumulativeA := []*messages.Distribution{
+		{
+			Generation:      1,
+			Sum:             500.0,
+			IsNotCumulative: true,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 50.0,
+					Count: 6,
+				},
+				{
+					Lower: 50.0,
+					Count: 4,
+				},
+			},
+		},
+		{
+			Generation:      2,
+			Sum:             420.0,
+			IsNotCumulative: true,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 50.0,
+					Count: 1,
+				},
+				{
+					Lower: 50.0,
+					Count: 5,
+				},
+			},
+		},
+		{
+			Generation:      3,
+			Sum:             450.0,
+			IsNotCumulative: true,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 50.0,
+					Count: 2,
+				},
+				{
+					Lower: 50.0,
+					Count: 6,
+				},
+			},
+		},
+	}
+	nonCumulativeB := []*messages.Distribution{
+		{
+			Generation:      1,
+			Sum:             1200.0,
+			IsNotCumulative: true,
+			Ranges: []*messages.RangeWithCount{
+				{
+					Upper: 70.0,
+					Count: 9,
+				},
+				{
+					Lower: 70.0,
+					Count: 8,
+				},
+			},
+		},
+	}
+
+	playback := newPlaybackType(aMetric, 10)
+	playback.AddTimes(
+		5,
+		3000.0, 3100.0,
+		3200.0, 3300.0, 3400.0,
+		3500.0, 3600.0, 3700.0,
+		3800.0, 3900.0)
+	playback.AddTimes(
+		6,
+		3000.0, 3100.0,
+		3200.0, 3300.0, 3400.0,
+		3500.0, 3600.0, 3700.0,
+		3800.0, 3900.0)
+	playback.AddTimes(
+		7,
+		3000.0, 3100.0,
+		3200.0, 3300.0, 3400.0,
+		3500.0, 3600.0, 3700.0,
+		3800.0, 3900.0)
+	playback.Add(
+		"/dist/cumulative",
+		cumulativeA[0], cumulativeA[1],
+		cumulativeA[2], cumulativeA[3], cumulativeA[4],
+		cumulativeB[0], cumulativeB[1], cumulativeB[2],
+		cumulativeA[5], cumulativeA[6],
+	)
+	playback.Add(
+		"/dist/noncumulative",
+		nonCumulativeA[0], nonCumulativeA[1],
+		nonCumulativeA[2], nonCumulativeA[2], nonCumulativeA[2],
+		nonCumulativeA[2], nonCumulativeA[2], nonCumulativeA[2],
+		nonCumulativeA[2], nonCumulativeB[0],
+	)
+	playback.Add(
+		"mint",
+		int64(50), int64(50),
+		int64(70), int64(90), int64(110),
+		int64(130), int64(130), int64(130),
+		int64(130), int64(130),
+	)
+
+	playback.Play(aStore, kEndpoint0)
+
+	expectedMetaData := newExpectedMetaData()
+	expectedMetaData.AddBits("/dist/cumulative", 0)
+	expectedMetaData.AddGroupId("/dist/cumulative", 5)
+	expectedMetaData.AddKind("/dist/cumulative", types.Dist)
+	expectedMetaData.AddSubType("/dist/cumulative", types.Unknown)
+	expectedMetaData.AddIsNotCumulative("/dist/cumulative", false)
+	expectedMetaData.AddBits("/dist/noncumulative", 0)
+	expectedMetaData.AddGroupId("/dist/noncumulative", 6)
+	expectedMetaData.AddKind("/dist/noncumulative", types.Dist)
+	expectedMetaData.AddSubType("/dist/noncumulative", types.Unknown)
+	expectedMetaData.AddIsNotCumulative("/dist/noncumulative", true)
+
+	expectedTsValues := newExpectedTsValuesWithMetaDataAndStrategy(
+		expectedMetaData, store.GroupMetricByKey)
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3900.0,
+		store.NewDistributionDelta([]int64{6, 9, 5, 3}, 103.0))
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3700.0,
+		store.NewDistributionDelta([]int64{12, 1, 23}, 2720.0))
+
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			af := store.FoldDistributions(a)
+			aStore.ByNameAndEndpoint(
+				"/dist/cumulative",
+				kEndpoint0,
+				0,
+				10000.0,
+				af)
+			af.Flush()
+		},
+	)
+
+	var result []store.Record
+	appender := store.FoldDistributions(store.AppendTo(&result))
+	aStore.ByNameAndEndpoint(
+		"/dist/cumulative",
+		kEndpoint0,
+		0,
+		10000.0,
+		appender)
+	appender.Flush()
+	expectedTsValues.CheckSlice(t, result)
+
+	// We have to chack on the ranges, so extract record at with ts=3900
+	// and ts=3700
+	var ts3700, ts3900 store.Record
+	for i := range result {
+		if result[i].TimeStamp == 3700.0 {
+			ts3700 = result[i]
+		} else if result[i].TimeStamp == 3900.0 {
+			ts3900 = result[i]
+		}
+	}
+	assertValueDeepEquals(
+		t,
+		[]float64{2.0, 5.0, 10.0},
+		ts3900.Info.Ranges().UpperLimits)
+	assertValueDeepEquals(
+		t,
+		[]float64{30.0, 60.0},
+		ts3700.Info.Ranges().UpperLimits)
+
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3200.0,
+		store.NewDistributionDelta([]int64{-4, 2}, -50.0))
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3900.0,
+		store.NewDistributionDelta([]int64{0, 0}, 0.0))
+
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			af := store.FoldDistributions(a)
+			aStore.ByPrefixAndEndpoint(
+				"/dist",
+				kEndpoint0,
+				0,
+				10000.0,
+				af)
+			af.Flush()
+		},
+	)
+
+	result = nil
+	appender = store.FoldDistributions(store.AppendTo(&result))
+	aStore.ByPrefixAndEndpoint(
+		"/dist",
+		kEndpoint0,
+		0,
+		10000.0,
+		appender)
+	appender.Flush()
+	expectedTsValues.CheckSlice(t, result)
+
+	expectedTsValues.Add(
+		"mint",
+		3000.0,
+		int64(50))
+	expectedTsValues.Add(
+		"mint",
+		3200.0,
+		int64(70))
+	expectedTsValues.Add(
+		"mint",
+		3300.0,
+		int64(90))
+	expectedTsValues.Add(
+		"mint",
+		3400.0,
+		int64(110))
+	expectedTsValues.Add(
+		"mint",
+		3500.0,
+		int64(130))
+
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			af := store.FoldDistributions(a)
+			aStore.ByEndpoint(
+				kEndpoint0,
+				0,
+				10000.0,
+				af)
+			af.Flush()
+		},
+	)
+
+	result = nil
+	appender = store.FoldDistributions(store.AppendTo(&result))
+	aStore.ByEndpoint(
+		kEndpoint0,
+		0,
+		10000.0,
+		appender)
+	appender.Flush()
+	expectedTsValues.CheckSlice(t, result)
+
+	// Test iterating. For now, iterators should never include
+	// distribution values until we understand how we might
+	// store them in persisten storage. We should get only the
+	// 'mint' metric.
+	expectedTsValues = newExpectedTsValues()
+	expectedTsValues.Add(
+		"mint",
+		3000.0,
+		int64(50))
+	expectedTsValues.Add(
+		"mint",
+		3100.0,
+		int64(50))
+	expectedTsValues.Add(
+		"mint",
+		3200.0,
+		int64(70))
+	expectedTsValues.Add(
+		"mint",
+		3300.0,
+		int64(90))
+	expectedTsValues.Add(
+		"mint",
+		3400.0,
+		int64(110))
+	expectedTsValues.Add(
+		"mint",
+		3500.0,
+		int64(130))
+	expectedTsValues.Add(
+		"mint",
+		3600.0,
+		int64(130))
+	expectedTsValues.Add(
+		"mint",
+		3700.0,
+		int64(130))
+	expectedTsValues.Add(
+		"mint",
+		3800.0,
+		int64(130))
+	expectedTsValues.Add(
+		"mint",
+		3900.0,
+		int64(130))
+
+	iterator, _ := aStore.NamedIteratorForEndpoint(
+		"anIterator", kEndpoint0, 0)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
+
+	// Remember that we don't know if the time window starting at 3500
+	// is complete, so we don't emit rolled up metrics for it.
+	expectedTsValues = newExpectedTsValues()
+	expectedTsValues.Add(
+		"mint",
+		3200.0,
+		int64(74))
+
+	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
+		"anIterator",
+		kEndpoint0,
+		500*time.Second,
+		0,
+		store.GroupMetricByPathAndNumeric)
+	expectedTsValues.Iterate(t, iterator)
+	expectedTsValues.VerifyDone(t)
+}
+
 func TestWithLists(t *testing.T) {
 	aStore := newStore(t, "TestWithLists", 10, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -1912,6 +2493,19 @@ func TestByNameAndEndpointStrategy(t *testing.T) {
 	expected.Add("/foo/bar", 1040.0, int64(40))
 	expected.Add("/foo/bar", 1050.0, int64(50))
 
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			astore.ByNameAndEndpointStrategy(
+				"/foo/bar",
+				kEndpoint0,
+				0.0,
+				10000.0,
+				store.GroupMetricByKey,
+				a)
+		},
+	)
+
 	var result []store.Record
 	astore.ByNameAndEndpointStrategy(
 		"/foo/bar",
@@ -1922,6 +2516,18 @@ func TestByNameAndEndpointStrategy(t *testing.T) {
 		store.AppendTo(&result))
 	expected.CheckSlice(t, result)
 
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			astore.ByEndpointStrategy(
+				kEndpoint0,
+				0.0,
+				10000.0,
+				store.GroupMetricByKey,
+				a)
+		},
+	)
+
 	result = nil
 	astore.ByEndpointStrategy(
 		kEndpoint0,
@@ -1930,6 +2536,19 @@ func TestByNameAndEndpointStrategy(t *testing.T) {
 		store.GroupMetricByKey,
 		store.AppendTo(&result))
 	expected.CheckSlice(t, result)
+
+	runAppenderClientTest(
+		t,
+		func(a store.Appender) {
+			astore.ByPrefixAndEndpointStrategy(
+				"/foo",
+				kEndpoint0,
+				0.0,
+				10000.0,
+				store.GroupMetricByKey,
+				a)
+		},
+	)
 
 	result = nil
 	astore.ByPrefixAndEndpointStrategy(
@@ -2367,6 +2986,15 @@ func addBatch(
 
 func assertValueEquals(t *testing.T, expected, actual interface{}) bool {
 	if expected != actual {
+		t.Errorf("Expected %v, got %v", expected, actual)
+		return false
+	}
+	return true
+}
+
+func assertValueDeepEquals(
+	t *testing.T, expected, actual interface{}) bool {
+	if !reflect.DeepEqual(expected, actual) {
 		t.Errorf("Expected %v, got %v", expected, actual)
 		return false
 	}

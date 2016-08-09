@@ -348,20 +348,27 @@ func (a *foldDistributionsType) addDistRecord() bool {
 		return true
 	}
 	var sum *DistributionDelta
-	avalue := a.records[latestActiveIdx].Value.(*DistributionDelta)
-	if avalue == nil {
-		sum = NewDistributionDelta(
-			// bucket count always one more than upper limit count
-			make([]int64, len(a.lastInfo.Ranges().UpperLimits)+1),
-			0.0)
-	} else {
-		sum = avalue.Copy()
-	}
+	// Records come in most recent to least recent
+	bucketsAtEnd := a.records[latestActiveIdx].Value.(*DistributionTotals)
+	bucketsAtStart := bucketsAtEnd
 	for i := latestActiveIdx + 1; i < length; i++ {
-		avalue := a.records[i].Value.(*DistributionDelta)
-		if avalue != nil {
-			sum.Add(avalue)
+		aValue := a.records[i].Value.(*DistributionTotals)
+		if aValue.RollOverCount > bucketsAtStart.RollOverCount {
+			if sum == nil {
+				sum = bucketsAtEnd.Subtract(bucketsAtStart)
+			} else {
+				sum.Add(bucketsAtEnd.Subtract(bucketsAtStart))
+			}
+			bucketsAtEnd = aValue
+			bucketsAtStart = bucketsAtEnd
+		} else {
+			bucketsAtStart = aValue
 		}
+	}
+	if sum == nil {
+		sum = bucketsAtEnd.Subtract(bucketsAtStart)
+	} else {
+		sum.Add(bucketsAtEnd.Subtract(bucketsAtStart))
 	}
 	a.records[latestActiveIdx].Value = sum
 	return a.wrapped.Append(&a.records[latestActiveIdx])

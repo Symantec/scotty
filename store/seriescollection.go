@@ -79,26 +79,26 @@ type timeSeriesCollectionType struct {
 	// lock of this instance.
 	statusChangeLock sync.Mutex
 	// Normal lock of this instance.
-	lock                             sync.Mutex
-	timeSeries                       map[*MetricInfo]*timeSeriesType
-	timestampSeries                  map[int]*timestampSeriesType
-	metricInfoStore                  metricInfoStoreType
-	active                           bool
-	iterators                        map[string]*namedIteratorDataType
-	previousDistributionValuesByPath map[string]*distributionValuesType
+	lock                        sync.Mutex
+	timeSeries                  map[*MetricInfo]*timeSeriesType
+	timestampSeries             map[int]*timestampSeriesType
+	metricInfoStore             metricInfoStoreType
+	active                      bool
+	iterators                   map[string]*namedIteratorDataType
+	distributionRollOversByPath map[string]*distributionRollOverType
 }
 
 func newTimeSeriesCollectionType(
 	app interface{},
 	metrics *storeMetricsType) *timeSeriesCollectionType {
 	result := &timeSeriesCollectionType{
-		applicationId:                    app,
-		metrics:                          metrics,
-		timeSeries:                       make(map[*MetricInfo]*timeSeriesType),
-		timestampSeries:                  make(map[int]*timestampSeriesType),
-		active:                           true,
-		iterators:                        make(map[string]*namedIteratorDataType),
-		previousDistributionValuesByPath: make(map[string]*distributionValuesType),
+		applicationId:               app,
+		metrics:                     metrics,
+		timeSeries:                  make(map[*MetricInfo]*timeSeriesType),
+		timestampSeries:             make(map[int]*timestampSeriesType),
+		active:                      true,
+		iterators:                   make(map[string]*namedIteratorDataType),
+		distributionRollOversByPath: make(map[string]*distributionRollOverType),
 	}
 	result.metricInfoStore.Init()
 	return result
@@ -303,19 +303,21 @@ func (c *timeSeriesCollectionType) LookupBatch(
 		kind, subType := types.FromGoValueWithSubType(avalue.Value)
 		id := c.metricInfoStore.Register(&avalue, kind, subType)
 		if kind == types.Dist {
-			previousDistributionValues := c.previousDistributionValuesByPath[avalue.Path]
-			distribution := avalue.Value.(*messages.Distribution)
-			currentDistributionValues := &distributionValuesType{
-				Ranges:     id.Ranges(),
-				Counts:     distExtractCounts(distribution),
-				Sum:        distribution.Sum,
-				Generation: distribution.Generation,
+			distributionRollOvers := c.distributionRollOversByPath[avalue.Path]
+			if distributionRollOvers == nil {
+				distributionRollOvers = &distributionRollOverType{}
+				c.distributionRollOversByPath[avalue.Path] = distributionRollOvers
 			}
-			valueByMetric[id] = currentDistributionValues.ComputeDifferences(
-				previousDistributionValues)
-			c.previousDistributionValuesByPath[avalue.Path] = currentDistributionValues
+			distribution := avalue.Value.(*messages.Distribution)
+			rollOverCount := distributionRollOvers.UpdateAndFetchRollOverCount(
+				id.Ranges(), distribution.Generation)
+			currentDistributionTotals := &DistributionTotals{
+				Counts:        distExtractCounts(distribution),
+				Sum:           distribution.Sum,
+				RollOverCount: rollOverCount,
+			}
+			valueByMetric[id] = currentDistributionTotals
 		} else {
-			c.previousDistributionValuesByPath[avalue.Path] = nil
 			valueByMetric[id] = avalue.Value
 		}
 		groupIds[id.GroupId()] = true

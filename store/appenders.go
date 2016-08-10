@@ -2,7 +2,6 @@ package store
 
 import (
 	"container/heap"
-	"github.com/Symantec/tricorder/go/tricorder/types"
 )
 
 // This file contains the code for implementing Appenders.
@@ -307,77 +306,4 @@ func (a *preferActiveAppenderType) Append(r *Record) bool {
 	}
 	a.lastTs = r.TimeStamp
 	return true
-}
-
-type foldDistributionsType struct {
-	wrapped  Appender
-	lastInfo *MetricInfo
-	records  []Record
-}
-
-func (a *foldDistributionsType) flush() (result bool) {
-	if len(a.records) == 0 {
-		// Nothing to flush
-		return true
-	}
-	if a.lastInfo.Kind() == types.Dist {
-		result = a.addDistRecord()
-	} else {
-		result = a.addNormalRecords()
-	}
-	a.records = a.records[:0]
-	return
-}
-
-func (a *foldDistributionsType) addNormalRecords() bool {
-	for i := range a.records {
-		if !a.wrapped.Append(&a.records[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func (a *foldDistributionsType) addDistRecord() bool {
-	length := len(a.records)
-	latestActiveIdx := 0
-	for ; latestActiveIdx < length && !a.records[latestActiveIdx].Active; latestActiveIdx++ {
-	}
-	// If we have all inactives, just skip
-	if latestActiveIdx == length {
-		return true
-	}
-	var sum *DistributionDelta
-	avalue := a.records[latestActiveIdx].Value.(*DistributionDelta)
-	if avalue == nil {
-		sum = NewDistributionDelta(
-			// bucket count always one more than upper limit count
-			make([]int64, len(a.lastInfo.Ranges().UpperLimits)+1),
-			0.0)
-	} else {
-		sum = avalue.Copy()
-	}
-	for i := latestActiveIdx + 1; i < length; i++ {
-		avalue := a.records[i].Value.(*DistributionDelta)
-		if avalue != nil {
-			sum.Add(avalue)
-		}
-	}
-	a.records[latestActiveIdx].Value = sum
-	return a.wrapped.Append(&a.records[latestActiveIdx])
-}
-
-func (a *foldDistributionsType) Append(r *Record) bool {
-	if !GroupMetricByKey.Equal(r.Info, a.lastInfo) {
-		if !a.flush() {
-			return false
-		}
-	}
-	a.records = append(a.records, *r)
-	a.lastInfo = r.Info
-	return true
-}
-
-func (a *foldDistributionsType) Flush() {
-	a.flush()
 }

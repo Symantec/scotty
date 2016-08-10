@@ -6,25 +6,22 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 )
 
-// Distribution represents a distribution of values since the previous
-// distribution.
+// Distribution represents a distribution of values
 //
 // The Value field of the TimestampedValue struct will hold
-// a *Distribution for distributions. For the earliest reported timestamp,
-// Value always contains, the zero distribution, a nil *Distribution pointer,
-// since in that case there is no previous distribution. Likewise, if an
-// endpoint is restarted between collections, scotty will store the zero
-// distribution to indicate a restart
+// a *Distribution for distributions.
 //
 // Distribution instances should be treated as immutable.
 type Distribution struct {
-	// The sum since last recorded distribution
+	// Sum of the values
 	Sum float64 `json:"sum"`
-	// The total number of values since last recorded distribution
-	Count int64 `json:"count"`
+	// Total count of values
+	Count uint64 `json:"count"`
 	// The number of values within each range. Length is always one more
 	// than length of UpperLimis field in the EndpointMetric structure
-	Counts []int64 `json:"counts"`
+	Counts []uint64 `json:"counts"`
+	// Count of rollovers starting at 1
+	RollOverCount uint64 `json:"rollOverCount"`
 }
 
 // Timestamped value represents a single timestamped value.

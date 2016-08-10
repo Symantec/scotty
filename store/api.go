@@ -15,53 +15,20 @@ var (
 	ErrInactive = errors.New("store: endpoint inactive.")
 )
 
-// DistributionDelta represents the change in distribution since the
-// last recorded DistributionDelta.
-type DistributionDelta struct {
-	counts []int64
-	sum    float64
+// DistributionTotals represents the distribution count at a given timestamp
+// last recorded DistributionDelta. Instances of this type must be treated
+// as immutable.
+type DistributionTotals struct {
+	Counts        []uint64
+	Sum           float64
+	RollOverCount uint64
 }
 
-// NewDistributionDelta creaes a new distribution delta.
-// countChange are the changes in bucket counts.
-// sumChange is the change in the distribution sum
-func NewDistributionDelta(
-	countChanges []int64, sumChange float64) *DistributionDelta {
-	result := &DistributionDelta{
-		counts: make([]int64, len(countChanges)),
-		sum:    sumChange}
-	copy(result.counts, countChanges)
-	return result
-}
-
-// IsZero returns true if this instance represents no change in distribution.
-func (d *DistributionDelta) IsZero() bool {
-	return d.isZero()
-}
-
-// TotalCountChange returns the change in the value count of a distribution
-func (d *DistributionDelta) TotalCountChange() (result int64) {
-	return d.totalCountChange()
-}
-
-// CountChanges returns the changes in bucket counts of a distribution
-func (d *DistributionDelta) CountChanges() []int64 {
-	return d.countChanges()
-}
-
-// SumChange returns the change in the sum of a distribution
-func (d *DistributionDelta) SumChange() float64 {
-	return d.sum
-}
-
-// Copy returns a deep copy of this instance.
-func (d *DistributionDelta) Copy() *DistributionDelta {
-	return NewDistributionDelta(d.counts, d.sum)
-}
-
-// Add adds x to this instance and changes this instance in place
-func (d *DistributionDelta) Add(x *DistributionDelta) {
-	d.add(x)
+func (d *DistributionTotals) Count() (result uint64) {
+	for _, count := range d.Counts {
+		result += count
+	}
+	return
 }
 
 // Ranges depicts the ranges for a distributions.
@@ -297,18 +264,6 @@ func AppenderLimit(wrapped Appender, limit int) Appender {
 		return &limitAppenderType{limit: limit, wrapped: wrapped}
 	}
 	return wrapped
-}
-
-// FoldDistributions returns an appender just like wrapped except that it
-// folds together records representing distribution values. It does this
-// by adding together the *DistributionDelta values in all the records for
-// a distirubtion metric and emits a single record like the first record for
-// that distribution metric but containing the sum of the
-// *DistributionDelta values for all records belonging to that metric.
-// FoldDistributions uses the GroupMetricByKey strategy to decide whether or
-// not two distributions are the same.
-func FoldDistributions(wrapped Appender) AppendFlusher {
-	return &foldDistributionsType{wrapped: wrapped}
 }
 
 // Visitor visits endpoints registered with a Store instance.
@@ -624,9 +579,6 @@ func (s *Store) TimeLeft(name string) (seconds float64) {
 // values for a metric even if that metric has additional values.
 // Caller must commit progress and create a new iterator with the
 // same name for the same endpoint to see the rest of the values.
-//
-// For now, the returned instance does not emit values of distribution
-// metrics.
 func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
@@ -682,9 +634,6 @@ func (s *Store) NamedIteratorForEndpoint(
 // are in, NamedIteratorForEndpointRollup will not report a summarised value
 // for a given time period for a metric unless values for a later time period
 // for that same metric are present.
-//
-// For now, the returned instance does not emit values of distribution
-// metrics.
 func (s *Store) NamedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},

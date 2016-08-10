@@ -19,8 +19,8 @@ func (p *pageForTesting) SeqNo() uint64 {
 }
 
 func (p *pageForTesting) Less(than btree.Item) bool {
-	pthan := than.(*pageForTesting)
-	return p.seq < pthan.seq
+	pthan := than.(btreepq.Page)
+	return p.seq < pthan.SeqNo()
 }
 
 func TestZeroThreshhold(t *testing.T) {
@@ -36,6 +36,51 @@ func TestZeroThreshhold(t *testing.T) {
 		pages[i] = queue.NextPage()
 	}
 	assertNextValues(t, queue, pages[:], 0)
+}
+
+func TestRemovePages(t *testing.T) {
+	var pages [8]btreepq.Page
+	queue := btreepq.New(
+		len(pages),
+		2,
+		10,
+		func() btreepq.Page {
+			return &pageForTesting{}
+		})
+	// Get all pages in queue. We will always revisit these pages in the same
+	// order unless pages are marked high priority for reclaiming.
+	for i := range pages {
+		pages[i] = queue.NextPage()
+	}
+	verifyPagesAreUnique(t, pages[:])
+
+	// The next pages off the queue
+	assertNextValues(t, queue, pages[:], 0, 1, 2, 3, 4, 5, 6, 7, 0, 1)
+
+	removed, ok := queue.RemovePage()
+	assertValueEquals(t, pages[2], removed)
+	assertValueEquals(t, true, ok)
+
+	removed, ok = queue.RemovePage()
+	assertValueEquals(t, pages[3], removed)
+	assertValueEquals(t, true, ok)
+
+	removed, ok = queue.RemovePage()
+	assertValueEquals(t, pages[4], removed)
+	assertValueEquals(t, true, ok)
+
+	// The next pages off the queue
+	assertNextValues(t, queue, pages[:], 5, 6, 7, 0, 1, 5, 6, 7, 0)
+
+	// We can successfully remove 4 out of 5 pages
+	for i := 0; i < 4; i++ {
+		_, ok := queue.RemovePage()
+		assertValueEquals(t, true, ok)
+	}
+
+	// Removing last page fails.
+	_, ok = queue.RemovePage()
+	assertValueEquals(t, false, ok)
 }
 
 func TestAPI(t *testing.T) {

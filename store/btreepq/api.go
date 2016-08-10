@@ -11,7 +11,12 @@ import (
 // with lower sequence numbers.
 type Page interface {
 	// btree.Item Less method must return true if this instance's
-	// sequence number is less than than's.
+	// sequence number is less than the other one. Implementations of Less
+	// must downcast their argument to this type, Page, and then call SeqNo()
+	// to get the sequence number of the argument. Implementations must never
+	// downcast the argument directly to the implementation's type as there
+	// is no guarantee that the argument's type will match the
+	// implementation's type.
 	btree.Item
 	// Sets the sequence number of this page. Only PageQueue uses this.
 	// Clients must not call this directly.
@@ -47,17 +52,21 @@ func (s *PageQueueStats) HighPriorityRatio() float64 {
 // Initially, all pages are on the high priority queue as new pages have no
 // data valuable to scotty.
 // NextPage always adds the page it returns back to the end of the low
-// priority queue. In fact len(lowPriorityQueue) + len(highPriorityQueue) is
-// always constant, and the two queues are mutually exclusive.
+// priority queue. The low and high priority queues are mutually exclusive.
 type PageQueue struct {
-	high       *btree.BTree
-	low        *btree.BTree
+	high *btree.BTree
+	low  *btree.BTree
+
+	// Number of pages that must be in high before the page queue ignores low
+	// when finding the next page.
 	threshhold int
-	nextSeqNo  uint64
+
+	// The next available sequence number. This value increases monotonically.
+	nextSeqNo uint64
 }
 
 // New returns a new PageQueue.
-// pageCount is the total number of pages.
+// pageCount is the total number of pages which must be at least 1.
 // threshhold is the size that the high priority queue must be to always pull
 // from it.
 // degree is the degree of the Btrees. See github.com/Symantec/btree
@@ -67,12 +76,23 @@ func New(
 	threshhold,
 	degree int,
 	creater func() Page) *PageQueue {
+	if pageCount < 1 {
+		panic("pageCount must be at least 1")
+	}
 	return _new(pageCount, threshhold, degree, creater)
 }
 
-// NextPage returns the next page for scotty to use.
+// NextPage returns the next page for scotty to use leaving it in the queue
+// by adding it to the end of the low priority queue.
 func (p *PageQueue) NextPage() Page {
 	return p.nextPage()
+}
+
+// RemovePage works like NextPage except that it removes returned page from
+// this queue entirely. If this instance already has the minimum number
+// of pages, RemovePages returns nil, false
+func (p *PageQueue) RemovePage() (removed Page, ok bool) {
+	return p.removePage()
 }
 
 // ReclaimHigh moves pg from the low priority queue to the high priority queue

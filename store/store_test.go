@@ -678,6 +678,31 @@ func TestIteratorPageEviction(t *testing.T) {
 	if consumer.Count < 24 { // at least 12*2 values
 		t.Error("Expected at least 24 values")
 	}
+
+	// Now remove all pages. This should actually remove all pages save 1.
+	aStore.LessenPageCount(1.0)
+
+	anotherIterator, _ := aStore.NamedIteratorForEndpoint(
+		"anotherIterator", kEndpoint0, 0)
+	var anotherConsumer iteratorPageEvictionTestType
+	anotherConsumer.Iterate(t, anotherIterator)
+	assertValueEquals(t, 490.0, anotherConsumer.MaxTimeStamp)
+	// The most values we can get now is 6. That would be if the timestamp
+	// series has the remaining page which means it can hold 3 timestamps.
+	// 2 values * 3 timestamps = 6 values.
+	if anotherConsumer.Count > 6 {
+		t.Error("Expected no more than 6 values")
+	}
+
+	// If we add new values, we should at least get those back
+	aMetric[0].Value = int64(1234)
+	aMetric[1].Value = int64(1235)
+	aStore.AddBatch(kEndpoint0, 600.0, aMetric[:])
+
+	var result []store.Record
+	aStore.ByEndpoint(
+		kEndpoint0, 600.0, 601.0, store.AppendTo(&result))
+	assertValueEquals(t, 2, len(result))
 }
 
 func floatToTime(f float64) time.Time {

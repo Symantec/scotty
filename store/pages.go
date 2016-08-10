@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/Symantec/scotty/store/btreepq"
 	"github.com/google/btree"
 	"reflect"
 	"sort"
@@ -161,8 +162,8 @@ func (p *pageWithMetaDataType) TimePage() basicPageType {
 
 // github.com/google/btree.Item
 func (p *pageWithMetaDataType) Less(than btree.Item) bool {
-	pthan := than.(*pageWithMetaDataType)
-	return p.seqNo < pthan.seqNo
+	pthan := than.(btreepq.Page)
+	return p.seqNo < pthan.SeqNo()
 }
 
 // Fetch iterates over page data p from time start to time end.

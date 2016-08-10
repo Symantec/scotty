@@ -102,6 +102,8 @@ var (
 		"pidfile", "", "Name of file to write my PID to")
 	fThreshhold = flag.Float64(
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
+	fFreedPageRatio = flag.Float64(
+		"freedPageRatio", 0.05, "Ratio of pages freed each time a GC does not bring memory usage down to the goal")
 	fDegree = flag.Int(
 		"degree", 10, "Degree of btree")
 	fPagePercentage = flag.Float64(
@@ -858,10 +860,14 @@ func totalSystemMemory() uint64 {
 }
 
 type memoryManagerType struct {
-	pagesToUse  int
-	targetAlloc uint64
-	logger      *log.Logger
-	gcCh        chan bool
+	pagesToUse    int
+	targetAlloc   uint64
+	highWaterMark uint64
+	lowWaterMark  uint64
+	logger        *log.Logger
+	gcCh          chan bool
+	lock          sync.Mutex
+	adjustment    func(mem, desiredMem uint64)
 }
 
 func allocateMemory(totalMemoryToUse uint64) (allocatedMemory [][]byte) {
@@ -892,25 +898,41 @@ func maybeCreateMemoryManager(logger *log.Logger) *memoryManagerType {
 		now := time.Now()
 		runtime.GC()
 		logger.Printf("GCTime: %v; totalMemoryInUse: %d\n", time.Since(now), totalMemoryUsed())
-		pagesToUse := int(float64(totalMemoryToUse) / float64(*fBytesPerPage) * (*fPagePercentage) / 100.0)
 		result := &memoryManagerType{
-			pagesToUse:  pagesToUse,
-			targetAlloc: totalMemoryToUse,
-			logger:      logger,
-			gcCh:        make(chan bool),
+			targetAlloc:   totalMemoryToUse,
+			highWaterMark: uint64(float64(totalMemoryToUse) * 0.9),
+			lowWaterMark:  uint64(float64(totalMemoryToUse) * (*fPagePercentage) / 100.0),
+			logger:        logger,
+			gcCh:          make(chan bool),
 		}
+		result.pagesToUse = int(result.lowWaterMark / uint64(*fBytesPerPage))
 		go result.loop()
 		return result
 	}
 	return nil
 }
 
-func (m *memoryManagerType) PagesToUse() int {
+func (m *memoryManagerType) UseMemoryAdjustment(
+	adjustment func(mem, desiredMem uint64)) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	m.adjustment = adjustment
+}
+
+func (m *memoryManagerType) PagesToUseInitially() int {
 	return m.pagesToUse
 }
 
 func (m *memoryManagerType) TargetAlloc() uint64 {
 	return m.targetAlloc
+}
+
+func (m *memoryManagerType) HighWaterMark() uint64 {
+	return m.highWaterMark
+}
+
+func (m *memoryManagerType) LowWaterMark() uint64 {
+	return m.lowWaterMark
 }
 
 func (m *memoryManagerType) Check() {
@@ -924,20 +946,47 @@ func (m *memoryManagerType) loop() {
 	for {
 		<-m.gcCh
 		totalMemoryInUse := totalMemoryUsed()
-		threshhold := uint64(float64(m.targetAlloc) * 0.9)
-		if totalMemoryInUse > threshhold {
+		if totalMemoryInUse > m.highWaterMark {
 			m.logger.Printf(
 				"threshhold: %d totalMemoryInUse: %d\n",
-				threshhold,
+				m.highWaterMark,
 				totalMemoryInUse)
 			now := time.Now()
 			runtime.GC()
-			m.logger.Printf(
-				"GCTime: %v; totalMemoryInUse: %d\n",
-				time.Since(now),
-				totalMemoryUsed())
+			gcDuration := time.Since(now)
+			netMemoryUsed := totalMemoryUsed()
+			if m.adjust(netMemoryUsed) {
+				now := time.Now()
+				runtime.GC()
+				gcDuration2 := time.Since(now)
+				m.logger.Printf(
+					"Adjusted pages: GCTime1: %v; GCTime2: %v; low watermark: %d; before: %d; after: %d\n",
+					gcDuration,
+					gcDuration2,
+					m.lowWaterMark,
+					netMemoryUsed,
+					totalMemoryUsed())
+			} else {
+				m.logger.Printf(
+					"GCTime: %v; low watermark: %d; totalMemoryInUse: %d\n",
+					gcDuration,
+					m.lowWaterMark,
+					netMemoryUsed)
+			}
 		}
 	}
+}
+
+func (m *memoryManagerType) adjust(memUsed uint64) bool {
+	if memUsed > m.lowWaterMark {
+		m.lock.Lock()
+		defer m.lock.Unlock()
+		if m.adjustment != nil {
+			m.adjustment(memUsed, m.lowWaterMark)
+			return true
+		}
+	}
+	return false
 }
 
 type writeHookerType struct {
@@ -958,12 +1007,28 @@ func createApplicationStats(
 	if maybeNilMemoryManager != nil {
 		memoryManager := maybeNilMemoryManager
 		astore = store.NewStoreBytesPerPage(
-			*fBytesPerPage, memoryManager.PagesToUse(), *fThreshhold, *fDegree)
+			*fBytesPerPage,
+			memoryManager.PagesToUseInitially(),
+			*fThreshhold,
+			*fDegree)
+		memoryManager.UseMemoryAdjustment(func(usedMem, targetMem uint64) {
+			astore.LessenPageCount(*fFreedPageRatio)
+		})
 		tricorder.RegisterMetric(
 			"proc/memory/target-alloc",
 			memoryManager.TargetAlloc,
 			units.Byte,
 			"Target memory usage")
+		tricorder.RegisterMetric(
+			"proc/memory/high-water-mark",
+			memoryManager.HighWaterMark,
+			units.Byte,
+			"Memory usage that triggers a GC")
+		tricorder.RegisterMetric(
+			"proc/memory/low-water-mark",
+			memoryManager.LowWaterMark,
+			units.Byte,
+			"Desired memory usage after GC happens")
 	} else {
 		astore = store.NewStoreBytesPerPage(
 			*fBytesPerPage, *fPageCount, *fThreshhold, *fDegree)

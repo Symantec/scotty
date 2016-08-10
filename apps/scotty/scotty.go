@@ -785,7 +785,7 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
-func newPStoreConsumers(memoryManager *memoryManagerType) (
+func newPStoreConsumers(maybeNilMemoryManager *memoryManagerType) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	if *fKafkaConfigFile != "" {
 		result, err = kafka.ConsumerBuildersFromFile(
@@ -798,10 +798,13 @@ func newPStoreConsumers(memoryManager *memoryManagerType) (
 	if *fTsdbConfigFile != "" {
 		result, err = tsdb.ConsumerBuildersFromFile(*fTsdbConfigFile)
 	}
-	// Add hook to check memory after each write
-	for i := range result {
-		result[i].AddHook(
-			writeHookerType{wrapped: memoryManager})
+	if maybeNilMemoryManager != nil {
+		memoryManager := maybeNilMemoryManager
+		// Add hook to check memory after each write
+		for i := range result {
+			result[i].AddHook(
+				writeHookerType{wrapped: memoryManager})
+		}
 	}
 	return
 }
@@ -866,7 +869,7 @@ func allocateMemory(totalMemoryToUse uint64) (allocatedMemory [][]byte) {
 	return
 }
 
-func createMemoryManager(logger *log.Logger) *memoryManagerType {
+func maybeCreateMemoryManager(logger *log.Logger) *memoryManagerType {
 	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
 	if err != nil {
 		log.Fatal(err)
@@ -945,10 +948,11 @@ func (w writeHookerType) WriteHook(
 func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger,
-	memoryManager *memoryManagerType) *datastructs.ApplicationStatuses {
+	maybeNilMemoryManager *memoryManagerType) *datastructs.ApplicationStatuses {
 	var astore *store.Store
 	fmt.Println("Initialization started.")
-	if memoryManager != nil {
+	if maybeNilMemoryManager != nil {
+		memoryManager := maybeNilMemoryManager
 		astore = store.NewStoreBytesPerPage(
 			*fBytesPerPage, memoryManager.PagesToUse(), *fThreshhold, *fDegree)
 		tricorder.RegisterMetric(
@@ -990,7 +994,7 @@ func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
 	totalCounts []*totalCountType,
-	memoryManager *memoryManagerType) {
+	maybeNilMemoryManager *memoryManagerType) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -1059,7 +1063,8 @@ func startCollector(
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
-			if memoryManager != nil {
+			if maybeNilMemoryManager != nil {
+				memoryManager := maybeNilMemoryManager
 				memoryManager.Check()
 			}
 			if sweepDuration < *fCollectionFrequency {
@@ -1148,19 +1153,19 @@ func main() {
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
 	// Read configs early so that we will fail fast.
-	memoryManager := createMemoryManager(logger)
-	consumerBuilders, err := newPStoreConsumers(memoryManager)
+	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
+	consumerBuilders, err := newPStoreConsumers(maybeNilMemoryManager)
 	if err != nil {
 		log.Println(err)
 		logger.Println(err)
 	}
 	appList := createApplicationList()
 	applicationStats := createApplicationStats(
-		appList, logger, memoryManager)
+		appList, logger, maybeNilMemoryManager)
 	connectionErrors := newConnectionErrorsType()
 	if consumerBuilders == nil {
 		startCollector(
-			applicationStats, connectionErrors, nil, memoryManager)
+			applicationStats, connectionErrors, nil, maybeNilMemoryManager)
 	} else {
 		totalCounts := startPStoreLoops(
 			applicationStats,
@@ -1170,7 +1175,7 @@ func main() {
 			applicationStats,
 			connectionErrors,
 			totalCounts,
-			memoryManager)
+			maybeNilMemoryManager)
 	}
 
 	http.Handle(

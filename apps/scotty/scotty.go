@@ -588,11 +588,17 @@ func asJsonWithSubType(
 	value interface{}, kind, subType types.Type, unit units.Unit) (
 	jsonValue interface{}, jsonKind, jsonSubType types.Type) {
 	if kind == types.Dist {
-		distdelta := value.(*store.DistributionDelta)
-		jsonValue = &messages.Distribution{
-			Sum:    distdelta.SumChange(),
-			Count:  distdelta.TotalCountChange(),
-			Counts: distdelta.CountChanges(),
+		distTotals := value.(*store.DistributionTotals)
+		if distTotals == nil {
+			var result *messages.Distribution
+			jsonValue = result
+		} else {
+			jsonValue = &messages.Distribution{
+				Sum:           distTotals.Sum,
+				Count:         distTotals.Count(),
+				Counts:        distTotals.Counts,
+				RollOverCount: distTotals.RollOverCount,
+			}
 		}
 		jsonKind = kind
 		jsonSubType = subType
@@ -665,8 +671,7 @@ func gatherDataForEndpoint(
 	isSingleton bool) (result messages.EndpointMetricList) {
 	result = make(messages.EndpointMetricList, 0)
 	now := duration.TimeToFloat(time.Now())
-	appender := store.FoldDistributions(
-		newEndpointMetricsAppender(&result))
+	appender := newEndpointMetricsAppender(&result)
 	if path == "" {
 		metricStore.ByEndpointStrategy(
 			endpoint,
@@ -693,7 +698,6 @@ func gatherDataForEndpoint(
 		}
 
 	}
-	appender.Flush()
 	sortMetricsByPath(result)
 	return
 }

@@ -4,38 +4,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 )
 
-func (d *DistributionDelta) isZero() bool {
-	if d.sum != 0.0 {
-		return false
-	}
-	for i := range d.counts {
-		if d.counts[i] != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func (d *DistributionDelta) totalCountChange() (result int64) {
-	for i := range d.counts {
-		result += d.counts[i]
-	}
-	return
-}
-
-func (d *DistributionDelta) countChanges() []int64 {
-	result := make([]int64, len(d.counts))
-	copy(result, d.counts)
-	return result
-}
-
-func (d *DistributionDelta) add(x *DistributionDelta) {
-	for i := range d.counts {
-		d.counts[i] += x.counts[i]
-	}
-	d.sum += x.sum
-}
-
 // distExtractUpperLimits extracts the upper bounds from the buckets in dist.
 // Since the last bucket has no upper bound, the number of buckets is always
 // one more than the length of the returned slice.
@@ -134,49 +102,23 @@ func (r *rangesCacheType) Get(
 	return rangesList.Get(upperLimits)
 }
 
-// distributionValuesType represents distribution values and
-// lets scotty compute the *DistributionDelta based
-// on current values and previous values of the same distribution.
-type distributionValuesType struct {
-	// The Ranges pointer of this distribution
-	Ranges *Ranges
-	// The generation of this distribution
-	Generation uint64
-	// The bucket counts of this distribution
-	Counts []uint64
-	// The sum of values in this distribution
-	Sum float64
+type distributionRollOverType struct {
+	ranges        *Ranges
+	generation    uint64
+	rollOverCount uint64
 }
 
-func (d *distributionValuesType) isContinuation(
-	previous *distributionValuesType) bool {
-	return d.Ranges == previous.Ranges && d.Generation > previous.Generation
+func (d *distributionRollOverType) hasRolledOver(
+	ranges *Ranges, generation uint64) bool {
+	return ranges != d.ranges || generation < d.generation
 }
 
-// ComputeDifference computes the distribution delta between these
-// distribution values and previous distribution values. If these distribution
-// values are a continuation of the previous distribution values,
-// ComputeDifferences returns the distribution delta. If these distribution
-// values are not a continuation of the previous distribution values
-// (for example Generation decreased or the Ranges fields don't match)
-// ComputeDifferences returns nil.
-//
-// If caller passes nil for previous distribution values, ComputeDifferences
-// just returns nil as if these distribution values are not a continuation.
-func (d *distributionValuesType) ComputeDifferences(
-	maybeNilPrevious *distributionValuesType) *DistributionDelta {
-	if maybeNilPrevious == nil {
-		return nil
+func (d *distributionRollOverType) UpdateAndFetchRollOverCount(
+	ranges *Ranges, generation uint64) uint64 {
+	if d.hasRolledOver(ranges, generation) {
+		d.rollOverCount++
 	}
-	previous := maybeNilPrevious
-	if d.isContinuation(previous) {
-		diffCounts := make([]int64, len(d.Counts))
-		var sum float64
-		for i := range diffCounts {
-			diffCounts[i] = int64(d.Counts[i] - previous.Counts[i])
-		}
-		sum = d.Sum - previous.Sum
-		return NewDistributionDelta(diffCounts, sum)
-	}
-	return nil
+	d.ranges = ranges
+	d.generation = generation
+	return d.rollOverCount
 }

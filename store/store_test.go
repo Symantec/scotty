@@ -1740,6 +1740,13 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 	expectedTsValues.VerifyDone(t)
 }
 
+func TestDistributionTotalsCount(t *testing.T) {
+	totals := &store.DistributionTotals{
+		Counts: []uint64{2, 3, 5},
+	}
+	assertValueEquals(t, uint64(10), totals.Count())
+}
+
 func TestWithDistributions(t *testing.T) {
 	aStore := newStore(t, "TestWithDistributions", 10, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -2108,40 +2115,105 @@ func TestWithDistributions(t *testing.T) {
 	expectedMetaData.AddSubType("/dist/noncumulative", types.Unknown)
 	expectedMetaData.AddIsNotCumulative("/dist/noncumulative", true)
 
+	// Use GroupMetricByPathAndNumeric strategy so that /dist/cumulative
+	// is considered one logical metric even though the buckets change.
 	expectedTsValues := newExpectedTsValuesWithMetaDataAndStrategy(
-		expectedMetaData, store.GroupMetricByKey)
+		expectedMetaData, store.GroupMetricByPathAndNumeric)
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3900.0,
-		store.NewDistributionDelta([]int64{6, 9, 5, 3}, 103.0))
+		3000.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{9, 15, 10, 3},
+			Sum:           200.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3100.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{13, 21, 15, 5},
+			Sum:           270.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3200.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 3, 0, 0},
+			Sum:           6.0,
+			RollOverCount: 2,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3300.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 5, 0, 1},
+			Sum:           36.0,
+			RollOverCount: 2,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3500.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{6, 4, 2},
+			Sum:           360.0,
+			RollOverCount: 3,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3600.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{18, 4, 22},
+			Sum:           2860.0,
+			RollOverCount: 3,
+		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
 		3700.0,
-		store.NewDistributionDelta([]int64{12, 1, 23}, 2720.0))
+		&store.DistributionTotals{
+			Counts:        []uint64{18, 5, 25},
+			Sum:           3080.0,
+			RollOverCount: 3,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3800.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{0, 0, 1, 2},
+			Sum:           35.0,
+			RollOverCount: 4,
+		})
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3900.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 1, 1, 2},
+			Sum:           38.0,
+			RollOverCount: 4,
+		})
 
 	runAppenderClientTest(
 		t,
 		func(a store.Appender) {
-			af := store.FoldDistributions(a)
-			aStore.ByNameAndEndpoint(
+			aStore.ByNameAndEndpointStrategy(
 				"/dist/cumulative",
 				kEndpoint0,
 				0,
 				10000.0,
-				af)
-			af.Flush()
+				store.GroupMetricByPathAndNumeric,
+				a)
 		},
 	)
 
 	var result []store.Record
-	appender := store.FoldDistributions(store.AppendTo(&result))
-	aStore.ByNameAndEndpoint(
+	appender := store.AppendTo(&result)
+	aStore.ByNameAndEndpointStrategy(
 		"/dist/cumulative",
 		kEndpoint0,
 		0,
 		10000.0,
+		store.GroupMetricByPathAndNumeric,
 		appender)
-	appender.Flush()
 	expectedTsValues.CheckSlice(t, result)
 
 	// We have to chack on the ranges, so extract record at with ts=3900
@@ -2165,36 +2237,59 @@ func TestWithDistributions(t *testing.T) {
 
 	expectedTsValues.Add(
 		"/dist/noncumulative",
+		3000.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{6, 4},
+			Sum:           500.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3100.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{1, 5},
+			Sum:           420.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
 		3200.0,
-		store.NewDistributionDelta([]int64{-4, 2}, -50.0))
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
 		3900.0,
-		store.NewDistributionDelta([]int64{0, 0}, 0.0))
+		&store.DistributionTotals{
+			Counts:        []uint64{9, 8},
+			Sum:           1200.0,
+			RollOverCount: 2,
+		})
 
 	runAppenderClientTest(
 		t,
 		func(a store.Appender) {
-			af := store.FoldDistributions(a)
-			aStore.ByPrefixAndEndpoint(
+			aStore.ByPrefixAndEndpointStrategy(
 				"/dist",
 				kEndpoint0,
 				0,
 				10000.0,
-				af)
-			af.Flush()
+				store.GroupMetricByPathAndNumeric,
+				a)
 		},
 	)
 
 	result = nil
-	appender = store.FoldDistributions(store.AppendTo(&result))
-	aStore.ByPrefixAndEndpoint(
+	appender = store.AppendTo(&result)
+	aStore.ByPrefixAndEndpointStrategy(
 		"/dist",
 		kEndpoint0,
 		0,
 		10000.0,
+		store.GroupMetricByPathAndNumeric,
 		appender)
-	appender.Flush()
 	expectedTsValues.CheckSlice(t, result)
 
 	expectedTsValues.Add(
@@ -2221,55 +2316,89 @@ func TestWithDistributions(t *testing.T) {
 	runAppenderClientTest(
 		t,
 		func(a store.Appender) {
-			af := store.FoldDistributions(a)
-			aStore.ByEndpoint(
+			aStore.ByEndpointStrategy(
 				kEndpoint0,
 				0,
 				10000.0,
-				af)
-			af.Flush()
+				store.GroupMetricByPathAndNumeric,
+				a)
 		},
 	)
 
 	result = nil
-	appender = store.FoldDistributions(store.AppendTo(&result))
-	aStore.ByEndpoint(
+	appender = store.AppendTo(&result)
+	aStore.ByEndpointStrategy(
 		kEndpoint0,
 		0,
 		10000.0,
+		store.GroupMetricByPathAndNumeric,
 		appender)
-	appender.Flush()
 	expectedTsValues.CheckSlice(t, result)
 
-	// Test iterating. For now, iterators should never include
-	// distribution values until we understand how we might
-	// store them in persisten storage. We should get only the
-	// 'mint' metric.
-	expectedTsValues = newExpectedTsValues()
+	// Now test iteration. Since iteration shows all data points even ones
+	// that don't change we have to add in all those redundant data points
+
 	expectedTsValues.Add(
-		"mint",
-		3000.0,
-		int64(50))
+		"/dist/cumulative",
+		3400.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 5, 0, 1},
+			Sum:           36.0,
+			RollOverCount: 2,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3300.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3400.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3500.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3600.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3700.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3800.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{2, 6},
+			Sum:           450.0,
+			RollOverCount: 1,
+		})
+
 	expectedTsValues.Add(
 		"mint",
 		3100.0,
 		int64(50))
-	expectedTsValues.Add(
-		"mint",
-		3200.0,
-		int64(70))
-	expectedTsValues.Add(
-		"mint",
-		3300.0,
-		int64(90))
-	expectedTsValues.Add(
-		"mint",
-		3400.0,
-		int64(110))
-	expectedTsValues.Add(
-		"mint",
-		3500.0,
-		int64(130))
 	expectedTsValues.Add(
 		"mint",
 		3600.0,
@@ -2287,6 +2416,8 @@ func TestWithDistributions(t *testing.T) {
 		3900.0,
 		int64(130))
 
+	// Test iterating. Iterators should include
+	// distribution values
 	iterator, _ := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
 	expectedTsValues.Iterate(t, iterator)
@@ -2295,6 +2426,22 @@ func TestWithDistributions(t *testing.T) {
 	// Remember that we don't know if the time window starting at 3500
 	// is complete, so we don't emit rolled up metrics for it.
 	expectedTsValues = newExpectedTsValues()
+	expectedTsValues.Add(
+		"/dist/cumulative",
+		3000.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{9, 15, 10, 3},
+			Sum:           200.0,
+			RollOverCount: 1,
+		})
+	expectedTsValues.Add(
+		"/dist/noncumulative",
+		3000.0,
+		&store.DistributionTotals{
+			Counts:        []uint64{6, 4},
+			Sum:           500.0,
+			RollOverCount: 1,
+		})
 	expectedTsValues.Add(
 		"mint",
 		3200.0,

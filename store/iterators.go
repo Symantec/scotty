@@ -1,7 +1,6 @@
 package store
 
 import (
-	"github.com/Symantec/tricorder/go/tricorder/types"
 	"sort"
 )
 
@@ -53,12 +52,6 @@ type namedIteratorType struct {
 
 func (n *namedIteratorType) recordsFromSingleTimeSeries(
 	ts *timeSeriesType, appender Appender) {
-	// TODO: For now we don't emit distribution values for persistent
-	// storage. Once we understand how to persist distribution values,
-	// remove this restriction and update documentation.
-	if ts.id.Kind() == types.Dist {
-		return
-	}
 	ourTimestamps := n.timestamps[ts.GroupId()]
 	lastWrittenTimestamp := n.completed[ts.id]
 	index := sort.Search(

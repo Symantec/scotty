@@ -14,8 +14,8 @@ func (m *MetricInfo) zeroValue() interface{} {
 	case types.List:
 		return m.SubType().NilSlice()
 	case types.Dist:
-		var nilDelta *DistributionDelta
-		return nilDelta
+		var nilTotals *DistributionTotals
+		return nilTotals
 	default:
 		return kind.ZeroValue()
 	}

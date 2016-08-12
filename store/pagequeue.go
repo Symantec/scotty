@@ -12,7 +12,6 @@ import (
 
 type pageQueueType struct {
 	valueCountPerPage  int
-	pageCount          int
 	inactiveThreshhold float64
 	degree             int
 	lock               sync.Mutex
@@ -33,7 +32,6 @@ func newPageQueueType(
 		})
 	return &pageQueueType{
 		valueCountPerPage:  bytesPerPage / kTsAndValueSize,
-		pageCount:          pageCount,
 		inactiveThreshhold: inactiveThreshhold,
 		degree:             degree,
 		pq:                 pages}
@@ -41,6 +39,26 @@ func newPageQueueType(
 
 func (s *pageQueueType) MaxValuesPerPage() int {
 	return s.valueCountPerPage
+}
+
+func (s *pageQueueType) LessenPageCount(ratio float64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	var stats btreepq.PageQueueStats
+	s.pq.Stats(&stats)
+	pageCount := int(float64(stats.TotalCount()) * ratio)
+	for i := 0; i < pageCount; i++ {
+		result, ok := s.pq.RemovePage()
+		if ok {
+			removedPage := result.(*pageWithMetaDataType)
+			// Force the owner of the page to give it up.
+			if removedPage.owner != nil {
+				removedPage.owner.GiveUpPage(removedPage)
+			}
+			// Removed page no longer has an owner
+			removedPage.owner = nil
+		}
+	}
 }
 
 func (s *pageQueueType) PageQueueStats(stats *btreepq.PageQueueStats) {
@@ -71,6 +89,14 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 		queueGroup,
 		units.None,
 		"Number of pages in low priority queue"); err != nil {
+		return
+	}
+	if err = d.RegisterMetricInGroup(
+		"/totalPages",
+		queueStats.TotalCount,
+		queueGroup,
+		units.None,
+		"Total number of pages."); err != nil {
 		return
 	}
 	if err = d.RegisterMetricInGroup(
@@ -106,13 +132,6 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 		return
 	}
 
-	if err = d.RegisterMetric(
-		"/totalPages",
-		&s.pageCount,
-		units.None,
-		"Total number of pages."); err != nil {
-		return
-	}
 	if err = d.RegisterMetric(
 		"/maxValuesPerPage",
 		&s.valueCountPerPage,

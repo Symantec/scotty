@@ -24,6 +24,7 @@ type DistributionTotals struct {
 	RollOverCount uint64
 }
 
+// Count returns the total number of values this instance represents.
 func (d *DistributionTotals) Count() (result uint64) {
 	for _, count := range d.Counts {
 		result += count
@@ -402,6 +403,14 @@ func NewStoreBytesPerPage(
 			degree),
 		metrics: newStoreMetricsType(),
 	}
+}
+
+// LessenPageCount reduces the number of pages this store uses by ratio, a
+// value between 0.0 and 1.0 exclusive. If the store is using 1 million pages
+// and ratio is 0.1, then LessenPageCount will remove 100K pages from the
+// system leaving only 900K pages once it returns.
+func (s *Store) LessenPageCount(ratio float64) {
+	s.supplier.LessenPageCount(ratio)
 }
 
 // ShallowCopy returns a shallow copy of this store. In an environment with

@@ -29,20 +29,29 @@ func _new(
 		nextSeqNo:  uint64(pageCount)}
 }
 
-func (p *PageQueue) nextPage() (next Page) {
+func (p *PageQueue) popPage() Page {
 	if p.high.Len() >= p.threshhold {
-		next = p.high.DeleteMin().(Page)
-	} else {
-		lowNext := first(p.low)
-		highNext := first(p.high)
-		if lessNilHigh(lowNext, highNext) {
-			next = p.low.DeleteMin().(Page)
-		} else if lessNilHigh(highNext, lowNext) {
-			next = p.high.DeleteMin().(Page)
-		} else {
-			panic("Two pages with same sequence number found")
-		}
+		return p.high.DeleteMin().(Page)
 	}
+	lowNext := first(p.low)
+	highNext := first(p.high)
+	if lessNilHigh(lowNext, highNext) {
+		return p.low.DeleteMin().(Page)
+	} else if lessNilHigh(highNext, lowNext) {
+		return p.high.DeleteMin().(Page)
+	}
+	panic("Two pages with same sequence number found")
+}
+
+func (p *PageQueue) removePage() (removed Page, ok bool) {
+	if p.high.Len()+p.low.Len() <= 1 {
+		return
+	}
+	return p.popPage(), true
+}
+
+func (p *PageQueue) nextPage() (next Page) {
+	next = p.popPage()
 	next.SetSeqNo(p.nextSeqNo)
 	p.nextSeqNo++
 	insert(p.low, next)
@@ -53,8 +62,7 @@ func (p *PageQueue) moveFromTo(pg Page, from, to *btree.BTree) {
 	pageToMove := from.Delete(pg)
 	if pageToMove == nil {
 		// If we can't find our page in the from list,
-		// we have to assume it is in the to list already since
-		// len(from) + len(to) is constant.
+		// we have to assume it is in the to list already.
 		return
 	}
 	if pageToMove != pg {

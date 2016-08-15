@@ -103,12 +103,8 @@ func TestReadConfig(t *testing.T) {
     name: "minimal"
 - writer:
     someField: "another"
-  options:
-    recordsPerSecond: -235
   consumer:
-    concurrency: -2
-    name: "negative"
-    batchSize: -17
+    name: "zero"
     rollUpSpan: -2m
 `
 	consumerBuilders, err := consumerBuildersFromString(configFile)
@@ -138,7 +134,7 @@ func TestReadConfig(t *testing.T) {
 			BatchSize:   1000,
 		},
 		attributes)
-	assertValueEquals(t, "negative", consumers[2].Name())
+	assertValueEquals(t, "zero", consumers[2].Name())
 	consumers[2].Attributes(&attributes)
 	assertValueEquals(
 		t,

@@ -26,7 +26,7 @@ func (p *pageForTesting) Less(than btree.Item) bool {
 func TestZeroThreshhold(t *testing.T) {
 	var pages [4]btreepq.Page
 	queue := btreepq.New(
-		len(pages),
+		uint(len(pages)),
 		0,
 		10,
 		func() btreepq.Page {
@@ -41,7 +41,7 @@ func TestZeroThreshhold(t *testing.T) {
 func TestRemovePages(t *testing.T) {
 	var pages [8]btreepq.Page
 	queue := btreepq.New(
-		len(pages),
+		uint(len(pages)),
 		2,
 		10,
 		func() btreepq.Page {
@@ -86,7 +86,7 @@ func TestRemovePages(t *testing.T) {
 func TestAPI(t *testing.T) {
 	var pages [8]btreepq.Page
 	queue := btreepq.New(
-		len(pages),
+		uint(len(pages)),
 		2,
 		10,
 		func() btreepq.Page {

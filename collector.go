@@ -11,11 +11,19 @@ import (
 var (
 	concurrentConnects = allowedConnectionCount()
 	connectSemaphore   = make(chan bool, concurrentConnects)
-	concurrentPolls    = runtime.NumCPU() * 2
+	concurrentPolls    = allowedPollCount()
 	pollSemaphore      = make(chan bool, concurrentPolls)
 )
 
-func allowedConnectionCount() int {
+func allowedPollCount() uint {
+	numCpus := runtime.NumCPU()
+	if numCpus < 1 {
+		numCpus = 1
+	}
+	return uint(numCpus * 2)
+}
+
+func allowedConnectionCount() uint {
 	var rlim syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rlim); err != nil {
 		panic(err)
@@ -23,16 +31,16 @@ func allowedConnectionCount() int {
 	if rlim.Cur <= 50 {
 		return 1
 	}
-	return int(rlim.Cur - 50)
+	return uint(rlim.Cur - 50)
 }
 
-func setConcurrentConnects(x int) {
+func setConcurrentConnects(x uint) {
 	close(connectSemaphore)
 	concurrentConnects = x
 	connectSemaphore = make(chan bool, concurrentConnects)
 }
 
-func setConcurrentPolls(x int) {
+func setConcurrentPolls(x uint) {
 	close(pollSemaphore)
 	concurrentPolls = x
 	pollSemaphore = make(chan bool, concurrentPolls)
@@ -98,7 +106,7 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 }
 
 func newEndpoint(
-	host string, port int, connector sources.Connector) *Endpoint {
+	host string, port uint, connector sources.Connector) *Endpoint {
 	return &Endpoint{
 		host:           host,
 		port:           port,

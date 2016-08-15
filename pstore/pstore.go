@@ -25,11 +25,11 @@ func (h *hookWriter) Write(records []Record) error {
 
 type throttleWriter struct {
 	wrapped          RecordWriter
-	recordsPerSecond int
+	recordsPerSecond uint
 }
 
 func (t *throttleWriter) Write(records []Record) error {
-	if t.recordsPerSecond <= 0 {
+	if t.recordsPerSecond == 0 {
 		return t.wrapped.Write(records)
 	}
 	now := time.Now()
@@ -123,7 +123,7 @@ type barrier struct {
 }
 
 // newBarrier creates a new barrier. count is N.
-func newBarrier(count int) *barrier {
+func newBarrier(count uint) *barrier {
 	result := &barrier{inCh: make(chan bool), outCh: make(chan bool)}
 	go result.loop(count)
 	return result
@@ -135,19 +135,19 @@ func (b *barrier) Await() {
 	<-b.outCh
 }
 
-func (b *barrier) loop(count int) {
+func (b *barrier) loop(count uint) {
 	for {
-		for i := 0; i < count; i++ {
+		for i := uint(0); i < count; i++ {
 			<-b.inCh
 		}
-		for i := 0; i < count; i++ {
+		for i := uint(0); i < count; i++ {
 			b.outCh <- true
 		}
 	}
 }
 
 func newAsyncConsumer(
-	w RecordWriter, bufferSize, concurrency int) *AsyncConsumer {
+	w RecordWriter, bufferSize, concurrency uint) *AsyncConsumer {
 	result := &AsyncConsumer{
 		requests: make(chan consumerRequestType, concurrency),
 		// Flush barrier to accomodate each goroutine plus the
@@ -155,13 +155,13 @@ func newAsyncConsumer(
 		flushBarrier: newBarrier(concurrency + 1),
 		concurrency:  concurrency,
 	}
-	for i := 0; i < concurrency; i++ {
+	for i := uint(0); i < concurrency; i++ {
 		go result.loop(w, bufferSize)
 	}
 	return result
 }
 
-func (a *AsyncConsumer) loop(w RecordWriter, bufferSize int) {
+func (a *AsyncConsumer) loop(w RecordWriter, bufferSize uint) {
 	consumer := newConsumer(w, bufferSize)
 	for {
 		request := <-a.requests
@@ -202,7 +202,7 @@ func (a *AsyncConsumer) flush() {
 	// either calling goroutine finished sending all of its flush requests
 	// resulting in deadlock. This is why AsyncConsumer is NOT safe to use
 	// with multiple goroutines.
-	for i := 0; i < a.concurrency; i++ {
+	for i := uint(0); i < a.concurrency; i++ {
 		a.requests <- consumerRequestType{}
 	}
 	// Block caller until all goroutines have processed their flush. Then
@@ -210,7 +210,7 @@ func (a *AsyncConsumer) flush() {
 	a.flushBarrier.Await()
 }
 
-func newConsumer(w RecordWriter, bufferSize int) *Consumer {
+func newConsumer(w RecordWriter, bufferSize uint) *Consumer {
 	return &Consumer{
 		w:      w,
 		buffer: make([]Record, bufferSize),

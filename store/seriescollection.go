@@ -506,17 +506,17 @@ func (c *timeSeriesCollectionType) MarkInactive(
 func (c *timeSeriesCollectionType) AddBatch(
 	timestamp float64,
 	mlist metrics.List,
-	supplier *pageQueueType) (result int, err error) {
+	supplier *pageQueueType) (result uint, err error) {
 	c.statusChangeLock.Lock()
 	defer c.statusChangeLock.Unlock()
 	fetched, newOnes, notFetched, tsFetched, newTs, tsNotFetched, err := c.LookupBatch(timestamp, mlist)
 	if err != nil {
 		return
 	}
-	result = c.updateTimeStampSeriesAndTimeSeries(
+	result = uint(c.updateTimeStampSeriesAndTimeSeries(
 		newOnes, fetched, notFetched,
 		newTs, tsFetched, tsNotFetched,
-		supplier)
+		supplier))
 	return
 }
 

@@ -7,12 +7,12 @@ import (
 func _new(
 	pageCount,
 	threshhold,
-	degree int,
+	degree uint,
 	creater func() Page) *PageQueue {
 	fl := btree.NewFreeList(btree.DefaultFreeListSize)
-	high := btree.NewWithFreeList(degree, fl)
-	low := btree.NewWithFreeList(degree, fl)
-	for i := 0; i < pageCount; i++ {
+	high := btree.NewWithFreeList(int(degree), fl)
+	low := btree.NewWithFreeList(int(degree), fl)
+	for i := uint(0); i < pageCount; i++ {
 		page := creater()
 		page.SetSeqNo(uint64(i))
 		insert(high, page)
@@ -30,7 +30,7 @@ func _new(
 }
 
 func (p *PageQueue) popPage() Page {
-	if p.high.Len() >= p.threshhold {
+	if uint(p.high.Len()) >= p.threshhold {
 		return p.high.DeleteMin().(Page)
 	}
 	lowNext := first(p.low)
@@ -72,8 +72,8 @@ func (p *PageQueue) moveFromTo(pg Page, from, to *btree.BTree) {
 }
 
 func (p *PageQueue) _stats(stats *PageQueueStats) {
-	stats.HighPriorityCount = p.high.Len()
-	stats.LowPriorityCount = p.low.Len()
+	stats.HighPriorityCount = uint(p.high.Len())
+	stats.LowPriorityCount = uint(p.low.Len())
 	stats.EndSeqNo = p.nextSeqNo
 	lowNext := first(p.low)
 	highNext := first(p.high)

@@ -371,9 +371,9 @@ type Store struct {
 // degree is the degree of the btrees (see github.com/Symantec/btree)
 func NewStore(
 	valueCount,
-	pageCount int,
+	pageCount uint,
 	inactiveThreshhold float64,
-	degree int) *Store {
+	degree uint) *Store {
 	return NewStoreBytesPerPage(
 		valueCount*kTsAndValueSize,
 		pageCount,
@@ -391,9 +391,9 @@ func NewStore(
 // degree is the degree of the btrees (see github.com/Symantec/btree)
 func NewStoreBytesPerPage(
 	bytesPerPage,
-	pageCount int,
+	pageCount uint,
 	inactiveThreshhold float64,
-	degree int) *Store {
+	degree uint) *Store {
 	return &Store{
 		byApplication: make(map[interface{}]*timeSeriesCollectionType),
 		supplier: newPageQueueType(
@@ -442,7 +442,7 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 func (s *Store) AddBatch(
 	endpointId interface{},
 	timestamp float64,
-	metricList metrics.List) (numAdded int, err error) {
+	metricList metrics.List) (numAdded uint, err error) {
 	return s.addBatch(endpointId, timestamp, metricList)
 }
 
@@ -591,9 +591,9 @@ func (s *Store) TimeLeft(name string) (seconds float64) {
 func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
-	maxFrames int) (
+	maxFrames uint) (
 	iterator NamedIterator, remainingValuesInSeconds float64) {
-	return s.namedIteratorForEndpoint(name, endpointId, maxFrames)
+	return s.namedIteratorForEndpoint(name, endpointId, int(maxFrames))
 }
 
 // NamedIteratorForEndpointRollUp works like NamedItgeratorForEndpoint except
@@ -647,11 +647,11 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 	name string,
 	endpointId interface{},
 	dur time.Duration,
-	maxFrames int,
+	maxFrames uint,
 	strategy MetricGroupingStrategy) (
 	iterator NamedIterator, remainingValuesInSeconds float64) {
 	return s.namedIteratorForEndpointRollUp(
-		name, endpointId, dur, maxFrames, strategy)
+		name, endpointId, dur, int(maxFrames), strategy)
 }
 
 // LatestByEndpoint returns the latest records for each metric for a

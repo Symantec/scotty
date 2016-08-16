@@ -16,7 +16,7 @@ var (
 	kConnector = connectorType(0)
 )
 
-func (c connectorType) Connect(host string, port int) (sources.Poller, error) {
+func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
 	conn, err := rpc.DialHTTP(
 		"tcp",
 		fmt.Sprintf("%s:%d", host, port))

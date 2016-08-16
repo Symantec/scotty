@@ -37,7 +37,7 @@ var (
 
 type hostAndPort struct {
 	Host string
-	Port int
+	Port uint
 }
 
 func (a *ApplicationStatuses) newApplicationStatus(
@@ -166,7 +166,7 @@ func (a *ApplicationStatuses) markHostsActiveExclusively(
 }
 
 func (a *ApplicationStatuses) logChangedMetricCount(
-	e *scotty.Endpoint, metricCount int) {
+	e *scotty.Endpoint, metricCount uint) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	record := a.byEndpoint[e]
@@ -176,7 +176,7 @@ func (a *ApplicationStatuses) logChangedMetricCount(
 	if record.InitialMetricCount == 0 {
 		record.InitialMetricCount = metricCount
 	} else {
-		record.changedMetrics_Sum += int64(metricCount)
+		record.changedMetrics_Sum += uint64(metricCount)
 		record.changedMetrics_Count++
 	}
 }
@@ -234,14 +234,14 @@ func (a *ApplicationList) all() (result []*Application) {
 
 func newApplicationListBuilder() *ApplicationListBuilder {
 	list := &ApplicationList{
-		byPort: make(map[int]*Application),
+		byPort: make(map[uint]*Application),
 		byName: make(map[string]*Application),
 	}
 	return &ApplicationListBuilder{listPtr: &list}
 }
 
 func (a *ApplicationListBuilder) add(
-	port int, applicationName string, connector sources.Connector) {
+	port uint, applicationName string, connector sources.Connector) {
 	if (*a.listPtr).byPort[port] != nil || (*a.listPtr).byName[applicationName] != nil {
 		panic("Both name and port must be unique.")
 	}
@@ -260,7 +260,7 @@ func (a *ApplicationListBuilder) build() *ApplicationList {
 type configLineType struct {
 	Name     string
 	Protocol string
-	Port     int
+	Port     uint
 	Params   map[string]string
 }
 

@@ -32,13 +32,13 @@ type ApplicationStatus struct {
 	LastErrorTime time.Time
 
 	// Initial metric count
-	InitialMetricCount int
+	InitialMetricCount uint
 
 	// Whether or not it is currently down.
 	Down bool
 
-	changedMetrics_Sum   int64
-	changedMetrics_Count int64
+	changedMetrics_Sum   uint64
+	changedMetrics_Count uint64
 }
 
 // Returns last error time as 2006-01-02T15:04:05
@@ -141,7 +141,7 @@ func (a *ApplicationStatuses) MarkHostsActiveExclusively(
 // This instance must have prior knowledge of e. That is, e must come from
 // a method such as ActiveEndpointIds(). Otherwise, this method panics.
 func (a *ApplicationStatuses) LogChangedMetricCount(
-	e *scotty.Endpoint, metricCount int) {
+	e *scotty.Endpoint, metricCount uint) {
 	a.logChangedMetricCount(e, metricCount)
 }
 
@@ -171,7 +171,7 @@ func (a *ApplicationStatuses) ActiveEndpointIds() (
 type Application struct {
 	name      string
 	connector sources.Connector
-	port      int
+	port      uint
 }
 
 // Name returns the name of application
@@ -185,14 +185,14 @@ func (a *Application) Connector() sources.Connector {
 }
 
 // Port returns the port number of the application
-func (a *Application) Port() int {
+func (a *Application) Port() uint {
 	return a.port
 }
 
 // ApplicationList represents all the applications in the fleet.
 // ApplicationList instances are immutable.
 type ApplicationList struct {
-	byPort map[int]*Application
+	byPort map[uint]*Application
 	byName map[string]*Application
 }
 
@@ -204,7 +204,7 @@ func (a *ApplicationList) All() []*Application {
 
 // ByPort returns the application running on a particular port or nil
 // if no application is using port.
-func (a *ApplicationList) ByPort(port int) *Application {
+func (a *ApplicationList) ByPort(port uint) *Application {
 	return a.byPort[port]
 }
 
@@ -225,7 +225,7 @@ func NewApplicationListBuilder() *ApplicationListBuilder {
 
 // Add adds an application.
 func (a *ApplicationListBuilder) Add(
-	port int, applicationName string, connector sources.Connector) {
+	port uint, applicationName string, connector sources.Connector) {
 	a.add(port, applicationName, connector)
 }
 

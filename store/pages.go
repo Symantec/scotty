@@ -13,9 +13,9 @@ var (
 	kTsAndValueSize = tsAndValueSize()
 )
 
-func tsAndValueSize() int {
+func tsAndValueSize() uint {
 	var p pageType
-	return int(reflect.TypeOf(p).Elem().Size())
+	return uint(reflect.TypeOf(p).Elem().Size())
 }
 
 // basicPageType is the interface that all page data must implement
@@ -135,7 +135,7 @@ type pageWithMetaDataType struct {
 	values []tsValueType
 }
 
-func newPageWithMetaDataType(bytesPerPage int) *pageWithMetaDataType {
+func newPageWithMetaDataType(bytesPerPage uint) *pageWithMetaDataType {
 	return &pageWithMetaDataType{
 		values: make(pageType, 0, bytesPerPage/kTsAndValueSize)}
 }

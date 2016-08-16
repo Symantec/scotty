@@ -52,11 +52,11 @@ var (
 		"portNum",
 		6980,
 		"Port number for scotty.")
-	fBytesPerPage = flag.Int(
+	fBytesPerPage = flag.Uint(
 		"bytes_per_page",
 		1024,
 		"Space for new metrics for each endpoint in records")
-	fPageCount = flag.Int(
+	fPageCount = flag.Uint(
 		"page_count",
 		30*1000*1000,
 		"Total page count")
@@ -68,11 +68,11 @@ var (
 		"mdb_file",
 		"/var/lib/Dominator/mdb",
 		"Name of file from which to read mdb data.")
-	fPollCount = flag.Int(
+	fPollCount = flag.Uint(
 		"poll_count",
 		collector.ConcurrentPolls(),
 		"Maximum number of concurrent polls")
-	fConnectionCount = flag.Int(
+	fConnectionCount = flag.Uint(
 		"connection_count",
 		collector.ConcurrentConnects(),
 		"Maximum number of concurrent connections")
@@ -104,7 +104,7 @@ var (
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fFreedPageRatio = flag.Float64(
 		"freedPageRatio", 0.05, "Ratio of pages freed each time a GC does not bring memory usage down to the goal")
-	fDegree = flag.Int(
+	fDegree = flag.Uint(
 		"degree", 10, "Degree of btree")
 	fPagePercentage = flag.Float64(
 		"page_percentage", 50.0, "Percentage of allocated memory used for pages")
@@ -828,13 +828,13 @@ func createApplicationList() *datastructs.ApplicationList {
 	return builder.Build()
 }
 
-func computePageCount() int {
+func computePageCount() uint {
 	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
 	if err != nil {
 		log.Fatal(err)
 	}
 	if totalMemoryToUse > 0 {
-		return int(totalMemoryToUse / uint64(*fBytesPerPage))
+		return uint(totalMemoryToUse / uint64(*fBytesPerPage))
 	}
 	return *fPageCount
 }
@@ -860,7 +860,7 @@ func totalSystemMemory() uint64 {
 }
 
 type memoryManagerType struct {
-	pagesToUse    int
+	pagesToUse    uint
 	targetAlloc   uint64
 	highWaterMark uint64
 	lowWaterMark  uint64
@@ -905,7 +905,7 @@ func maybeCreateMemoryManager(logger *log.Logger) *memoryManagerType {
 			logger:        logger,
 			gcCh:          make(chan bool),
 		}
-		result.pagesToUse = int(result.lowWaterMark / uint64(*fBytesPerPage))
+		result.pagesToUse = uint(result.lowWaterMark / uint64(*fBytesPerPage))
 		go result.loop()
 		return result
 	}
@@ -919,7 +919,7 @@ func (m *memoryManagerType) UseMemoryAdjustment(
 	m.adjustment = adjustment
 }
 
-func (m *memoryManagerType) PagesToUseInitially() int {
+func (m *memoryManagerType) PagesToUseInitially() uint {
 	return m.pagesToUse
 }
 

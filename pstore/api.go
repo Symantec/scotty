@@ -134,7 +134,7 @@ func (w *RecordWriterWithMetrics) Metrics(m *RecordWriterMetrics) {
 type AsyncConsumer struct {
 	requests     chan consumerRequestType
 	flushBarrier *barrier
-	concurrency  int
+	concurrency  uint
 }
 
 // NewAsyncConsumer creates a new AsyncConsumer instance.
@@ -142,7 +142,7 @@ type AsyncConsumer struct {
 // concurrency is the count of goroutines doing the consuming.
 // bufferSize is the size of each buffer. Each goroutine gets its own buffer.
 func NewAsyncConsumer(
-	w RecordWriter, bufferSize, concurrency int) *AsyncConsumer {
+	w RecordWriter, bufferSize, concurrency uint) *AsyncConsumer {
 	return newAsyncConsumer(w, bufferSize, concurrency)
 }
 
@@ -185,7 +185,7 @@ type Consumer struct {
 
 // NewConsumer creates a new Consumer instance. w is the underlying writer.
 // bufferSize is how many values the buffer holds.
-func NewConsumer(w RecordWriter, bufferSize int) *Consumer {
+func NewConsumer(w RecordWriter, bufferSize uint) *Consumer {
 	return newConsumer(w, bufferSize)
 }
 
@@ -261,11 +261,11 @@ func (s *ConsumerMetricsStore) Metrics(m *ConsumerMetrics) {
 // ConsumerWithMetrics instance.
 type ConsumerAttributes struct {
 	// The number of writing goroutines
-	Concurrency int
+	Concurrency uint
 	// The number of records written each time
-	BatchSize int
+	BatchSize uint
 	// The maximum records per second per goroutine. 0 means unlimited.
-	RecordsPerSecond int
+	RecordsPerSecond uint
 	// The time period length for rolled up values.
 	// A value bigger than 0 means that client should feed this consumer
 	// store.NamedIterator instances that report summarised values for
@@ -276,7 +276,7 @@ type ConsumerAttributes struct {
 }
 
 // TotalRecordsPerSecond returns RecordsPerSecond * Concurrency
-func (c *ConsumerAttributes) TotalRecordsPerSecond() int {
+func (c *ConsumerAttributes) TotalRecordsPerSecond() uint {
 	return c.RecordsPerSecond * c.Concurrency
 }
 
@@ -353,29 +353,26 @@ func (b *ConsumerWithMetricsBuilder) AddHook(hook RecordWriteHooker) {
 }
 
 // SetRecordsPerSecond throttles writes. Default is 0 which means no
-// throttling. SetRecordsPerSecond panics if recordsPerSecond is negative.
+// throttling.
 func (b *ConsumerWithMetricsBuilder) SetRecordsPerSecond(
-	recordsPerSecond int) {
-	if recordsPerSecond < 0 {
-		panic("recordsPerSecond must be non negative")
-	}
+	recordsPerSecond uint) {
 	b.c.attributes.RecordsPerSecond = recordsPerSecond
 }
 
 // SetBufferSize sets how many values the consumer will buffer before
 // writing them out. The default is 1000. SetBufferSize panics if size < 1.
-func (b *ConsumerWithMetricsBuilder) SetBufferSize(size int) {
+func (b *ConsumerWithMetricsBuilder) SetBufferSize(size uint) {
 	if size < 1 {
-		panic("positive, non-zero size required.")
+		panic("non-zero size required.")
 	}
 	b.c.attributes.BatchSize = size
 }
 
 // SetConcurrency sets how many goroutines will write to the underlying
 // writer. Default is 1. SetConcurrency panics if concurrency < 1.
-func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency int) {
+func (b *ConsumerWithMetricsBuilder) SetConcurrency(concurrency uint) {
 	if concurrency < 1 {
-		panic("positive, non-zero concurrency required.")
+		panic("non-zero concurrency required.")
 	}
 	b.c.attributes.Concurrency = concurrency
 }

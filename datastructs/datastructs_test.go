@@ -83,11 +83,11 @@ func TestConfigFile(t *testing.T) {
 	if len(applications) != 3 {
 		t.Error("Expected 3 applications.")
 	}
-	portAndName := make(map[int]string)
+	portAndName := make(map[uint]string)
 	for _, app := range applications {
 		portAndName[app.Port()] = app.Name()
 	}
-	expected := map[int]string{
+	expected := map[uint]string{
 		2222: "An application",
 		6910: "Health Metrics",
 		6970: "Dominator",
@@ -164,9 +164,9 @@ func newStore(
 	t *testing.T,
 	testName string,
 	valueCount,
-	pageCount int,
+	pageCount uint,
 	inactiveThreshhold float64,
-	degree int) *store.Store {
+	degree uint) *store.Store {
 	result := store.NewStore(
 		valueCount, pageCount, inactiveThreshhold, degree)
 	dirSpec, err := tricorder.RegisterDirectory("/" + testName)
@@ -235,7 +235,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
 	assertValueEquals(t, "host3", endpointId.HostName())
-	assertValueEquals(t, 35, endpointId.Port())
+	assertValueEquals(t, uint(35), endpointId.Port())
 
 	// Trying to add to inactive endpoint should fail
 	if _, err := aStore.AddBatch(endpointId, 9999.0, metrics.SimpleList(nil)); err != store.ErrInactive {
@@ -505,7 +505,7 @@ func assertValueEquals(
 
 func assertApplication(
 	t *testing.T,
-	port int,
+	port uint,
 	name string,
 	protocol string,
 	app *Application) {

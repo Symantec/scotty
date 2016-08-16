@@ -11,21 +11,24 @@ import (
 // This file contains all the code related to the page queue.
 
 type pageQueueType struct {
-	valueCountPerPage  int
+	valueCountPerPage  uint
 	inactiveThreshhold float64
-	degree             int
+	degree             uint
 	lock               sync.Mutex
 	pq                 *btreepq.PageQueue
 }
 
 func newPageQueueType(
-	bytesPerPage int,
-	pageCount int,
+	bytesPerPage uint,
+	pageCount uint,
 	inactiveThreshhold float64,
-	degree int) *pageQueueType {
+	degree uint) *pageQueueType {
+	if inactiveThreshhold < 0.0 {
+		panic("inactiveThreshhold cannot be negative")
+	}
 	pages := btreepq.New(
 		pageCount,
-		int(float64(pageCount)*inactiveThreshhold),
+		uint(float64(pageCount)*inactiveThreshhold),
 		degree,
 		func() btreepq.Page {
 			return newPageWithMetaDataType(bytesPerPage)
@@ -37,7 +40,7 @@ func newPageQueueType(
 		pq:                 pages}
 }
 
-func (s *pageQueueType) MaxValuesPerPage() int {
+func (s *pageQueueType) MaxValuesPerPage() uint {
 	return s.valueCountPerPage
 }
 

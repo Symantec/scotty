@@ -122,7 +122,7 @@ type Logger interface {
 // Endpoint instances are safe to use with multiple goroutines.
 type Endpoint struct {
 	host           string
-	port           int
+	port           uint
 	connector      sources.Connector
 	onePollAtATime chan bool
 	state          *State
@@ -132,7 +132,7 @@ type Endpoint struct {
 // NewEndpointWithConnector creates a new endpoint for given host, port
 // and connector.
 func NewEndpointWithConnector(
-	hostname string, port int, connector sources.Connector) *Endpoint {
+	hostname string, port uint, connector sources.Connector) *Endpoint {
 	return newEndpoint(hostname, port, connector)
 }
 
@@ -142,7 +142,7 @@ func (e *Endpoint) HostName() string {
 }
 
 // Port returns the port to collect metrics.
-func (e *Endpoint) Port() int {
+func (e *Endpoint) Port() uint {
 	return e.port
 }
 
@@ -164,24 +164,24 @@ func (e *Endpoint) Poll(sweepStartTime time.Time, logger Logger) {
 // SetConcurrentPolls sets the maximum number of concurrent polls.
 // Call SetConcurrentPolls at the beginning of the main() function before
 // calling Endpoint.Poll
-func SetConcurrentPolls(x int) {
+func SetConcurrentPolls(x uint) {
 	setConcurrentPolls(x)
 }
 
 // ConcurrentPolls returns the maximum number of concurrent polls.
 // Default is 2 * number of CPUs
-func ConcurrentPolls() int {
+func ConcurrentPolls() uint {
 	return concurrentPolls
 }
 
 // SetConcurrentConnects sets the maximum number of concurrent connects.
 // Call SetConcurrentConnects at the beginning of the main() function before
 // calling Endpoint.Poll
-func SetConcurrentConnects(x int) {
+func SetConcurrentConnects(x uint) {
 	setConcurrentConnects(x)
 }
 
 // ConcurrentConnects returns the maximum number of concurrent connects.
-func ConcurrentConnects() int {
+func ConcurrentConnects() uint {
 	return concurrentConnects
 }

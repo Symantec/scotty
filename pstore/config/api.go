@@ -80,8 +80,8 @@ func Reset(configs ...Config) {
 // Decorator creates a decorated writer.
 type Decorator struct {
 	// Maximum reocrds to write per second. Optional.
-	// 0 or negative means no limit.
-	RecordsPerSecond int `yaml:"recordsPerSecond"`
+	// 0 means no limit.
+	RecordsPerSecond uint `yaml:"recordsPerSecond"`
 	// Metrics whose name matches DebugMetricRegex AND whose host matches
 	// DebugHostRegex are written to the debug file. Empty values in
 	// both of these fields means no debugging. An empty value in
@@ -103,11 +103,11 @@ type ConsumerConfig struct {
 	// The name of the consumer. Required.
 	Name string `yaml:"name"`
 	// The number of goroutines doing writing. Optional.
-	// A zero or negative value means 1.
-	Concurrency int `yaml:"concurrency"`
+	// A zero value means 1.
+	Concurrency uint `yaml:"concurrency"`
 	// The number of values written each time. Optional.
-	// A zero or negative value means 1000.
-	BatchSize int `yaml:"batchSize"`
+	// A zero value means 1000.
+	BatchSize uint `yaml:"batchSize"`
 	// The length of time for rolling up values when writing. Optional.
 	// Zero means write every value and do no rollup.
 	RollUpSpan time.Duration `yaml:"rollUpSpan"`

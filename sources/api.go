@@ -8,7 +8,7 @@ import (
 // Connector connects to a particular type of source.
 // Connector implementations must be safe to use with multiple goroutines.
 type Connector interface {
-	Connect(host string, port int) (Poller, error)
+	Connect(host string, port uint) (Poller, error)
 	Name() string
 }
 

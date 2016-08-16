@@ -27,14 +27,14 @@ type Page interface {
 
 // PageQueueStats represents statistics for a PageQueue
 type PageQueueStats struct {
-	LowPriorityCount      int
-	HighPriorityCount     int
+	LowPriorityCount      uint
+	HighPriorityCount     uint
 	NextLowPrioritySeqNo  uint64
 	NextHighPrioritySeqNo uint64
 	EndSeqNo              uint64
 }
 
-func (s *PageQueueStats) TotalCount() int {
+func (s *PageQueueStats) TotalCount() uint {
 	return s.LowPriorityCount + s.HighPriorityCount
 }
 
@@ -59,7 +59,7 @@ type PageQueue struct {
 
 	// Number of pages that must be in high before the page queue ignores low
 	// when finding the next page.
-	threshhold int
+	threshhold uint
 
 	// The next available sequence number. This value increases monotonically.
 	nextSeqNo uint64
@@ -74,7 +74,7 @@ type PageQueue struct {
 func New(
 	pageCount,
 	threshhold,
-	degree int,
+	degree uint,
 	creater func() Page) *PageQueue {
 	if pageCount < 1 {
 		panic("pageCount must be at least 1")

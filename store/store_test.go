@@ -188,9 +188,9 @@ func newStore(
 	t *testing.T,
 	testName string,
 	valueCount,
-	pageCount int,
+	pageCount uint,
 	inactiveThreshhold float64,
-	degree int) *store.Store {
+	degree uint) *store.Store {
 	result := store.NewStore(
 		valueCount, pageCount, inactiveThreshhold, degree)
 	dirSpec, err := tricorder.RegisterDirectory("/" + testName)
@@ -3146,7 +3146,7 @@ func addBatch(
 	endpointId *scotty.Endpoint,
 	ts float64,
 	m metrics.List,
-	count int) {
+	count uint) {
 	out, err := astore.AddBatch(endpointId, ts, m)
 	if err != nil {
 		t.Errorf("Expected AddBatch to succeed")

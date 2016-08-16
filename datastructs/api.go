@@ -151,6 +151,12 @@ func (a *ApplicationStatuses) All() []*ApplicationStatus {
 	return a.all()
 }
 
+// AllWithStore works like All, but also returns the current store.
+func (a *ApplicationStatuses) AllWithStore() (
+	[]*ApplicationStatus, *store.Store) {
+	return a.allWithStore()
+}
+
 // EndpointIdByHostAndName Returns the endpoint Id for given host and
 // application name along with the current store. If no such host and
 // application name combo exists, returns nil and the curent store.

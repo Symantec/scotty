@@ -371,6 +371,27 @@ func (t *timestampSeriesType) AcceptPage(page *pageWithMetaDataType) {
 	t.pages.AcceptPage(page)
 }
 
+// FindBetween returns timestamps falling between start inclusive and
+// end exclusive.
+func (t *timestampSeriesType) FindBetween(
+	start, end float64) (result []float64) {
+	var record Record
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	appender := AppenderFilterFunc(
+		(*tsAppenderType)(&result),
+		func(r *Record) bool {
+			return r.TimeStamp >= start && r.TimeStamp < end
+		},
+	)
+	if !t.pages.FetchForward(start, kPlusInf, &record, appender) {
+		return
+	}
+	record.TimeStamp = t.lastTs
+	appender.Append(&record)
+	return
+}
+
 // FindAfter returns timestamps after start and returns at most maxCount
 // timestamps. If maxCount = 0, returns all timestamps after start.
 func (t *timestampSeriesType) FindAfter(

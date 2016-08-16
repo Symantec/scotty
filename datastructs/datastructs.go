@@ -181,9 +181,7 @@ func (a *ApplicationStatuses) logChangedMetricCount(
 	}
 }
 
-func (a *ApplicationStatuses) all() (result []*ApplicationStatus) {
-	a.lock.Lock()
-	defer a.lock.Unlock()
+func (a *ApplicationStatuses) _all() (result []*ApplicationStatus) {
 	result = make([]*ApplicationStatus, len(a.byEndpoint))
 	idx := 0
 	for _, val := range a.byEndpoint {
@@ -192,6 +190,19 @@ func (a *ApplicationStatuses) all() (result []*ApplicationStatus) {
 		idx++
 	}
 	return
+}
+
+func (a *ApplicationStatuses) all() (result []*ApplicationStatus) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	return a._all()
+}
+
+func (a *ApplicationStatuses) allWithStore() (
+	result []*ApplicationStatus, astore *store.Store) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	return a._all(), a.currentStore
 }
 
 func (a *ApplicationStatuses) endpointIdByHostAndName(host, name string) (

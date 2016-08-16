@@ -4,6 +4,7 @@ package store
 import (
 	"errors"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -565,6 +566,27 @@ func (s *Store) ByEndpointStrategy(
 // end points.
 func (s *Store) TimeLeft(name string) (seconds float64) {
 	return s.timeLeft(name)
+}
+
+// TsdbTimeSeries returns the time series with given name from given endpoint.
+//
+// If no such metric exists for given endpoint, TsdbTimeSeries returns false
+// instead of true for the second argument.
+//
+// name is the name of the time series; endpointId identifies the endpoint.
+// start and end are seconds since Jan 1, 1970 and denote the start time
+// inclusive and the end time exclusive.
+//
+// TsdbTimeSeries only works on time series with numeric values. For other
+// time series, it returns nil, false as if the time series were not founc.
+// If multiple time series with different numeric types exist for the
+// same name, TsdbTimeSeries merges them together in the result as floats.
+// Any inactive flags found are not reflected in returned value.
+func (s *Store) TsdbTimeSeries(
+	name string,
+	endpointId interface{},
+	start, end float64) (tsdb.TimeSeries, bool) {
+	return s.tsdbTimeSeries(name, endpointId, start, end)
 }
 
 // NamedIteratorForEndpoint returns an iterator for the given name that

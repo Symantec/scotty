@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
@@ -1130,6 +1131,77 @@ func TestIteratorSamePathDifferentType(t *testing.T) {
 	expected.VerifyDone(t)
 }
 
+func TestTsdbTimeSeries(t *testing.T) {
+	aStore := newStore(t, "TestTsdbTimeSeries", 2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Alice",
+			Description: "A description",
+			GroupId:     1,
+		},
+	}
+	playback := newPlaybackType(aMetric, 10)
+	playback.AddTimes(
+		1,
+		100.0, 200.0, 300.0, 400.0, 500.0,
+		600.0, 700.0, 800.0, 900.0, 1000.0,
+	)
+	playback.Add(
+		"Alice",
+		int32(10), int64(20), 30.0, 40.0, uint8(50.0),
+		int32(60), int64(70), uint8(80), uint16(90), 100.0)
+	playback.Play(aStore, kEndpoint0)
+	aMetric = metrics.SimpleList{
+		{
+			Path:        "Alice",
+			Description: "A description",
+			GroupId:     3,
+		},
+	}
+	playback = newPlaybackType(aMetric, 8)
+	playback.AddTimes(
+		3,
+		150.0, 250.0, 350.0, 450.0,
+		550.0, 650.0, 750.0, 850.0,
+	)
+	playback.Add(
+		"Alice",
+		uint32(15), uint64(25), uint8(35), uint16(45),
+		uint32(55), uint64(65), uint8(75), uint16(85))
+	playback.Play(aStore, kEndpoint0)
+
+	var timeSeries tsdb.TimeSeries
+	var ok bool
+	if timeSeries, ok = aStore.TsdbTimeSeries(
+		"Alice", kEndpoint0, 0, 1200.0); !ok {
+		t.Fatal("Expected to find metric Alice")
+	}
+	expectedTimeSeries := tsdb.TimeSeries{
+		{100.0, 10.0}, {150.0, 15.0}, {200.0, 20.0}, {250.0, 25.0},
+		{300.0, 30.0}, {350.0, 35.0}, {400.0, 40.0}, {450.0, 45.0},
+		{500.0, 50.0}, {550.0, 55.0}, {600.0, 60.0}, {650.0, 65.0},
+		{700.0, 70.0}, {750.0, 75.0}, {800.0, 80.0}, {850.0, 85.0},
+		{900.0, 90.0}, {1000.0, 100.0}}
+	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
+	if timeSeries, ok = aStore.TsdbTimeSeries(
+		"Alice", kEndpoint0, 150.0, 300.0); !ok {
+		t.Fatal("Expected to find metric Alice")
+	}
+	expectedTimeSeries = tsdb.TimeSeries{
+		{150.0, 15.0}, {200.0, 20.0}, {250.0, 25.0}}
+	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
+	if timeSeries, ok = aStore.TsdbTimeSeries(
+		"Alice", kEndpoint0, 10000.0, 11000.0); !ok {
+		t.Fatal("Expected to find metric Alice")
+	}
+	assertValueEquals(t, 0, len(timeSeries))
+	_, ok = aStore.TsdbTimeSeries("Bob", kEndpoint0, 500.0, 600.0)
+	if ok {
+		t.Error("Expected not to find time series bob.")
+	}
+}
+
 func TestIterator(t *testing.T) {
 	aStore := newStore(t, "TestIterator", 2, 100, 1.0, 10)
 	aStore.RegisterEndpoint(kEndpoint0)
@@ -1193,6 +1265,18 @@ func TestIterator(t *testing.T) {
 		nil,
 	)
 	playback.Play(aStore, kEndpoint0)
+
+	// Test tsdbTimeSeries
+	timeSeries, _ := aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 202.0, 502.0)
+	expectedTimeSeries := tsdb.TimeSeries{
+		{202.0, 3.0}, {302.0, 203.0}, {402.0, 203.0}}
+	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
+
+	// Test with missing values
+	timeSeries, _ = aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 600.0, 2000.0)
+	expectedTimeSeries = tsdb.TimeSeries{
+		{602.0, 503.0}, {702.0, 603.0}, {802.0, 703.0}, {902.0, 803.0}}
+	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
 
 	expected := newExpectedTsValues()
 	expected.Add("Alice", 100.0, int64(0))

@@ -2,6 +2,7 @@ package store
 
 import (
 	"container/heap"
+	"github.com/Symantec/scotty/tsdb"
 )
 
 // This file contains the code for implementing Appenders.
@@ -43,6 +44,16 @@ type tsAppenderType []float64
 
 func (t *tsAppenderType) Append(r *Record) bool {
 	*t = append(*t, r.TimeStamp)
+	return true
+}
+
+type tsdbTsValueAppenderType tsdb.TimeSeries
+
+func (t *tsdbTsValueAppenderType) Append(r *Record) bool {
+	if r.Active {
+		*t = append(*t, tsdb.TsValue{
+			Ts: r.TimeStamp, Value: r.Info.Kind().ToFloat(r.Value)})
+	}
 	return true
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -248,6 +249,21 @@ func (c *timeSeriesCollectionType) TsByName(name string) (
 	infoList := c.metricInfoStore.ByName[name]
 	for _, info := range infoList {
 		result = append(result, c.timeSeries[info])
+	}
+	return
+}
+
+func (c *timeSeriesCollectionType) TsAndTimeStampsByName(name string) (
+	result []*timeSeriesType, resultTs map[int]*timestampSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	infoList := c.metricInfoStore.ByName[name]
+	resultTs = make(map[int]*timestampSeriesType)
+	for _, info := range infoList {
+		ts := c.timeSeries[info]
+		groupId := ts.id.GroupId()
+		result = append(result, ts)
+		resultTs[groupId] = c.timestampSeries[groupId]
 	}
 	return
 }
@@ -551,6 +567,32 @@ func (c *timeSeriesCollectionType) byWhateverGroupBy(
 	}
 }
 
+func (c *timeSeriesCollectionType) tsdbTimeSeries(
+	timeSeries []*timeSeriesType,
+	timestampSeries map[int]*timestampSeriesType,
+	start float64,
+	end float64) (result tsdb.TimeSeries) {
+	if start >= end {
+		return
+	}
+	timestamps := make(map[int][]float64)
+	merger := newMerger()
+	merger.MergeOldestFirst(
+		timeSeries,
+		func(ts *timeSeriesType, appender Appender) {
+			groupId := ts.id.GroupId()
+			if timestamps[groupId] == nil {
+				timestamps[groupId] = timestampSeries[groupId].FindBetween(start, end)
+			}
+			ts.FetchForwardWithTimeStamps(
+				c.applicationId,
+				timestamps[groupId],
+				appender)
+		},
+		(*tsdbTsValueAppenderType)(&result))
+	return
+}
+
 // Unique values by metric name in descending order happening before end and
 // continuing until on or before start.
 func (c *timeSeriesCollectionType) ByName(
@@ -561,6 +603,25 @@ func (c *timeSeriesCollectionType) ByName(
 	timeSeries := c.TsByName(name)
 	partition := strategy.orderedPartition(timeSeries)
 	c.byWhateverGroupBy(timeSeries, partition, start, end, result)
+}
+
+func (c *timeSeriesCollectionType) TsdbTimeSeries(
+	name string, start, end float64) (tsdb.TimeSeries, bool) {
+	timeSeries, timestampSeries := c.TsAndTimeStampsByName(name)
+	if len(timeSeries) == 0 {
+		return nil, false
+	}
+	partition := GroupMetricByPathAndNumeric.orderedPartition(timeSeries)
+	tslen := len(timeSeries)
+	// Find the numeric one
+	for startIdx, endIdx := 0, 0; startIdx < tslen; startIdx = endIdx {
+		endIdx = nextSubset(partition, startIdx)
+		if timeSeries[startIdx].id.Kind().CanToFromFloat() {
+			return c.tsdbTimeSeries(
+				timeSeries[startIdx:endIdx], timestampSeries, start, end), true
+		}
+	}
+	return nil, false
 }
 
 // Unique values by metric prefix in descending order happening before end and

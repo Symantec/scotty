@@ -2,6 +2,7 @@ package store
 
 import (
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -72,6 +73,13 @@ func (s *Store) byNameAndEndpoint(
 	result Appender) {
 	s.byApplication[endpointId].ByName(
 		name, start, end, strategy, result)
+}
+
+func (s *Store) tsdbTimeSeries(
+	name string,
+	endpointId interface{},
+	start, end float64) (tsdb.TimeSeries, bool) {
+	return s.byApplication[endpointId].TsdbTimeSeries(name, start, end)
 }
 
 func (s *Store) byPrefixAndEndpoint(

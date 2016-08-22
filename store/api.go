@@ -578,7 +578,7 @@ func (s *Store) TimeLeft(name string) (seconds float64) {
 // inclusive and the end time exclusive.
 //
 // TsdbTimeSeries only works on time series with numeric values. For other
-// time series, it returns nil, false as if the time series were not founc.
+// time series, it returns (nil, false) as if the time series were not found.
 // If multiple time series with different numeric types exist for the
 // same name, TsdbTimeSeries merges them together in the result as floats.
 // Any inactive flags found are not reflected in returned value.

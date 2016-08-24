@@ -1,4 +1,4 @@
-// package tsdb contains the data structures for emulating TSDB API.
+// package tsdb contains the data structures for emulating the TSDB API.
 // The tsdb package must not depend on any other scotty packages.
 package tsdb
 

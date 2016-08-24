@@ -26,7 +26,8 @@ func _new(
 		high:       high,
 		low:        low,
 		threshhold: threshhold,
-		nextSeqNo:  uint64(pageCount)}
+		nextSeqNo:  uint64(pageCount),
+		creater:    creater}
 }
 
 func (p *PageQueue) popPage() Page {
@@ -50,11 +51,21 @@ func (p *PageQueue) removePage() (removed Page, ok bool) {
 	return p.popPage(), true
 }
 
+func (p *PageQueue) pushBack(page Page) {
+	page.SetSeqNo(p.nextSeqNo)
+	p.nextSeqNo++
+	insert(p.low, page)
+}
+
+func (p *PageQueue) newPage() (next Page) {
+	next = p.creater()
+	p.pushBack(next)
+	return
+}
+
 func (p *PageQueue) nextPage() (next Page) {
 	next = p.popPage()
-	next.SetSeqNo(p.nextSeqNo)
-	p.nextSeqNo++
-	insert(p.low, next)
+	p.pushBack(next)
 	return
 }
 

@@ -14,7 +14,9 @@ type pageQueueType struct {
 	valueCountPerPage  uint
 	inactiveThreshhold float64
 	degree             uint
+	bytesPerPage       uint
 	lock               sync.Mutex
+	expanding          bool
 	pq                 *btreepq.PageQueue
 }
 
@@ -37,11 +39,35 @@ func newPageQueueType(
 		valueCountPerPage:  bytesPerPage / kTsAndValueSize,
 		inactiveThreshhold: inactiveThreshhold,
 		degree:             degree,
+		bytesPerPage:       bytesPerPage,
 		pq:                 pages}
 }
 
 func (s *pageQueueType) MaxValuesPerPage() uint {
 	return s.valueCountPerPage
+}
+
+func (s *pageQueueType) maybeRemoveOnePage() {
+	result, ok := s.pq.RemovePage()
+	if ok {
+		removedPage := result.(*pageWithMetaDataType)
+		// Force the owner of the page to give it up.
+		if removedPage.owner != nil {
+			removedPage.owner.GiveUpPage(removedPage)
+		}
+		// Removed page no longer has an owner
+		removedPage.owner = nil
+	}
+}
+
+func (s *pageQueueType) FreeUpBytes(bytesToFree uint64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	var freedSoFar uint64
+	for freedSoFar < bytesToFree {
+		s.maybeRemoveOnePage()
+		freedSoFar += uint64(s.bytesPerPage)
+	}
 }
 
 func (s *pageQueueType) LessenPageCount(ratio float64) {
@@ -51,17 +77,20 @@ func (s *pageQueueType) LessenPageCount(ratio float64) {
 	s.pq.Stats(&stats)
 	pageCount := int(float64(stats.TotalCount()) * ratio)
 	for i := 0; i < pageCount; i++ {
-		result, ok := s.pq.RemovePage()
-		if ok {
-			removedPage := result.(*pageWithMetaDataType)
-			// Force the owner of the page to give it up.
-			if removedPage.owner != nil {
-				removedPage.owner.GiveUpPage(removedPage)
-			}
-			// Removed page no longer has an owner
-			removedPage.owner = nil
-		}
+		s.maybeRemoveOnePage()
 	}
+}
+
+func (s *pageQueueType) SetExpanding(b bool) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.expanding = b
+}
+
+func (s *pageQueueType) IsExpanding() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.expanding
 }
 
 func (s *pageQueueType) PageQueueStats(stats *btreepq.PageQueueStats) {
@@ -136,6 +165,13 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 	}
 
 	if err = d.RegisterMetric(
+		"/expanding",
+		s.IsExpanding,
+		units.None,
+		"Is page queue expanding."); err != nil {
+		return
+	}
+	if err = d.RegisterMetric(
 		"/maxValuesPerPage",
 		&s.valueCountPerPage,
 		units.None,
@@ -165,7 +201,12 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 func (s *pageQueueType) GivePageTo(t pageOwnerType) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	result := s.pq.NextPage().(*pageWithMetaDataType)
+	var result *pageWithMetaDataType
+	if s.expanding {
+		result = s.pq.NewPage().(*pageWithMetaDataType)
+	} else {
+		result = s.pq.NextPage().(*pageWithMetaDataType)
+	}
 	if result.owner != nil {
 		result.owner.GiveUpPage(result)
 	}

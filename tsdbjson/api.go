@@ -17,6 +17,11 @@ const (
 	AppName = "appname"
 )
 
+const (
+	// LiteralOr is the name of TSDB "literal_or" filter.
+	LiteralOr = "literal_or"
+)
+
 var (
 	// The filter is unsupported.
 	ErrUnsupportedFilter = errors.New("tsdbjson: Unsupported filter")
@@ -36,6 +41,12 @@ type Filter struct {
 	Filter string `json:"filter"`
 	// True if results should be grouped by this tag
 	GroupBy bool `json:"groupBy"`
+}
+
+// FilterDescription represents a description of a filter
+type FilterDescription struct {
+	Examples    string `json:"examples"`
+	Description string `json:"description"`
 }
 
 // Query represents a single query in an /api/query request

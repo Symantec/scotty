@@ -21,6 +21,8 @@ import (
 	"github.com/Symantec/scotty/pstore/tsdb"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/sysmemory"
+	"github.com/Symantec/scotty/tsdbexec"
+	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	trimessages "github.com/Symantec/tricorder/go/tricorder/messages"
@@ -30,6 +32,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime"
@@ -1419,6 +1422,72 @@ func main() {
 			ConnectionErrors: connectionErrors,
 		}},
 	)
+
+	tsdbServeMux := http.NewServeMux()
+
+	tsdbServeMux.Handle(
+		"/api/query",
+		tsdbexec.NewHandler(
+			func(r *tsdbjson.QueryRequest) ([]tsdbjson.TimeSeries, error) {
+				return tsdbexec.Query(r, applicationStats)
+			}))
+	tsdbServeMux.Handle(
+		"/api/aggregators",
+		tsdbexec.NewHandler(
+			func(req url.Values) ([]string, error) {
+				return []string{"avg"}, nil
+			},
+		))
+	tsdbServeMux.Handle(
+		"/api/version",
+		tsdbexec.NewHandler(
+			func(req url.Values) (map[string]string, error) {
+				return map[string]string{
+					"version": "1.0",
+				}, nil
+			},
+		))
+	tsdbServeMux.Handle(
+		"/api/config",
+		tsdbexec.NewHandler(
+			func(req url.Values) (map[string]string, error) {
+				return map[string]string{
+					"tsd.ore.auto_create_metrics": "true",
+					"tsd.ore.auto_create_tagks":   "true",
+					"tsd.ore.auto_create_tagvs":   "true",
+				}, nil
+			},
+		))
+	tsdbServeMux.Handle(
+		"/api/config/filters",
+		tsdbexec.NewHandler(
+			func(req url.Values) (interface{}, error) {
+				return map[string]*tsdbjson.FilterDescription{
+					tsdbjson.LiteralOr: tsdbexec.LiteralOrDesc,
+				}, nil
+			},
+		))
+	tsdbServeMux.Handle(
+		"/api/dropcaches",
+		tsdbexec.NewHandler(
+			func(req url.Values) (map[string]string, error) {
+				return map[string]string{
+					"message": "Caches dropped",
+					"status":  "200",
+				}, nil
+			},
+		))
+	tsdbServeMux.Handle(
+		"/api",
+		tsdbexec.NotFoundHandler,
+	)
+
+	go func() {
+		if err := http.ListenAndServe(":4242", tsdbServeMux); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *fPort), nil); err != nil {
 		log.Fatal(err)
 	}

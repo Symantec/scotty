@@ -410,8 +410,28 @@ func NewStoreBytesPerPage(
 // value between 0.0 and 1.0 exclusive. If the store is using 1 million pages
 // and ratio is 0.1, then LessenPageCount will remove 100K pages from the
 // system leaving only 900K pages once it returns.
+//
+// For now we don't use this in our current memory management strategy.
+// TODO: See if it is safe to remove this code.
 func (s *Store) LessenPageCount(ratio float64) {
 	s.supplier.LessenPageCount(ratio)
+}
+
+// FreeUpBytes attempts to free up bytesToFree bytes by releasing pages.
+func (s *Store) FreeUpBytes(bytesToFree uint64) {
+	s.supplier.FreeUpBytes(bytesToFree)
+}
+
+// SetExpanding controls wither or not the store allocates new pages as
+// needed (true) or tries to recycle existing pages (false)
+func (s *Store) SetExpanding(expanding bool) {
+	s.supplier.SetExpanding(expanding)
+}
+
+// IsExpanding returns true if the store allocates new pages as needed or
+// false if it recycles existing pages.
+func (s *Store) IsExpanding() bool {
+	return s.supplier.IsExpanding()
 }
 
 // ShallowCopy returns a shallow copy of this store. In an environment with

@@ -63,6 +63,7 @@ type PageQueue struct {
 
 	// The next available sequence number. This value increases monotonically.
 	nextSeqNo uint64
+	creater   func() Page
 }
 
 // New returns a new PageQueue.
@@ -86,6 +87,12 @@ func New(
 // by adding it to the end of the low priority queue.
 func (p *PageQueue) NextPage() Page {
 	return p.nextPage()
+}
+
+// NewPage works like NextPage except that it always returns a brand new
+// page and it increases the total page count by 1 in this instance.
+func (p *PageQueue) NewPage() Page {
+	return p.newPage()
 }
 
 // RemovePage works like NextPage except that it removes returned page from

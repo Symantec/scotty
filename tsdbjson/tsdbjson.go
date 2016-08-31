@@ -240,7 +240,7 @@ func newAverageGenerator(downSample *DownSampleSpec) (
 
 func newTagFilter(filterType, filterValue string) (tsdb.TagFilter, error) {
 	switch filterType {
-	case "literal_or":
+	case LiteralOr:
 		return newLiteralOr(filterValue)
 	default:
 		return nil, ErrUnsupportedFilter

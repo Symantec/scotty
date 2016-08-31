@@ -182,3 +182,8 @@ func NewAggregatorGenerator(
 func NewTagFilter(filterType, filterValue string) (tsdb.TagFilter, error) {
 	return newTagFilter(filterType, filterValue)
 }
+
+// Escape escapes s for open TSDB. "Health Metric" -> "Health_20Metric"
+func Escape(s string) string {
+	return escape(s)
+}

@@ -8,6 +8,7 @@ import (
 
 func TestEngine(t *testing.T) {
 	engine := suggest.NewEngine()
+	assertValueEquals(t, 0, len(engine.Suggest(0, "")))
 	engine.Add("A")
 	engine.Add("Hi")
 	engine.Add("Hello")
@@ -51,11 +52,24 @@ func TestConstEngine(t *testing.T) {
 		t, []string{"a", "an", "and", "aback"}, engine.Suggest(0, "a"))
 	assertValueDeepEquals(
 		t, []string{"aback"}, engine.Suggest(0, "ab"))
+	assertValueDeepEquals(
+		t, []string{"log", "logger"}, engine.Suggest(2, ""))
+	assertValueDeepEquals(
+		t, []string{"log", "logger", "loggest", "a", "an", "and", "aback"},
+		engine.Suggest(0, ""))
 	assertValueEquals(t, 0, len(engine.Suggest(0, "abc")))
 	assertValueEquals(t, 0, len(engine.Suggest(0, "m")))
 	assertValueEquals(t, 0, len(engine.Suggest(5, "m")))
 
 }
+
+func TestNilEngine(t *testing.T) {
+	engine := suggest.NewSuggester()
+	assertValueEquals(t, 0, len(engine.Suggest(0, "")))
+	assertValueEquals(t, 0, len(engine.Suggest(0, "a")))
+	assertValueEquals(t, 0, len(engine.Suggest(2, "a")))
+}
+
 func assertValueEquals(
 	t *testing.T, expected, actual interface{}) bool {
 	if expected != actual {

@@ -20,6 +20,7 @@ import (
 	"github.com/Symantec/scotty/pstore/kafka"
 	"github.com/Symantec/scotty/pstore/tsdb"
 	"github.com/Symantec/scotty/store"
+	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/scotty/tsdbexec"
 	"github.com/Symantec/scotty/tsdbjson"
@@ -109,6 +110,10 @@ var (
 	fDegree = flag.Uint(
 		"degree", 10, "Degree of btree")
 )
+
+// nameSetType represents a set of strings. Instances of this type
+// are mutable.
+type nameSetType map[string]bool
 
 type byHostName messages.ErrorList
 
@@ -492,7 +497,9 @@ type loggerType struct {
 	CollectionTimesDist *tricorder.CumulativeDistribution
 	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
-	totalCounts         []*totalCountType
+	NamesSentToSuggest  nameSetType
+	MetricNameAdder     suggest.Adder
+	TotalCounts         []*totalCountType
 }
 
 func (l *loggerType) LogStateChange(
@@ -530,11 +537,12 @@ func (l *loggerType) LogResponse(
 		ts,
 		list)
 	if err == nil {
+		l.reportNewNamesForSuggest(list)
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
-		if l.totalCounts != nil {
-			for i := range l.totalCounts {
-				l.totalCounts[i].Update(l.Store, e)
+		if l.TotalCounts != nil {
+			for i := range l.TotalCounts {
+				l.TotalCounts[i].Update(l.Store, e)
 			}
 		}
 	}
@@ -544,6 +552,19 @@ func (l *loggerType) LogResponse(
 		return nil
 	}
 	return err
+}
+
+func (l *loggerType) reportNewNamesForSuggest(
+	list metrics.List) {
+	length := list.Len()
+	for i := 0; i < length; i++ {
+		var value metrics.Value
+		list.Index(i, &value)
+		if !l.NamesSentToSuggest[value.Path] {
+			l.MetricNameAdder.Add(value.Path)
+			l.NamesSentToSuggest[value.Path] = true
+		}
+	}
 }
 
 type gzipResponseWriter struct {
@@ -1165,6 +1186,7 @@ func (w writeHookerType) WriteHook(
 func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger,
+	tagvAdder suggest.Adder,
 	maybeNilMemoryManager *memoryManagerType) *datastructs.ApplicationStatuses {
 	var astore *store.Store
 	fmt.Println("Initialization started.")
@@ -1194,9 +1216,12 @@ func createApplicationStats(
 	stats := datastructs.NewApplicationStatuses(appList, astore)
 	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
 	machines := <-mdbChannel
+	theHostNames := hostNames(machines.Machines)
+	for _, aName := range theHostNames {
+		tagvAdder.Add(aName)
+	}
 	stats.MarkHostsActiveExclusively(
-		duration.TimeToFloat(time.Now()),
-		hostNames(machines.Machines))
+		duration.TimeToFloat(time.Now()), theHostNames)
 	fmt.Println("Initialization complete.")
 	// Endpoint refresher goroutine
 	go func() {
@@ -1214,6 +1239,7 @@ func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
 	totalCounts []*totalCountType,
+	metricNameAdder suggest.Adder,
 	maybeNilMemoryManager *memoryManagerType) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
@@ -1266,19 +1292,36 @@ func startCollector(
 
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
+		// We assign each endpoint its very own nameSetType instance
+		// to store metric names already sent to suggest.
+		// Only that endpoint's fetch goroutine reads and modifies
+		// the contents of its nameSetType instance. Although
+		// this goroutine creates nameSetType instances and manages
+		// the references to them, it never reads or modifies the
+		// contents of any nameSetType instance after creating it.
+		endpointToNamesSentToSuggest := make(
+			map[*collector.Endpoint]nameSetType)
 		for {
 			endpoints, metricStore := appStats.ActiveEndpointIds()
-			logger := &loggerType{
-				Store:               metricStore,
-				AppStats:            appStats,
-				ConnectionErrors:    connectionErrors,
-				CollectionTimesDist: collectionTimesDist,
-				ByProtocolDist:      byProtocolDist,
-				ChangedMetricsDist:  changedMetricsPerEndpointDist,
-				totalCounts:         totalCounts,
-			}
 			sweepTime := time.Now()
 			for _, endpoint := range endpoints {
+				namesSentToSuggest := endpointToNamesSentToSuggest[endpoint]
+				if namesSentToSuggest == nil {
+					namesSentToSuggest = make(nameSetType)
+					endpointToNamesSentToSuggest[endpoint] = namesSentToSuggest
+				}
+				logger := &loggerType{
+					Store:               metricStore,
+					AppStats:            appStats,
+					ConnectionErrors:    connectionErrors,
+					CollectionTimesDist: collectionTimesDist,
+					ByProtocolDist:      byProtocolDist,
+					ChangedMetricsDist:  changedMetricsPerEndpointDist,
+					NamesSentToSuggest:  namesSentToSuggest,
+					MetricNameAdder:     metricNameAdder,
+					TotalCounts:         totalCounts,
+				}
+
 				endpoint.Poll(sweepTime, logger)
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
@@ -1366,6 +1409,18 @@ func handleSignals(logger *log.Logger) {
 	}()
 }
 
+type tsdbAdderType struct {
+	wrapped suggest.Adder
+}
+
+func (a *tsdbAdderType) Add(s string) {
+	a.wrapped.Add(tsdbjson.Escape(s))
+}
+
+func newTsdbAdder(adder suggest.Adder) suggest.Adder {
+	return &tsdbAdderType{wrapped: adder}
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
@@ -1379,13 +1434,26 @@ func main() {
 		log.Println(err)
 		logger.Println(err)
 	}
+	metricNameEngine := suggest.NewEngine()
+	metricNameAdder := newTsdbAdder(metricNameEngine)
+	tagkEngine := suggest.NewSuggester("appname", "HostName")
+	tagvEngine := suggest.NewEngine()
+	tagvAdder := newTsdbAdder(tagvEngine)
+
 	appList := createApplicationList()
+	for _, app := range appList.All() {
+		tagvAdder.Add(app.Name())
+	}
 	applicationStats := createApplicationStats(
-		appList, logger, maybeNilMemoryManager)
+		appList, logger, tagvAdder, maybeNilMemoryManager)
 	connectionErrors := newConnectionErrorsType()
 	if consumerBuilders == nil {
 		startCollector(
-			applicationStats, connectionErrors, nil, maybeNilMemoryManager)
+			applicationStats,
+			connectionErrors,
+			nil,
+			metricNameAdder,
+			maybeNilMemoryManager)
 	} else {
 		totalCounts := startPStoreLoops(
 			applicationStats,
@@ -1395,6 +1463,7 @@ func main() {
 			applicationStats,
 			connectionErrors,
 			totalCounts,
+			metricNameAdder,
 			maybeNilMemoryManager)
 	}
 
@@ -1431,6 +1500,19 @@ func main() {
 			func(r *tsdbjson.QueryRequest) ([]tsdbjson.TimeSeries, error) {
 				return tsdbexec.Query(r, applicationStats)
 			}))
+	tsdbServeMux.Handle(
+		"/api/suggest",
+		tsdbexec.NewHandler(
+			func(req url.Values) ([]string, error) {
+				return tsdbexec.Suggest(
+					req,
+					map[string]suggest.Suggester{
+						"metrics": metricNameEngine,
+						"tagk":    tagkEngine,
+						"tagv":    tagvEngine,
+					})
+			},
+		))
 	tsdbServeMux.Handle(
 		"/api/aggregators",
 		tsdbexec.NewHandler(

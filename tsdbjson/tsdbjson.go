@@ -3,6 +3,7 @@ package tsdbjson
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdb/aggregators"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
@@ -220,13 +221,16 @@ func parseQueryRequest(request *QueryRequest) (
 					Value: filter.Filter,
 				}
 				parsedQueries[i].Options.GroupByHostName = filter.GroupBy
-			}
-			if filter.Tagk == AppName {
+			} else if filter.Tagk == AppName {
 				parsedQueries[i].Options.AppNameFilter = &FilterSpec{
 					Type:  filter.Type,
 					Value: filter.Filter,
 				}
 				parsedQueries[i].Options.GroupByAppName = filter.GroupBy
+			} else {
+				err = errors.New(
+					fmt.Sprintf("Unrecognised tagk: '%s'", filter.Tagk))
+				return
 			}
 		}
 	}

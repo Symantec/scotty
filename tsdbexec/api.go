@@ -6,8 +6,10 @@ package tsdbexec
 
 import (
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdbjson"
 	"net/http"
+	"net/url"
 )
 
 var (
@@ -21,6 +23,14 @@ var (
 		Description: "Accepts one or more exact values and matches if the series contains any of them. Multiple values can be included and must be separated by the | (pipe) character. The filter is case sensitive and will not allow characters that TSDB does not allow at write time.",
 	}
 )
+
+// Suggest corresponds to /api/suggest TSDB API call.
+func Suggest(
+	params url.Values,
+	suggesterMap map[string]suggest.Suggester) (
+	result []string, err error) {
+	return _suggest(params, suggesterMap)
+}
 
 // Query corresponds to the /api/query TSDB API call.
 func Query(

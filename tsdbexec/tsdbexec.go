@@ -2,13 +2,17 @@ package tsdbexec
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbimpl"
 	"github.com/Symantec/scotty/tsdbjson"
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 )
 
 var (
@@ -22,6 +26,34 @@ func newTagFilter(spec *tsdbjson.FilterSpec) (
 		return nil, nil
 	}
 	return tsdbjson.NewTagFilter(spec.Type, spec.Value)
+}
+
+func _suggest(
+	params url.Values,
+	suggesterMap map[string]suggest.Suggester) (
+	result []string, err error) {
+	maxStr := params.Get("max")
+	var max int
+	if maxStr == "" {
+		max = 25
+	} else {
+		max, err = strconv.Atoi(params.Get("max"))
+		if err != nil {
+			return
+		}
+	}
+	qtype := params.Get("type")
+	suggester := suggesterMap[qtype]
+	if suggester != nil {
+		result = suggester.Suggest(max, params.Get("q"))
+		if result == nil {
+			result = []string{}
+		}
+		return
+	} else {
+		return nil, errors.New(
+			fmt.Sprintf("Invalid 'type' parameter:%s", qtype))
+	}
 }
 
 func query(

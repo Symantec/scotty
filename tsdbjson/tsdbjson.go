@@ -2,6 +2,7 @@ package tsdbjson
 
 import (
 	"bytes"
+	"errors"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdb/aggregators"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
@@ -11,6 +12,15 @@ import (
 
 const (
 	kNoVal = -256
+)
+
+const (
+	kMaxDownSampleBuckets = 1000
+)
+
+var (
+	kErrTimeRangeTooBig = errors.New(
+		"Please use a smaller time range or larger downsample size.")
 )
 
 var (
@@ -185,6 +195,14 @@ func parseDownSample(downSampleStr string) (result *DownSampleSpec, err error) {
 func parseQueryRequest(request *QueryRequest) (
 	result []ParsedQuery, err error) {
 	parsedQueries := make([]ParsedQuery, len(request.Queries))
+	endInMillis := request.EndInMillis
+	if endInMillis == 0 {
+		now := time.Now()
+		endInMillis = now.Unix()*1000 + int64(now.Nanosecond())/1000/1000
+	}
+	if endInMillis < request.StartInMillis {
+		endInMillis = request.StartInMillis
+	}
 	for i := range request.Queries {
 		parsedQueries[i].Metric = unescape(request.Queries[i].Metric)
 		parsedQueries[i].Aggregator.Type = request.Queries[i].Aggregator
@@ -194,7 +212,7 @@ func parseQueryRequest(request *QueryRequest) (
 			return
 		}
 		parsedQueries[i].Start = float64(request.StartInMillis) / 1000.0
-		parsedQueries[i].End = float64(request.EndInMillis) / 1000.0
+		parsedQueries[i].End = float64(endInMillis) / 1000.0
 		for _, filter := range request.Queries[i].Filters {
 			if filter.Tagk == HostName {
 				parsedQueries[i].Options.HostNameFilter = &FilterSpec{
@@ -233,8 +251,11 @@ func newAverageGenerator(downSample *DownSampleSpec) (
 	}
 	// Defensive copy as caller could change struct later
 	duration := downSample.DurationInSeconds
-	return func(start, end float64) tsdb.Aggregator {
-		return aggregators.NewAverage(start, end, duration)
+	return func(start, end float64) (tsdb.Aggregator, error) {
+		if (end-start)/duration > kMaxDownSampleBuckets {
+			return nil, kErrTimeRangeTooBig
+		}
+		return aggregators.NewAverage(start, end, duration), nil
 	}, nil
 }
 

@@ -20,7 +20,7 @@ func query(
 	metricName string,
 	aggregatorGen tsdb.AggregatorGenerator,
 	start, end float64,
-	options *QueryOptions) (*tsdb.TaggedTimeSeriesSet, error) {
+	options *QueryOptions) (result *tsdb.TaggedTimeSeriesSet, err error) {
 	if options == nil {
 		options = &QueryOptions{}
 	}
@@ -37,7 +37,11 @@ func query(
 					end)
 				if ok {
 					metricNameFound = true
-					aggregator := aggregatorGen(start, end)
+					var aggregator tsdb.Aggregator
+					aggregator, err = aggregatorGen(start, end)
+					if err != nil {
+						return
+					}
 					aggregator.Add(timeSeries)
 					aggregatedTimeSeries := aggregator.Aggregate()
 					if len(aggregatedTimeSeries) != 0 {
@@ -73,7 +77,10 @@ func query(
 					}
 					aggregator := aggregatorMap[tagSet]
 					if aggregator == nil {
-						aggregator = aggregatorGen(start, end)
+						aggregator, err = aggregatorGen(start, end)
+						if err != nil {
+							return
+						}
 						aggregatorMap[tagSet] = aggregator
 					}
 					aggregator.Add(timeSeries)

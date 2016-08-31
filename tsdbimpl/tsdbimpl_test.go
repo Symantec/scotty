@@ -85,8 +85,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		500.0, 600.0,
 		nil); err != nil {
@@ -111,8 +111,8 @@ func TestAPI(t *testing.T) {
 	if _, err = tsdbimpl.Query(
 		appStatus,
 		"/not there",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		500.0, 600.0,
 		nil); err != tsdbimpl.ErrNoSuchMetric {
@@ -122,8 +122,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/bar",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		500.0, 1000.0,
 		nil); err != nil {
@@ -148,8 +148,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		501.0, 539.0,
 		nil); err != nil {
@@ -177,8 +177,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -226,8 +226,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		700.0, 900.0,
 		options); err != nil {
@@ -249,8 +249,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -291,8 +291,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -372,8 +372,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		700.0, 900.0,
 		options); err != nil {
@@ -403,8 +403,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -452,8 +452,8 @@ func TestAPI(t *testing.T) {
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -486,8 +486,8 @@ func TestAPI(t *testing.T) {
 	if _, err = tsdbimpl.Query(
 		appStatus,
 		"/foo",
-		func(start, end float64) tsdb.Aggregator {
-			return aggregators.NewAverage(start, end, 20.0)
+		func(start, end float64) (tsdb.Aggregator, error) {
+			return aggregators.NewAverage(start, end, 20.0), nil
 		},
 		400.0, 700.0,
 		options); err != tsdbimpl.ErrNoSuchMetric {

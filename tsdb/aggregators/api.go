@@ -33,6 +33,12 @@ var (
 		},
 		updaterCreater: kNaN,
 	}
+	Min = &Aggregator{
+		aggListCreater: func(size int) aggregatorListType {
+			return make(minListType, size)
+		},
+		updaterCreater: kNaN,
+	}
 	Sum = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
 			return make(sumListType, size)
@@ -46,6 +52,7 @@ var (
 		"avg":   Avg,
 		"count": Count,
 		"max":   Max,
+		"min":   Min,
 		"sum":   Sum,
 	}
 )

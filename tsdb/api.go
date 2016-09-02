@@ -67,4 +67,4 @@ type Aggregator interface {
 // start is the start time for the aggregator inclusive;
 // end is the end time for the aggregator exclusive.
 // start and end are seconds since Jan 1, 1970.
-type AggregatorGenerator func(start, end float64) Aggregator
+type AggregatorGenerator func(start, end float64) (Aggregator, error)

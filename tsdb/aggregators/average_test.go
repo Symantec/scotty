@@ -47,6 +47,11 @@ func TestAverageStrangeStartAndEnd(t *testing.T) {
 	assertValueDeepEqual(t, expected, aggregated)
 }
 
+func TestStartEqualsEnd(t *testing.T) {
+	aggregators.NewAverage(1057.0, 1057.0, 200.0)
+	aggregators.NewAverage(1000.0, 1000.0, 200.0)
+}
+
 func TestNegativeStart(t *testing.T) {
 	aggregator := aggregators.NewAverage(-29028.0, 29028.0, 10000.0)
 	aggregator.Add(tsdb.TimeSeries{

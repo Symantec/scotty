@@ -27,6 +27,9 @@ type averageType struct {
 }
 
 func newAverage(start, end, downSample float64) tsdb.Aggregator {
+	if end < start {
+		panic("end cannot be less than start")
+	}
 	result := &averageType{
 		downSamplePolicy: newDownSamplePolicyType(start, downSample),
 	}

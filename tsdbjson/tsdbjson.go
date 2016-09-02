@@ -238,28 +238,32 @@ func parseQueryRequest(request *QueryRequest) (
 }
 
 func newAggregatorGenerator(
-	aggregator string, downSample *DownSampleSpec) (
-	tsdb.AggregatorGenerator, error) {
-	switch aggregator {
-	case "avg":
-		return newAverageGenerator(downSample)
-	default:
-		return nil, ErrUnsupportedAggregator
-	}
-}
-
-func newAverageGenerator(downSample *DownSampleSpec) (
+	aggregatorStr string, downSample *DownSampleSpec) (
 	tsdb.AggregatorGenerator, error) {
 	if downSample == nil {
 		return nil, ErrUnsupportedAggregator
 	}
-	// Defensive copy as caller could change struct later
+	aggregator, ok := aggregators.ByName(aggregatorStr)
+	if !ok {
+		return nil, ErrUnsupportedAggregator
+	}
+	downSampleAggregator, ok := aggregators.ByName(downSample.Type)
+	if !ok {
+		return nil, ErrUnsupportedAggregator
+	}
+	fill, _ := aggregators.ByFillPolicyName(downSample.Fill)
 	duration := downSample.DurationInSeconds
 	return func(start, end float64) (tsdb.Aggregator, error) {
 		if (end-start)/duration > kMaxDownSampleBuckets {
 			return nil, kErrTimeRangeTooBig
 		}
-		return aggregators.NewAverage(start, end, duration), nil
+		return aggregators.New(
+			start,
+			end,
+			aggregator,
+			duration,
+			downSampleAggregator,
+			fill), nil
 	}, nil
 }
 

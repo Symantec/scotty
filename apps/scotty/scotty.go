@@ -1510,7 +1510,8 @@ func main() {
 		"/api/query",
 		tsdbexec.NewHandler(
 			func(r *tsdbjson.QueryRequest) ([]tsdbjson.TimeSeries, error) {
-				return tsdbexec.Query(r, applicationStats)
+				return tsdbexec.Query(
+					r, applicationStats, *fCollectionFrequency)
 			}))
 	tsdbServeMux.Handle(
 		"/api/suggest",

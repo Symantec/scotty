@@ -560,9 +560,11 @@ func (l *loggerType) reportNewNamesForSuggest(
 	for i := 0; i < length; i++ {
 		var value metrics.Value
 		list.Index(i, &value)
-		if !l.NamesSentToSuggest[value.Path] {
-			l.MetricNameAdder.Add(value.Path)
-			l.NamesSentToSuggest[value.Path] = true
+		if types.FromGoValue(value.Value).CanToFromFloat() {
+			if !l.NamesSentToSuggest[value.Path] {
+				l.MetricNameAdder.Add(value.Path)
+				l.NamesSentToSuggest[value.Path] = true
+			}
 		}
 	}
 }

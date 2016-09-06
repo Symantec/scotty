@@ -9,7 +9,9 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -83,6 +85,7 @@ var (
 type view struct {
 	Apps    []*datastructs.ApplicationStatus
 	Summary EndpointSummary
+	History string
 }
 
 func (v *view) Float32(x float64) float32 {
@@ -95,7 +98,8 @@ func (v *view) Link(app *datastructs.ApplicationStatus) *url.URL {
 			"/api/hosts/%s/%s",
 			app.EndpointId.HostName(),
 			app.Name),
-		"format", "text")
+		"format", "text",
+		"history", v.History)
 }
 
 type EndpointSummary struct {
@@ -119,15 +123,9 @@ func (e *EndpointSummary) Init(apps []*datastructs.ApplicationStatus) {
 	}
 }
 
-func newView(
-	apps []*datastructs.ApplicationStatus) *view {
-	result := &view{Apps: apps}
-	result.Summary.Init(apps)
-	return result
-}
-
 type Handler struct {
-	AS *datastructs.ApplicationStatuses
+	AS             *datastructs.ApplicationStatuses
+	CollectionFreq time.Duration
 }
 
 type byNameAndPort []*datastructs.ApplicationStatus
@@ -161,8 +159,19 @@ func (h *Handler) ServeHTTP(
 	w.Header().Set("Content-Type", "text/html")
 	result := h.AS.All()
 	sortByNameAndPort(result)
-	v := newView(result)
+	v := h.newView(result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
 		fmt.Fprintln(w, "Error in template: %v\n", err)
 	}
+}
+
+func (h *Handler) newView(
+	apps []*datastructs.ApplicationStatus) *view {
+	result := &view{
+		Apps: apps,
+		History: strconv.Itoa(
+			int((h.CollectionFreq + time.Minute - 1) / time.Minute)),
+	}
+	result.Summary.Init(apps)
+	return result
 }

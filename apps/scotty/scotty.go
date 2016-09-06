@@ -1490,7 +1490,8 @@ func main() {
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
-			AS: applicationStats,
+			AS:             applicationStats,
+			CollectionFreq: *fCollectionFrequency,
 		}})
 	http.Handle(
 		"/api/hosts/",

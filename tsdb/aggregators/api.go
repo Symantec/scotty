@@ -39,6 +39,12 @@ var (
 		},
 		updaterCreater: kNaN,
 	}
+	Pdiff = &Aggregator{
+		aggListCreater: func(size int) aggregatorListType {
+			return make(minListType, size)
+		},
+		updaterCreater: kPdiff,
+	}
 	Sum = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
 			return make(sumListType, size)
@@ -53,6 +59,7 @@ var (
 		"count": Count,
 		"max":   Max,
 		"min":   Min,
+		"pdiff": Pdiff,
 		"sum":   Sum,
 	}
 )

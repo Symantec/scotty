@@ -118,8 +118,7 @@ func newWriteHooker(debugMetricRegex, debugHostRegex, debugFilePath string) (
 	return &hookWriter{wrapped: filterWriter}, nil
 }
 
-func (c ConsumerConfig) newConsumerBuilder(
-	wf WriterFactory, d Decorator) (
+func (c ConsumerConfig) newConsumerBuilder(wf WriterFactory) (
 	result *pstore.ConsumerWithMetricsBuilder, err error) {
 	if c.Name == "" {
 		return nil, errors.New("Name field is required.")
@@ -138,13 +137,13 @@ func (c ConsumerConfig) newConsumerBuilder(
 		return
 	}
 	builder := pstore.NewConsumerWithMetricsBuilder(writer)
-	if d.RecordsPerSecond > 0 {
-		builder.SetRecordsPerSecond(d.RecordsPerSecond)
+	if c.RecordsPerSecond > 0 {
+		builder.SetRecordsPerSecond(c.RecordsPerSecond)
 	}
-	if d.DebugMetricRegex != "" || d.DebugHostRegex != "" {
+	if c.DebugMetricRegex != "" || c.DebugHostRegex != "" {
 		var hook pstore.RecordWriteHooker
 		hook, err = newWriteHooker(
-			d.DebugMetricRegex, d.DebugHostRegex, d.DebugFilePath)
+			c.DebugMetricRegex, c.DebugHostRegex, c.DebugFilePath)
 		if err != nil {
 			return
 		}

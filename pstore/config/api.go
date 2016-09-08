@@ -77,8 +77,19 @@ func Reset(configs ...Config) {
 	}
 }
 
-// Decorator creates a decorated writer.
-type Decorator struct {
+// ConsumerConfig creates a consumer builder
+type ConsumerConfig struct {
+	// The name of the consumer. Required.
+	Name string `yaml:"name"`
+	// The number of goroutines doing writing. Optional.
+	// A zero value means 1.
+	Concurrency uint `yaml:"concurrency"`
+	// The number of values written each time. Optional.
+	// A zero value means 1000.
+	BatchSize uint `yaml:"batchSize"`
+	// The length of time for rolling up values when writing. Optional.
+	// Zero means write every value and do no rollup.
+	RollUpSpan time.Duration `yaml:"rollUpSpan"`
 	// Maximum reocrds to write per second. Optional.
 	// 0 means no limit.
 	RecordsPerSecond uint `yaml:"recordsPerSecond"`
@@ -94,31 +105,11 @@ type Decorator struct {
 	DebugFilePath string `yaml:"debugFilePath"`
 }
 
-func (d *Decorator) Reset() {
-	*d = Decorator{}
-}
-
-// ConsumerConfig creates a consumer builder
-type ConsumerConfig struct {
-	// The name of the consumer. Required.
-	Name string `yaml:"name"`
-	// The number of goroutines doing writing. Optional.
-	// A zero value means 1.
-	Concurrency uint `yaml:"concurrency"`
-	// The number of values written each time. Optional.
-	// A zero value means 1000.
-	BatchSize uint `yaml:"batchSize"`
-	// The length of time for rolling up values when writing. Optional.
-	// Zero means write every value and do no rollup.
-	RollUpSpan time.Duration `yaml:"rollUpSpan"`
-}
-
 // NewConsumerBuilder creates a new consumer builder using the given
 // WriterFactory.
-func (c *ConsumerConfig) NewConsumerBuilder(
-	wf WriterFactory, d *Decorator) (
+func (c *ConsumerConfig) NewConsumerBuilder(wf WriterFactory) (
 	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.newConsumerBuilder(wf, *d)
+	return c.newConsumerBuilder(wf)
 }
 
 func (c *ConsumerConfig) Reset() {

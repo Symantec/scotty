@@ -43,6 +43,57 @@ someUnusedField: true
 	}
 }
 
+func TestKafkaConfigPlus(t *testing.T) {
+	configFile := `
+# A comment
+writer:
+  endpoints:
+    - 10.0.0.1:9092
+    - 10.0.1.3:9092
+    - 10.0.1.6:9092
+  topic: someTopic
+  apiKey: someApiKey
+  tenantId: someTenantId
+  clientId: someClientId
+  someUnusedField: true
+consumer:
+  recordsPerSecond: 20
+  debugMetricRegex: foo
+  debugHostRegex: bar
+  debugFilePath: hello
+  name: r15i11
+  concurrency: 2
+  batchSize: 700
+`
+	buffer := bytes.NewBuffer(([]byte)(configFile))
+	var aconfig ConfigPlus
+	if err := config.Read(buffer, &aconfig); err != nil {
+		t.Fatal(err)
+	}
+	expected := ConfigPlus{
+		Writer: Config{
+			ApiKey:   "someApiKey",
+			TenantId: "someTenantId",
+			ClientId: "someClientId",
+			Topic:    "someTopic",
+			Endpoints: []string{
+				"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
+		},
+		Consumer: config.ConsumerConfig{
+			Name:             "r15i11",
+			Concurrency:      2,
+			BatchSize:        700,
+			DebugMetricRegex: "foo",
+			DebugHostRegex:   "bar",
+			RecordsPerSecond: 20,
+			DebugFilePath:    "hello",
+		},
+	}
+	if !reflect.DeepEqual(expected, aconfig) {
+		t.Errorf("Expected %v, got %v", expected, aconfig)
+	}
+}
+
 func TestSerializeInt(t *testing.T) {
 	ser := recordSerializerType{TenantId: "myTenantId", ApiKey: "myApiKey"}
 	bytes, err := ser.Serialize(

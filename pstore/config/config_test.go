@@ -34,17 +34,16 @@ func (c *configType) Reset() {
 
 type configPlus struct {
 	Writer   configType            `yaml:"writer"`
-	Options  config.Decorator      `yaml:"options"`
 	Consumer config.ConsumerConfig `yaml:"consumer"`
 }
 
 func (c *configPlus) NewConsumerBuilder() (
 	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.Consumer.NewConsumerBuilder(&c.Writer, &c.Options)
+	return c.Consumer.NewConsumerBuilder(&c.Writer)
 }
 
 func (c *configPlus) Reset() {
-	config.Reset(&c.Writer, &c.Options, &c.Consumer)
+	config.Reset(&c.Writer, &c.Consumer)
 }
 
 type configList []configPlus
@@ -90,9 +89,8 @@ func TestReadConfig(t *testing.T) {
 # a comment
 - writer:
     someField: "some value"
-  options:
-    recordsPerSecond: 124
   consumer:
+    recordsPerSecond: 124
     name: "some name"
     concurrency: 7
     batchSize: 730
@@ -150,21 +148,19 @@ func TestReadConfigDupName(t *testing.T) {
 # a comment
 - writer:
     someField: "some value"
-  options:
-    recordsPerSecond: 124
   consumer:
+    recordsPerSecond: 124
     name: "some name"
     concurrency: 7
     batchSize: 730
 - writer:
-    someField: "hello"
+	someField: "hello"
   consumer:
     name: "minimal"
 - writer:
-    someField: "another"
-  options:
-    recordsPerSecond: -235
+	someField: "another"
   consumer:
+    recordsPerSecond: -235
     concurrency: -2
     # dup name
     name: "minimal"
@@ -181,9 +177,8 @@ func TestConfigMissingName(t *testing.T) {
 # a comment
 - writer:
     someField: "some value"
-  options:
-    recordsPerSecond: 124
   consumer:
+    recordsPerSecond: 124
     name: "some name"
     concurrency: 7
     batchSize: 730
@@ -192,10 +187,9 @@ func TestConfigMissingName(t *testing.T) {
   consumer:
     name: "minimal"
 - writer:
-    someField: "another"
-  options:
-    recordsPerSecond: -235
+	someField: "another"
   consumer:
+    recordsPerSecond: -235
     concurrency: -2
     # missing name
     batchSize: -17

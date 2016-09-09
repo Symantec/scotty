@@ -35,6 +35,11 @@ type Config struct {
 	Timeout time.Duration `yaml:"timeout"`
 }
 
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type configFields Config
+	return config.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
+}
+
 func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {
 	return newWriter(*c)
 }
@@ -48,6 +53,11 @@ func (c *Config) Reset() {
 type ConfigPlus struct {
 	Writer   Config                `yaml:"writer"`
 	Consumer config.ConsumerConfig `yaml:"consumer"`
+}
+
+func (c *ConfigPlus) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type configPlusFields ConfigPlus
+	return config.StrictUnmarshalYAML(unmarshal, (*configPlusFields)(c))
 }
 
 func (c *ConfigPlus) NewConsumerBuilder() (

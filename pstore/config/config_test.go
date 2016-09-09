@@ -200,6 +200,45 @@ func TestConfigMissingName(t *testing.T) {
 	}
 }
 
+type mixedType struct {
+	Public  int
+	private int
+	YAML    int `yaml:"boo"`
+}
+
+func (m *mixedType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type mixedFieldsType mixedType
+	return config.StrictUnmarshalYAML(unmarshal, (*mixedFieldsType)(m))
+}
+
+func (m *mixedType) Reset() {
+	*m = mixedType{}
+}
+
+func TestMixYAMLDefault(t *testing.T) {
+	configFile := `
+public: 1
+private: 2
+boo: 3
+`
+	buffer := bytes.NewBuffer(([]byte)(configFile))
+	var m mixedType
+	if err := config.Read(buffer, &m); err == nil {
+		t.Error("Expected error here.")
+	}
+
+	configFile = `
+public: 1
+boo: 3
+`
+	buffer = bytes.NewBuffer(([]byte)(configFile))
+	if err := config.Read(buffer, &m); err != nil {
+		t.Error("Expected this to unmarshal.")
+	}
+	assertValueEquals(
+		t, mixedType{Public: 1, YAML: 3}, m)
+}
+
 func assertValueEquals(
 	t *testing.T,
 	expected, actual interface{}) {

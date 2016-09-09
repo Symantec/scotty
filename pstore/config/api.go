@@ -10,6 +10,16 @@ import (
 	"time"
 )
 
+// StrictUnmarshalYAML unmarshals YAML storing at structPtr, but returns an
+// error if the YAML contains unrecognized top level fields.
+//
+// unmarshal is what is passed to the standard UnmarshalYAML method.
+// structPtr must be a pointer to a struct, not a slice or map.
+func StrictUnmarshalYAML(
+	unmarshal func(interface{}) error, structPtr interface{}) error {
+	return strictUnmarshalYAML(unmarshal, structPtr)
+}
+
 // Config implementations may be read from a yaml configuration file.
 type Config interface {
 	// Reset resets this instance in place
@@ -105,6 +115,12 @@ type ConsumerConfig struct {
 	DebugFilePath string `yaml:"debugFilePath"`
 }
 
+func (c *ConsumerConfig) UnmarshalYAML(
+	unmarshal func(interface{}) error) error {
+	return StrictUnmarshalYAML(
+		unmarshal, (*ConsumerConfigFields)(c))
+}
+
 // NewConsumerBuilder creates a new consumer builder using the given
 // WriterFactory.
 func (c *ConsumerConfig) NewConsumerBuilder(wf WriterFactory) (
@@ -115,3 +131,7 @@ func (c *ConsumerConfig) NewConsumerBuilder(wf WriterFactory) (
 func (c *ConsumerConfig) Reset() {
 	*c = ConsumerConfig{}
 }
+
+// ConsumerConfigFields is a view of the ConsumerConfig that has no
+// UnmarshalYAML method.
+type ConsumerConfigFields ConsumerConfig

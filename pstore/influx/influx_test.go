@@ -84,3 +84,29 @@ consumer:
 		t.Errorf("Expected %v, got %v", expected, aconfig)
 	}
 }
+
+func TestInfluxConfigPlusMisspelled(t *testing.T) {
+	configFile := `
+writer:
+  dataase: aDatabase
+  hostAndPort: localhost:8085
+  username: foo
+  password: apassword
+  precision: ms
+  writeConsistency: one
+  retentionPolicy: myPolicy
+consumer:
+  recordsPerSecond: 20
+  debugMetricRegex: foo
+  debugHostRegex: bar
+  debugFilePath: hello
+  name: r15i11
+  concurrency: 2
+  batchSize: 700
+`
+	buffer := bytes.NewBuffer(([]byte)(configFile))
+	var aconfig ConfigPlus
+	if err := config.Read(buffer, &aconfig); err == nil {
+		t.Error("Expected error because of misspelled dataase")
+	}
+}

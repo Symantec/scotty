@@ -1443,8 +1443,8 @@ func main() {
 	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
 	consumerBuilders, err := newPStoreConsumers(maybeNilMemoryManager)
 	if err != nil {
-		log.Println(err)
-		logger.Println(err)
+		log.Println("Pstore config file error:", err)
+		logger.Println("Pstore config file error:", err)
 	}
 	metricNameEngine := suggest.NewEngine()
 	metricNameAdder := newTsdbAdder(metricNameEngine)

@@ -56,17 +56,16 @@ func (c *Config) Reset() {
 // ConfigPlus implements config.Config and config.WriterFactory
 type ConfigPlus struct {
 	Writer   Config                `yaml:"writer"`
-	Options  config.Decorator      `yaml:"options"`
 	Consumer config.ConsumerConfig `yaml:"consumer"`
 }
 
 func (c *ConfigPlus) NewConsumerBuilder() (
 	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.Consumer.NewConsumerBuilder(&c.Writer, &c.Options)
+	return c.Consumer.NewConsumerBuilder(&c.Writer)
 }
 
 func (c *ConfigPlus) Reset() {
-	config.Reset(&c.Writer, &c.Options, &c.Consumer)
+	config.Reset(&c.Writer, &c.Consumer)
 }
 
 // ConfigList represents a list of entire influx db configurations.

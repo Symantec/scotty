@@ -1251,39 +1251,51 @@ func startCollector(
 	snmpCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	changedMetricsPerEndpointDist := tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
 
-	tricorder.RegisterMetric(
+	if err := tricorder.RegisterMetric(
 		"collector/collectionTimes",
 		collectionTimesDist,
 		units.Second,
-		"Collection Times")
-	tricorder.RegisterMetric(
+		"Collection Times"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
 		"collector/collectionTimes_tricorder",
 		tricorderCollectionTimesDist,
 		units.Second,
-		"Tricorder Collection Times")
-	tricorder.RegisterMetric(
+		"Tricorder Collection Times"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
 		"collector/collectionTimes_snmp",
 		snmpCollectionTimesDist,
 		units.Second,
-		"SNMP Collection Times")
-	tricorder.RegisterMetric(
+		"SNMP Collection Times"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
 		"collector/changedMetricsPerEndpoint",
 		changedMetricsPerEndpointDist,
 		units.None,
-		"Changed metrics per sweep")
-	tricorder.RegisterMetric(
+		"Changed metrics per sweep"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
 		"collector/sweepDuration",
 		sweepDurationDist,
 		units.Millisecond,
-		"Sweep duration")
+		"Sweep duration"); err != nil {
+		log.Fatal(err)
+	}
 	programStartTime := time.Now()
-	tricorder.RegisterMetric(
+	if err := tricorder.RegisterMetric(
 		"collector/elapsedTime",
 		func() time.Duration {
 			return time.Now().Sub(programStartTime)
 		},
 		units.Second,
-		"elapsed time")
+		"elapsed time"); err != nil {
+		log.Fatal(err)
+	}
 
 	byProtocolDist := map[string]*tricorder.CumulativeDistribution{
 		"tricorder": tricorderCollectionTimesDist,

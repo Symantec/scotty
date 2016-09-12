@@ -23,7 +23,6 @@ topic: someTopic
 apiKey: someApiKey
 tenantId: someTenantId
 clientId: someClientId
-someUnusedField: true
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
@@ -55,7 +54,6 @@ writer:
   apiKey: someApiKey
   tenantId: someTenantId
   clientId: someClientId
-  someUnusedField: true
 consumer:
   recordsPerSecond: 20
   debugMetricRegex: foo
@@ -91,6 +89,34 @@ consumer:
 	}
 	if !reflect.DeepEqual(expected, aconfig) {
 		t.Errorf("Expected %v, got %v", expected, aconfig)
+	}
+}
+
+func TestKafkaConfigPlusError(t *testing.T) {
+	configFile := `
+# A comment
+writer:
+  endpoint:
+    - 10.0.0.1:9092
+    - 10.0.1.3:9092
+    - 10.0.1.6:9092
+  topic: someTopic
+  apiKey: someApiKey
+  tenantId: someTenantId
+  clientId: someClientId
+consumer:
+  recordsPerSecond: 20
+  debugMetricRegex: foo
+  debugHostRegex: bar
+  debugFilePath: hello
+  name: r15i11
+  concurrency: 2
+  batchSize: 700
+`
+	buffer := bytes.NewBuffer(([]byte)(configFile))
+	var aconfig ConfigPlus
+	if err := config.Read(buffer, &aconfig); err == nil {
+		t.Error("Expected error for misspelled endpoint")
 	}
 }
 

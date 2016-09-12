@@ -66,3 +66,25 @@ consumer:
 		t.Errorf("Expected %v, got %v", expected, aconfig)
 	}
 }
+
+func TestTsdbConfigPlusError(t *testing.T) {
+	configFile := `
+# A comment
+writer:
+  hostAndPort: localhost:8084
+  timeout: 37s
+consumer:
+  recordsPerSecond: 20
+  debugMetricRegex: foo
+  debugHostRegex: bar
+  debugFilePath: hello
+  name: r15i11
+  concurrency: 2
+  size: 700
+`
+	buffer := bytes.NewBuffer(([]byte)(configFile))
+	var aconfig ConfigPlus
+	if err := config.Read(buffer, &aconfig); err == nil {
+		t.Error("Expect error size misspelled")
+	}
+}

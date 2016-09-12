@@ -68,5 +68,5 @@ func processMeminfoLine(line string) (mtype string, amount uint64, err error) {
 }
 
 func init() {
-	flag.Float64Var(&fMemoryPercentage, "memory_percentage", 0.0, "Percentage of total memory to use (0.0 - 100.0). 0, the default, means use page_count and bytes_per_page instead.")
+	flag.Float64Var(&fMemoryPercentage, "memoryPercentage", 0.0, "Percentage of total memory to use (0.0 - 100.0). 0, the default, means use page_count and bytes_per_page instead.")
 }

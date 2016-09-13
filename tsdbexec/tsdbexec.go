@@ -9,10 +9,12 @@ import (
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbimpl"
 	"github.com/Symantec/scotty/tsdbjson"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"net/http"
 	"net/url"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 var (
@@ -56,9 +58,21 @@ func _suggest(
 	}
 }
 
+func ensureDurationAtLeast(
+	minDurationInSeconds float64,
+	spec **tsdbjson.DownSampleSpec) {
+	if (*spec).DurationInSeconds >= minDurationInSeconds {
+		return
+	}
+	newSpec := **spec
+	newSpec.DurationInSeconds = minDurationInSeconds
+	*spec = &newSpec
+}
+
 func query(
 	request *tsdbjson.QueryRequest,
-	endpoints *datastructs.ApplicationStatuses) (
+	endpoints *datastructs.ApplicationStatuses,
+	minDownSampleTime time.Duration) (
 	result []tsdbjson.TimeSeries, err error) {
 	parsedQueries, err := tsdbjson.ParseQueryRequest(request)
 	if err != nil {
@@ -79,6 +93,12 @@ func query(
 		}
 		options.GroupByAppName = parsedQueries[i].Options.GroupByAppName
 		options.GroupByHostName = parsedQueries[i].Options.GroupByHostName
+		if parsedQueries[i].Aggregator.DownSample == nil {
+			return nil, tsdbjson.ErrUnsupportedAggregator
+		}
+		ensureDurationAtLeast(
+			duration.ToFloat(minDownSampleTime),
+			&parsedQueries[i].Aggregator.DownSample)
 		var aggregatorGen tsdb.AggregatorGenerator
 		aggregatorGen, err = tsdbjson.NewAggregatorGenerator(
 			parsedQueries[i].Aggregator.Type,

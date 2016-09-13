@@ -1,2 +1,4 @@
 language: go
+before_install:
+- ./add_sym_links.sh
 

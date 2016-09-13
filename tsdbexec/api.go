@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/scotty/tsdbjson"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 var (
@@ -35,9 +36,10 @@ func Suggest(
 // Query corresponds to the /api/query TSDB API call.
 func Query(
 	request *tsdbjson.QueryRequest,
-	endpoints *datastructs.ApplicationStatuses) (
+	endpoints *datastructs.ApplicationStatuses,
+	minDownSampleTime time.Duration) (
 	result []tsdbjson.TimeSeries, err error) {
-	return query(request, endpoints)
+	return query(request, endpoints, minDownSampleTime)
 }
 
 // NewHandler creates a handler to service a particular TSDB API endpoint.

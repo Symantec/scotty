@@ -560,9 +560,11 @@ func (l *loggerType) reportNewNamesForSuggest(
 	for i := 0; i < length; i++ {
 		var value metrics.Value
 		list.Index(i, &value)
-		if !l.NamesSentToSuggest[value.Path] {
-			l.MetricNameAdder.Add(value.Path)
-			l.NamesSentToSuggest[value.Path] = true
+		if types.FromGoValue(value.Value).CanToFromFloat() {
+			if !l.NamesSentToSuggest[value.Path] {
+				l.MetricNameAdder.Add(value.Path)
+				l.NamesSentToSuggest[value.Path] = true
+			}
 		}
 	}
 }
@@ -1488,7 +1490,8 @@ func main() {
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
-			AS: applicationStats,
+			AS:             applicationStats,
+			CollectionFreq: *fCollectionFrequency,
 		}})
 	http.Handle(
 		"/api/hosts/",
@@ -1510,7 +1513,8 @@ func main() {
 		"/api/query",
 		tsdbexec.NewHandler(
 			func(r *tsdbjson.QueryRequest) ([]tsdbjson.TimeSeries, error) {
-				return tsdbexec.Query(r, applicationStats)
+				return tsdbexec.Query(
+					r, applicationStats, *fCollectionFrequency)
 			}))
 	tsdbServeMux.Handle(
 		"/api/suggest",

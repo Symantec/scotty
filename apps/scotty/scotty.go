@@ -58,47 +58,47 @@ var (
 		6980,
 		"Port number for scotty.")
 	fBytesPerPage = flag.Uint(
-		"bytes_per_page",
+		"bytesPerPage",
 		1024,
 		"Space for new metrics for each endpoint in records")
 	fPageCount = flag.Uint(
-		"page_count",
+		"pageCount",
 		30*1000*1000,
 		"Total page count")
 	fAppFile = flag.String(
-		"app_file",
+		"appFile",
 		"apps.yaml",
 		"File containing mapping of ports to apps")
 	fMdbFile = flag.String(
-		"mdb_file",
+		"mdbFile",
 		"/var/lib/Dominator/mdb",
 		"Name of file from which to read mdb data.")
 	fPollCount = flag.Uint(
-		"poll_count",
+		"pollCount",
 		collector.ConcurrentPolls(),
 		"Maximum number of concurrent polls")
 	fConnectionCount = flag.Uint(
-		"connection_count",
+		"connectionCount",
 		collector.ConcurrentConnects(),
 		"Maximum number of concurrent connections")
 	fCollectionFrequency = flag.Duration(
-		"collection_frequency",
+		"collectionFrequency",
 		30*time.Second,
 		"Amount of time between metric collections")
 	fPStoreUpdateFrequency = flag.Duration(
-		"pstore_update_frequency",
+		"pstoreUpdateFrequency",
 		30*time.Second,
 		"Amount of time between writing newest metrics to persistent storage")
 	fKafkaConfigFile = flag.String(
-		"kafka_config_file",
+		"kafkaConfigFile",
 		"",
 		"kafka configuration file")
 	fInfluxConfigFile = flag.String(
-		"influx_config_file",
+		"influxConfigFile",
 		"",
 		"influx configuration file")
 	fTsdbConfigFile = flag.String(
-		"tsdb_config_file",
+		"tsdbConfigFile",
 		"",
 		"tsdb configuration file")
 	fLogBufLines = flag.Uint(

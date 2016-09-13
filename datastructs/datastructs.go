@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
@@ -273,6 +274,13 @@ type configLineType struct {
 	Protocol string
 	Port     uint
 	Params   map[string]string
+}
+
+func (c *configLineType) UnmarshalYAML(
+	unmarshal func(interface{}) error) error {
+	type configLineFieldsType configLineType
+	return yamlutil.StrictUnmarshalYAML(
+		unmarshal, (*configLineFieldsType)(c))
 }
 
 func (a *ApplicationListBuilder) readConfig(r io.Reader) error {

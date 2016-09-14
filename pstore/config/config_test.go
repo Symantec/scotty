@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"bytes"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -208,7 +209,7 @@ type mixedType struct {
 
 func (m *mixedType) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type mixedFieldsType mixedType
-	return config.StrictUnmarshalYAML(unmarshal, (*mixedFieldsType)(m))
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*mixedFieldsType)(m))
 }
 
 func (m *mixedType) Reset() {

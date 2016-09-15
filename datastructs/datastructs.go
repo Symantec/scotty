@@ -7,6 +7,7 @@ import (
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/sources"
+	"github.com/Symantec/scotty/sources/jsonsource"
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
@@ -18,7 +19,8 @@ import (
 type protocolType func(map[string]string) (sources.ConnectorList, error)
 
 func newTricorder(unused map[string]string) (sources.ConnectorList, error) {
-	return sources.ConnectorList{trisource.GetConnector()}, nil
+	return sources.ConnectorList{
+		trisource.GetConnector(), jsonsource.GetConnector()}, nil
 }
 
 func newSnmp(params map[string]string) (sources.ConnectorList, error) {

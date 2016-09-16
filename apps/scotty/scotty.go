@@ -22,6 +22,7 @@ import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/sysmemory"
+	"github.com/Symantec/scotty/tsdb/aggregators"
 	"github.com/Symantec/scotty/tsdbexec"
 	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/Symantec/tricorder/go/tricorder"
@@ -1533,7 +1534,7 @@ func main() {
 		"/api/aggregators",
 		tsdbexec.NewHandler(
 			func(req url.Values) ([]string, error) {
-				return []string{"avg"}, nil
+				return aggregators.Names(), nil
 			},
 		))
 	tsdbServeMux.Handle(

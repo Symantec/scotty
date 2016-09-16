@@ -123,7 +123,8 @@ type Logger interface {
 type Endpoint struct {
 	host           string
 	port           uint
-	connector      sources.Connector
+	connector      sources.ResourceConnector
+	resource       sources.Resource
 	onePollAtATime chan bool
 	state          *State
 	errored        bool
@@ -146,9 +147,9 @@ func (e *Endpoint) Port() uint {
 	return e.port
 }
 
-// Connector returns the connector of this endpoint.
-func (e *Endpoint) Connector() sources.Connector {
-	return e.connector
+// ConnectorName returns the name of the underlying connector in this endpoint.
+func (e *Endpoint) ConnectorName() string {
+	return e.connector.Name()
 }
 
 // Poll polls for metrics for this endpoint asynchronously.

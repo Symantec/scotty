@@ -511,7 +511,7 @@ func (l *loggerType) LogStateChange(
 		timeTaken += newS.TimeSpentWaitingToConnect()
 		timeTaken += newS.TimeSpentWaitingToPoll()
 		l.CollectionTimesDist.Add(timeTaken)
-		dist := l.ByProtocolDist[e.Connector().Name()]
+		dist := l.ByProtocolDist[e.ConnectorName()]
 		if dist != nil {
 			dist.Add(timeTaken)
 		}

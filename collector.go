@@ -1,11 +1,16 @@
 package scotty
 
 import (
+	"github.com/Symantec/scotty/lib/preference"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"runtime"
 	"syscall"
 	"time"
+)
+
+const (
+	kPreferenceMemory = 100
 )
 
 var (
@@ -53,11 +58,12 @@ func waitingToConnect(sweepStartTime time.Time) *State {
 		status:         WaitingToConnect}
 }
 
-func (s *State) goToConnecting(t time.Time) *State {
+func (s *State) goToConnecting(t time.Time, connectorName string) *State {
 	result := *s
 	dur := t.Sub(result.timestamp)
 	result.timestamp = t
 	result.waitToConnectDuration = dur
+	result.connectorName = connectorName
 	result.status = Connecting
 	return &result
 }
@@ -133,16 +139,73 @@ func asResourceConnector(
 	return &resourceConnector{Connector: connector}
 }
 
+type connectorType struct {
+	conn     sources.ResourceConnector
+	resource sources.Resource
+}
+
+func newConnector(
+	connector sources.Connector,
+	host string,
+	port uint) *connectorType {
+	conn := asResourceConnector(connector)
+	resource := conn.NewResource(host, port)
+	return &connectorType{conn: conn, resource: resource}
+}
+
+func (c *connectorType) Name() string {
+	return c.conn.Name()
+}
+
+func (c *connectorType) Connect() (sources.Poller, error) {
+	return c.conn.ResourceConnect(c.resource)
+}
+
 func newEndpoint(
-	host string, port uint, connector sources.Connector) *Endpoint {
-	resourceConn := asResourceConnector(connector)
-	return &Endpoint{
-		host:           host,
-		port:           port,
-		connector:      resourceConn,
-		resource:       resourceConn.NewResource(host, port),
-		onePollAtATime: make(chan bool, 1),
+	host string, port uint, connectors []sources.Connector) *Endpoint {
+	conns := make([]*connectorType, len(connectors))
+	for i := range conns {
+		conns[i] = newConnector(connectors[i], host, port)
 	}
+	return &Endpoint{
+		host:                host,
+		port:                port,
+		connectors:          conns,
+		onePollAtATime:      make(chan bool, 1),
+		connectorPreference: preference.New(len(conns), kPreferenceMemory),
+	}
+}
+
+func (e *Endpoint) pollWithConnectorIndex(
+	state *State,
+	logger Logger,
+	index int) bool {
+	state = state.goToConnecting(time.Now(), e.connectors[index].Name())
+	e.logState(state, logger)
+	conn, err := e.connectors[index].Connect()
+	if err != nil {
+		state = state.goToFailedToConnect(time.Now())
+		e.logError(err, state, logger)
+		return false
+	}
+	defer conn.Close()
+	state = state.goToWaitingToPoll(time.Now())
+	e.logState(state, logger)
+	pollSemaphore <- true
+	defer func() {
+		<-pollSemaphore
+	}()
+	state = state.goToPolling(time.Now())
+	e.logState(state, logger)
+	metrics, err := conn.Poll()
+	if err != nil {
+		state = state.goToFailedToPoll(time.Now())
+		e.logError(err, state, logger)
+		return false
+	}
+	e.chooseIndex(index)
+	e.logMetrics(metrics, state, logger)
+	return true
 }
 
 func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
@@ -158,30 +221,12 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 			defer func() {
 				<-connectSemaphore
 			}()
-			state = state.goToConnecting(time.Now())
-			e.logState(state, logger)
-			conn, err := e.connector.ResourceConnect(e.resource)
-			if err != nil {
-				state = state.goToFailedToConnect(time.Now())
-				e.logError(err, state, logger)
-				return
+			indexes := e.connectionIndexes()
+			for _, index := range indexes {
+				if e.pollWithConnectorIndex(state, logger, index) {
+					return
+				}
 			}
-			defer conn.Close()
-			state = state.goToWaitingToPoll(time.Now())
-			e.logState(state, logger)
-			pollSemaphore <- true
-			defer func() {
-				<-pollSemaphore
-			}()
-			state = state.goToPolling(time.Now())
-			e.logState(state, logger)
-			metrics, err := conn.Poll()
-			if err != nil {
-				state = state.goToFailedToPoll(time.Now())
-				e.logError(err, state, logger)
-				return
-			}
-			e.logMetrics(metrics, state, logger)
 		}(state)
 	default:
 		return
@@ -240,4 +285,22 @@ func (e *Endpoint) _setError(state *State, hasError bool) (
 	e.state = state
 	e.errored = hasError
 	return
+}
+
+func (e *Endpoint) connectionIndexes() []int {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	return e.connectorPreference.Indexes()
+}
+
+func (e *Endpoint) firstConnectionIndex() int {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	return e.connectorPreference.FirstIndex()
+}
+
+func (e *Endpoint) chooseIndex(i int) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	e.connectorPreference.SetFirstIndex(i)
 }

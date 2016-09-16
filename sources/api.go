@@ -12,6 +12,11 @@ type Connector interface {
 	Name() string
 }
 
+// ConnectorList is a list of connectors.
+// First element of list is most prefered; last element is least preferred.
+// Instances of this type must be treated as immutable.
+type ConnectorList []Connector
+
 // Resource represents a resource to connect to.
 //
 // Resource instances are long lived and therefore can amortize the cost of

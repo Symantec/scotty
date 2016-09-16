@@ -3,7 +3,7 @@ package showallapps
 import (
 	"fmt"
 	"github.com/Symantec/scotty/datastructs"
-	"github.com/Symantec/scotty/httputil"
+	"github.com/Symantec/scotty/lib/httputil"
 	"html/template"
 	"net/http"
 	"net/url"

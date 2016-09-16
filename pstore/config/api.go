@@ -3,22 +3,13 @@ package config
 
 import (
 	"bytes"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"gopkg.in/yaml.v2"
 	"io"
 	"os"
 	"time"
 )
-
-// StrictUnmarshalYAML unmarshals YAML storing at structPtr, but returns an
-// error if the YAML contains unrecognized top level fields.
-//
-// unmarshal is what is passed to the standard UnmarshalYAML method.
-// structPtr must be a pointer to a struct, not a slice or map.
-func StrictUnmarshalYAML(
-	unmarshal func(interface{}) error, structPtr interface{}) error {
-	return strictUnmarshalYAML(unmarshal, structPtr)
-}
 
 // Config implementations may be read from a yaml configuration file.
 type Config interface {
@@ -117,7 +108,7 @@ type ConsumerConfig struct {
 
 func (c *ConsumerConfig) UnmarshalYAML(
 	unmarshal func(interface{}) error) error {
-	return StrictUnmarshalYAML(
+	return yamlutil.StrictUnmarshalYAML(
 		unmarshal, (*ConsumerConfigFields)(c))
 }
 

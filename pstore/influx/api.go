@@ -2,6 +2,7 @@
 package influx
 
 import (
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
 )
@@ -46,7 +47,7 @@ type Config struct {
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type configFields Config
-	return config.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
 }
 
 func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {
@@ -66,7 +67,7 @@ type ConfigPlus struct {
 
 func (c *ConfigPlus) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type configPlusFields ConfigPlus
-	return config.StrictUnmarshalYAML(unmarshal, (*configPlusFields)(c))
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configPlusFields)(c))
 }
 
 func (c *ConfigPlus) NewConsumerBuilder() (

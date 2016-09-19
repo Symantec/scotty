@@ -105,12 +105,42 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 	return s.finishedPolling(t, FailedToPoll)
 }
 
+type hostAndPort struct {
+	Host string
+	Port uint
+}
+
+type resourceConnector struct {
+	sources.Connector
+}
+
+func (c *resourceConnector) NewResource(
+	host string, port uint) sources.Resource {
+	return &hostAndPort{Host: host, Port: port}
+}
+
+func (c *resourceConnector) ResourceConnect(r sources.Resource) (
+	sources.Poller, error) {
+	hAndP := r.(*hostAndPort)
+	return c.Connect(hAndP.Host, hAndP.Port)
+}
+
+func asResourceConnector(
+	connector sources.Connector) sources.ResourceConnector {
+	if rc, ok := connector.(sources.ResourceConnector); ok {
+		return rc
+	}
+	return &resourceConnector{Connector: connector}
+}
+
 func newEndpoint(
 	host string, port uint, connector sources.Connector) *Endpoint {
+	resourceConn := asResourceConnector(connector)
 	return &Endpoint{
 		host:           host,
 		port:           port,
-		connector:      connector,
+		connector:      resourceConn,
+		resource:       resourceConn.NewResource(host, port),
 		onePollAtATime: make(chan bool, 1),
 	}
 }
@@ -130,7 +160,7 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 			}()
 			state = state.goToConnecting(time.Now())
 			e.logState(state, logger)
-			conn, err := e.connector.Connect(e.host, e.port)
+			conn, err := e.connector.ResourceConnect(e.resource)
 			if err != nil {
 				state = state.goToFailedToConnect(time.Now())
 				e.logError(err, state, logger)

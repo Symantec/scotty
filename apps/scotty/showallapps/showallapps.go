@@ -50,7 +50,7 @@ const (
               </td>
 	    \ {{else}} \
 	      <td>No</td>
-	      <td>{{.Status}}</td>
+	      <td>{{.Status}} {{.EndpointId.ConnectorName}}</td>
 	    \ {{end}} \
 	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
 	    <td>{{with .InitialMetricCount}}{{.}}{{else}}&nbsp;{{end}}</td>

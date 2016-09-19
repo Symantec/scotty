@@ -2,11 +2,11 @@ package trisource
 
 import (
 	"fmt"
+	"github.com/Symantec/Dominator/lib/rpcclientpool"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"net/rpc"
 	"time"
 )
 
@@ -16,10 +16,23 @@ var (
 	kConnector = connectorType(0)
 )
 
-func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
-	conn, err := rpc.DialHTTP(
+func (c connectorType) NewResource(
+	host string, port uint) sources.Resource {
+	return rpcclientpool.New(
 		"tcp",
-		fmt.Sprintf("%s:%d", host, port))
+		fmt.Sprintf("%s:%d", host, port),
+		true,
+		"")
+}
+
+func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
+	return c.ResourceConnect(c.NewResource(host, port))
+}
+
+func (c connectorType) ResourceConnect(resource sources.Resource) (
+	sources.Poller, error) {
+	clientResource := resource.(*rpcclientpool.ClientResource)
+	conn, err := clientResource.Get(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -31,19 +44,25 @@ func (c connectorType) Name() string {
 }
 
 type pollerType struct {
-	*rpc.Client
+	client *rpcclientpool.Client
 }
 
 func (p pollerType) Poll() (result metrics.List, err error) {
 	var values messages.MetricList
-	err = p.Call("MetricsServer.ListMetrics", "", &values)
+	err = p.client.Call("MetricsServer.ListMetrics", "", &values)
 	if err != nil {
+		p.client.Close()
 		return
 	}
 	for i := range values {
 		values[i].Kind = fixupKind(values[i].Kind)
 	}
 	return listType(values), nil
+}
+
+func (p pollerType) Close() error {
+	p.client.Put()
+	return nil
 }
 
 type listType messages.MetricList

@@ -1252,6 +1252,7 @@ func startCollector(
 	collectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	tricorderCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	snmpCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
+	jsonCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	changedMetricsPerEndpointDist := tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
 
 	if err := tricorder.RegisterMetric(
@@ -1273,6 +1274,13 @@ func startCollector(
 		snmpCollectionTimesDist,
 		units.Second,
 		"SNMP Collection Times"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"collector/collectionTimes_json",
+		jsonCollectionTimesDist,
+		units.Second,
+		"JSON Collection Times"); err != nil {
 		log.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
@@ -1303,6 +1311,7 @@ func startCollector(
 	byProtocolDist := map[string]*tricorder.CumulativeDistribution{
 		"tricorder": tricorderCollectionTimesDist,
 		"snmp":      snmpCollectionTimesDist,
+		"json":      jsonCollectionTimesDist,
 	}
 
 	// Metric collection goroutine. Collect metrics periodically.

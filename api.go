@@ -2,8 +2,10 @@
 package scotty
 
 import (
+	"github.com/Symantec/scotty/lib/preference"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
+	"sync"
 	"time"
 )
 
@@ -60,7 +62,13 @@ type State struct {
 	connectDuration       time.Duration
 	waitToPollDuration    time.Duration
 	pollDuration          time.Duration
+	connectorName         string
 	status                Status
+}
+
+// ConnectorName returns the name of the connector
+func (s *State) ConnectorName() string {
+	return s.connectorName
 }
 
 // Timestamp returns the timestamp of the last state change.
@@ -121,20 +129,25 @@ type Logger interface {
 // Endpoint represents a particular endpoint with health metrics.
 // Endpoint instances are safe to use with multiple goroutines.
 type Endpoint struct {
+	// These fields are immutable
 	host           string
 	port           uint
-	connector      sources.ResourceConnector
-	resource       sources.Resource
+	connectors     []*connectorType
 	onePollAtATime chan bool
-	state          *State
-	errored        bool
+	// These fields read and changed only by goroutine that has the
+	// onePollAtATime semaphore
+	state   *State
+	errored bool
+	lock    sync.Mutex
+	// These fields ready and changed by multiple goroutines
+	connectorPreference *preference.Preference
 }
 
 // NewEndpointWithConnector creates a new endpoint for given host, port
 // and connector.
 func NewEndpointWithConnector(
-	hostname string, port uint, connector sources.Connector) *Endpoint {
-	return newEndpoint(hostname, port, connector)
+	hostname string, port uint, connectors []sources.Connector) *Endpoint {
+	return newEndpoint(hostname, port, connectors)
 }
 
 // HostName returns the host name of the endpoint.
@@ -149,7 +162,7 @@ func (e *Endpoint) Port() uint {
 
 // ConnectorName returns the name of the underlying connector in this endpoint.
 func (e *Endpoint) ConnectorName() string {
-	return e.connector.Name()
+	return e.connectors[e.firstConnectionIndex()].Name()
 }
 
 // Poll polls for metrics for this endpoint asynchronously.

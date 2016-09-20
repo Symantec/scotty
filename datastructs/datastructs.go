@@ -15,18 +15,18 @@ import (
 	"time"
 )
 
-type protocolType func(map[string]string) (sources.Connector, error)
+type protocolType func(map[string]string) (sources.ConnectorList, error)
 
-func newTricorder(unused map[string]string) (sources.Connector, error) {
-	return trisource.GetConnector(), nil
+func newTricorder(unused map[string]string) (sources.ConnectorList, error) {
+	return sources.ConnectorList{trisource.GetConnector()}, nil
 }
 
-func newSnmp(params map[string]string) (sources.Connector, error) {
+func newSnmp(params map[string]string) (sources.ConnectorList, error) {
 	community := params["community"]
 	if community == "" {
 		return nil, errors.New("parameter 'community' required for SNMP")
 	}
-	return snmpsource.NewConnector(community), nil
+	return sources.ConnectorList{snmpsource.NewConnector(community)}, nil
 }
 
 var (
@@ -130,7 +130,7 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 			// If new endpoint
 			if activeEndpoint == nil {
 				activeEndpoint = scotty.NewEndpointWithConnector(
-					hp.Host, hp.Port, apps[j].Connector())
+					hp.Host, hp.Port, apps[j].Connectors())
 				a.byHostPort[hp] = activeEndpoint
 				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(activeEndpoint)
 				if storeCopy == a.currentStore {
@@ -253,12 +253,12 @@ func newApplicationListBuilder() *ApplicationListBuilder {
 }
 
 func (a *ApplicationListBuilder) add(
-	port uint, applicationName string, connector sources.Connector) {
+	port uint, applicationName string, connectors sources.ConnectorList) {
 	if (*a.listPtr).byPort[port] != nil || (*a.listPtr).byName[applicationName] != nil {
 		panic("Both name and port must be unique.")
 	}
 	app := &Application{
-		name: applicationName, port: port, connector: connector}
+		name: applicationName, port: port, connectors: connectors}
 	(*a.listPtr).byPort[port] = app
 	(*a.listPtr).byName[applicationName] = app
 }
@@ -304,14 +304,14 @@ func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
 					"Unrecognized protocol '%s'",
 					configLine.Protocol))
 		}
-		connector, err := protocol(configLine.Params)
+		connectors, err := protocol(configLine.Params)
 		if err != nil {
 			return err
 		}
 		a.Add(
 			configLine.Port,
 			configLine.Name,
-			connector)
+			connectors)
 	}
 	return nil
 }

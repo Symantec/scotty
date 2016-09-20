@@ -3,6 +3,7 @@ package tsdbimpl_test
 import (
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/tsdb"
@@ -42,8 +43,10 @@ func addValues(
 
 func TestAPI(t *testing.T) {
 	alBuilder := datastructs.NewApplicationListBuilder()
-	alBuilder.Add(37, "AnApp", trisource.GetConnector())
-	alBuilder.Add(97, "AnotherApp", trisource.GetConnector())
+	alBuilder.Add(
+		37, "AnApp", sources.ConnectorList{trisource.GetConnector()})
+	alBuilder.Add(
+		97, "AnotherApp", sources.ConnectorList{trisource.GetConnector()})
 	appList := alBuilder.Build()
 	appStatus := datastructs.NewApplicationStatuses(
 		appList,

@@ -175,9 +175,9 @@ func (a *ApplicationStatuses) ActiveEndpointIds() (
 // Application represents a particular application in the fleet.
 // Application instances are immutable.
 type Application struct {
-	name      string
-	connector sources.Connector
-	port      uint
+	name       string
+	connectors sources.ConnectorList
+	port       uint
 }
 
 // Name returns the name of application
@@ -186,8 +186,8 @@ func (a *Application) Name() string {
 }
 
 // Connector returns the connector for the application
-func (a *Application) Connector() sources.Connector {
-	return a.connector
+func (a *Application) Connectors() sources.ConnectorList {
+	return a.connectors
 }
 
 // Port returns the port number of the application
@@ -231,8 +231,8 @@ func NewApplicationListBuilder() *ApplicationListBuilder {
 
 // Add adds an application.
 func (a *ApplicationListBuilder) Add(
-	port uint, applicationName string, connector sources.Connector) {
-	a.add(port, applicationName, connector)
+	port uint, applicationName string, connectors sources.ConnectorList) {
+	a.add(port, applicationName, connectors)
 }
 
 // Read application names and ports from a config file into this builder.

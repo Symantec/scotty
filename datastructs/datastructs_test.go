@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
@@ -179,8 +180,12 @@ func newStore(
 
 func TestMarkHostsActiveExclusively(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
-	alBuilder.Add(35, "AnApp", trisource.GetConnector())
-	alBuilder.Add(92, "AnotherApp", snmpsource.NewConnector("community"))
+	alBuilder.Add(
+		35, "AnApp", sources.ConnectorList{trisource.GetConnector()})
+	alBuilder.Add(
+		92,
+		"AnotherApp",
+		sources.ConnectorList{snmpsource.NewConnector("community")})
 	appList := alBuilder.Build()
 	appStatus := NewApplicationStatuses(
 		appList,
@@ -360,7 +365,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 
 func TestHighPriorityEviction(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
-	alBuilder.Add(37, "AnApp", trisource.GetConnector())
+	alBuilder.Add(37, "AnApp", sources.ConnectorList{trisource.GetConnector()})
 	appList := alBuilder.Build()
 	// 9 values
 	appStatus := NewApplicationStatuses(
@@ -515,11 +520,11 @@ func assertApplication(
 	if port != app.Port() {
 		t.Errorf("Expected '%d', got '%d'", port, app.Port())
 	}
-	if protocol != app.Connector().Name() {
+	if protocol != app.Connectors()[0].Name() {
 		t.Errorf(
 			"Expected '%s', got '%s'",
 			protocol,
-			app.Connector().Name())
+			app.Connectors()[0].Name())
 	}
 }
 

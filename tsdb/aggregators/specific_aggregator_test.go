@@ -62,7 +62,8 @@ func (a *aggregatorTesterType) Verify(t *testing.T) {
 		aggregators.Sum,
 		kMaxSampleSize,
 		a.aggregator,
-		a.fillPolicy)
+		a.fillPolicy,
+		nil)
 	var timeSeries tsdb.TimeSeries
 	for i := range a.expected {
 		for j, val := range a.expected[i].Values {

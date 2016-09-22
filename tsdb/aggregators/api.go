@@ -39,12 +39,6 @@ var (
 		},
 		updaterCreater: kNaN,
 	}
-	Pdiff = &Aggregator{
-		aggListCreater: func(size int) aggregatorListType {
-			return make(minListType, size)
-		},
-		updaterCreater: kPdiff,
-	}
 	Sum = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
 			return make(sumListType, size)
@@ -59,7 +53,6 @@ var (
 		"count": Count,
 		"max":   Max,
 		"min":   Min,
-		"pdiff": Pdiff,
 		"sum":   Sum,
 	}
 )
@@ -109,6 +102,19 @@ func ByFillPolicyName(fillPolicyName string) (FillPolicy, bool) {
 	return result, ok
 }
 
+// RateSpec is the rate of change specification for ever increasing metrics.
+type RateSpec struct {
+	// True if metric is a counter. Counter metrics are ever increasing.
+	Counter bool
+	// If Counter is true, the maximum value of the counter.
+	// Used to correctly determine rate of change if counter rolls over
+	CounterMax float64
+	// If Counter is true, the maximum expected rate of change. If rate
+	// of change exceeds this, we assume counter rolled over because of
+	// a restart.
+	ResetValue float64
+}
+
 // New returns an instance that aggregates time series.
 //
 // The aggregator parameter specifies the type of aggrgation.
@@ -124,17 +130,23 @@ func ByFillPolicyName(fillPolicyName string) (FillPolicy, bool) {
 // values less than 1.0 as 1.0
 //
 // fillPolicy is the FillPolicy to use when downsampling.
+//
+// optionalRateSpec is the TSDB rate specification. If non-nil,
+// the Aggregate method reports rate of change per second in aggregated
+// values instead of the actual aggregated values.
 func New(
 	start, end float64,
 	aggregator *Aggregator,
 	downSample float64,
 	downSampleAggregator *Aggregator,
-	fillPolicy FillPolicy) tsdb.Aggregator {
+	fillPolicy FillPolicy,
+	optionalRateSpec *RateSpec) tsdb.Aggregator {
 	return _new(
 		start,
 		end,
 		aggregator,
 		downSample,
 		downSampleAggregator,
-		fillPolicy)
+		fillPolicy,
+		optionalRateSpec)
 }

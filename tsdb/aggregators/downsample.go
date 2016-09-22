@@ -39,6 +39,11 @@ func (p *downSamplePolicyType) TSOf(index int) float64 {
 	return float64(p.start + int64(index)*p.downSampleSize)
 }
 
+// DownSampleSize returns the down sample size in seconds.
+func (p *downSamplePolicyType) DownSampleSize() float64 {
+	return float64(p.downSampleSize)
+}
+
 // Given a starting index, NextSample returns the first index in given
 // time series that begins the next time slice. If start is in the last
 // time slice in given time series, NextSample returns the length of given

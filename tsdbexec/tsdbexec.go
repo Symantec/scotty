@@ -103,6 +103,7 @@ func query(
 		aggregatorGen, err = tsdbjson.NewAggregatorGenerator(
 			parsedQueries[i].Aggregator.Type,
 			parsedQueries[i].Aggregator.DownSample,
+			parsedQueries[i].Aggregator.RateOptions,
 		)
 		if err != nil {
 			return

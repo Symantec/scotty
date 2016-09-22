@@ -95,7 +95,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		500.0, 600.0,
 		nil); err != nil {
@@ -127,7 +128,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		500.0, 600.0,
 		nil); err != tsdbimpl.ErrNoSuchMetric {
@@ -144,7 +146,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		500.0, 1000.0,
 		nil); err != nil {
@@ -176,7 +179,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		501.0, 539.0,
 		nil); err != nil {
@@ -211,7 +215,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -266,7 +271,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		700.0, 900.0,
 		options); err != nil {
@@ -295,7 +301,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -343,7 +350,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -430,7 +438,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		700.0, 900.0,
 		options); err != nil {
@@ -467,7 +476,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -522,7 +532,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != nil {
@@ -562,7 +573,8 @@ func TestAPI(t *testing.T) {
 				aggregators.Avg,
 				20.0,
 				aggregators.Avg,
-				aggregators.NaN), nil
+				aggregators.NaN,
+				nil), nil
 		},
 		400.0, 700.0,
 		options); err != tsdbimpl.ErrNoSuchMetric {

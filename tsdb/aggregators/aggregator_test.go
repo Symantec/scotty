@@ -7,6 +7,141 @@ import (
 	"testing"
 )
 
+func TestRate(t *testing.T) {
+	aggregator := aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{
+			Counter: true, CounterMax: 65500.0, ResetValue: 200.0})
+	aggregator.Add(tsdb.TimeSeries{
+		{1000.0, 10000.0},
+		{1200.0, 49000.0},
+		{1400.0, 3000.0},
+		{1600.0, 53000.0},
+		{1800.0, 52000.0}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1000.0, 195.0},
+		{1200.0, 97.5},
+		{1400.0, 0.0},
+		{1600.0, 0.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
+func TestRateNoReset(t *testing.T) {
+	aggregator := aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{Counter: true, CounterMax: 65500.0})
+	aggregator.Add(tsdb.TimeSeries{
+		{1000.0, 10000.0},
+		{1200.0, 49000.0},
+		{1400.0, 3000.0},
+		{1600.0, 53000.0},
+		{1800.0, 52000.0}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1000.0, 195.0},
+		{1200.0, 97.5},
+		{1400.0, 250.0},
+		{1600.0, 322.5}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
+func TestRateNoResetOrMax(t *testing.T) {
+	aggregator := aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{Counter: true})
+	aggregator.Add(tsdb.TimeSeries{
+		{1000.0, 10000.0},
+		{1200.0, 49000.0},
+		{1400.0, 3000.0},
+		{1600.0, 53000.0},
+		{1800.0, 52000.0}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1000.0, 195.0},
+		{1200.0, 0.0},
+		{1400.0, 250.0},
+		{1600.0, 0.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
+func TestRateNoCounter(t *testing.T) {
+	aggregator := aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{})
+	aggregator.Add(tsdb.TimeSeries{
+		{1000.0, 10000.0},
+		{1200.0, 49000.0},
+		{1400.0, 3000.0},
+		{1600.0, 53000.0},
+		{1800.0, 52000.0}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1000.0, 195.0},
+		{1200.0, -230.0},
+		{1400.0, 250.0},
+		{1600.0, -5.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
+func TestRateMissingValues(t *testing.T) {
+	aggregator := aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{})
+	aggregator.Add(tsdb.TimeSeries{
+		{1000.0, 10000.0},
+		{1600.0, 49000.0},
+		{1800.0, 52000.0}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1000.0, 65.0},
+		{1200.0, 65.0},
+		{1400.0, 65.0},
+		{1600.0, 15.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+
+	aggregator = aggregators.New(
+		1000.0,
+		2000.0,
+		aggregators.Avg,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		&aggregators.RateSpec{})
+	aggregator.Add(tsdb.TimeSeries{
+		{1400.0, 10000.0},
+		{1600.0, 49000.0}})
+	aggregated = aggregator.Aggregate()
+	expected = tsdb.TimeSeries{
+		{1400.0, 195.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
 func TestAverage(t *testing.T) {
 	aggregator := aggregators.New(
 		1000.0,
@@ -14,7 +149,8 @@ func TestAverage(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.None)
+		aggregators.None,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
 		{1401.0, 20.0}, {1599.0, 30.0},
@@ -46,7 +182,8 @@ func TestAverageZero(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.Zero)
+		aggregators.Zero,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
 		{1401.0, 20.0}, {1599.0, 30.0},
@@ -81,7 +218,8 @@ func TestAverageMax(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Max,
-		aggregators.None)
+		aggregators.None,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
 		{1401.0, 20.0}, {1599.0, 30.5},
@@ -113,7 +251,8 @@ func TestMaxAverage(t *testing.T) {
 		aggregators.Max,
 		200.0,
 		aggregators.Avg,
-		aggregators.None)
+		aggregators.None,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
 		{1401.0, 20.0}, {1599.0, 30.0},
@@ -145,7 +284,8 @@ func TestSumAverage(t *testing.T) {
 		aggregators.Sum,
 		200.0,
 		aggregators.Avg,
-		aggregators.None)
+		aggregators.None,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
 		{1401.0, 20.0}, {1599.0, 30.0},
@@ -177,7 +317,8 @@ func TestAverageStrangeStartAndEnd(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.NaN)
+		aggregators.NaN,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{1057.0, 30.0}, {1199.0, 40.0},
 		{1401.0, 20.0}, {1599.0, 30.0},
@@ -197,14 +338,16 @@ func TestStartEqualsEnd(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.NaN)
+		aggregators.NaN,
+		nil)
 	aggregators.New(
 		1000.0,
 		1000.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.None)
+		aggregators.None,
+		nil)
 }
 
 func TestNegativeStart(t *testing.T) {
@@ -214,7 +357,8 @@ func TestNegativeStart(t *testing.T) {
 		aggregators.Avg,
 		10000.0,
 		aggregators.Avg,
-		aggregators.NaN)
+		aggregators.NaN,
+		nil)
 	aggregator.Add(tsdb.TimeSeries{
 		{-29028.0, -60.0}, {-21000.0, -50.0},
 		{-3000.0, -5.0}, {3000.0, 5.0},
@@ -234,7 +378,8 @@ func TestAverageNone(t *testing.T) {
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
-		aggregators.None)
+		aggregators.None,
+		nil)
 	aggregated := aggregator.Aggregate()
 	if len(aggregated) != 0 {
 		t.Error("Expected no aggregation")

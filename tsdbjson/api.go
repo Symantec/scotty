@@ -49,12 +49,21 @@ type FilterDescription struct {
 	Description string `json:"description"`
 }
 
+// RateSpec represents the rate options for a query
+type RateSpec struct {
+	Counter    bool    `json:"counter"`
+	CounterMax float64 `json:"counterMax"`
+	ResetValue float64 `json:"resetValue"`
+}
+
 // Query represents a single query in an /api/query request
 type Query struct {
 	// The metric name in TSDB escaped form e.g "A_20Metric"
 	Metric string `json:"metric"`
 	// The aggregator type such as "avg" or "sum"
 	Aggregator string `json:"aggregator"`
+	// The rate options
+	RateOptions *RateSpec `json:"rateOptions,omitempty"`
 	// The down sample specification such as "15m_avg"
 	DownSample string `json:"downsample"`
 	// The filters
@@ -113,6 +122,8 @@ type AggregatorSpec struct {
 	Type string
 	// The optional down sample specification
 	DownSample *DownSampleSpec
+	// The optional rate specification
+	RateOptions *RateSpec
 }
 
 // ParsedQueryOptions represents the optional items in a parsed query
@@ -170,10 +181,11 @@ func NewTimeSeriesSlice(
 // NewAggregatorGenerator creates a new aggregator generator.
 // aggregator is the aggregator type such as "avg" or "sum"
 // downSample is optional and includes the down sample specification.
+// rateSpec is also optional and includes the rate specification.
 func NewAggregatorGenerator(
-	aggregator string, downSample *DownSampleSpec) (
+	aggregator string, downSample *DownSampleSpec, rateSpec *RateSpec) (
 	tsdb.AggregatorGenerator, error) {
-	return newAggregatorGenerator(aggregator, downSample)
+	return newAggregatorGenerator(aggregator, downSample, rateSpec)
 }
 
 // NewTagFilter creates a new tag filter.

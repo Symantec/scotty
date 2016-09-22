@@ -24,6 +24,23 @@ var (
 		"Please use a smaller time range or larger downsample size.")
 )
 
+type tagFilterInfoType struct {
+	Description *FilterDescription
+	New         func(s string) (tsdb.TagFilter, error)
+}
+
+var (
+	kTagFiltersByName = map[string]*tagFilterInfoType{
+		"literal_or": {
+			New: newLiteralOr,
+			Description: &FilterDescription{
+				Examples:    "host=literal_or(web01),  host=literal_or(web01|web02|web03)  {\"type\":\"literal_or\",\"tagk\":\"host\",\"filter\":\"web01|web02|web03\",\"groupBy\":false}",
+				Description: "Accepts one or more exact values and matches if the series contains any of them. Multiple values can be included and must be separated by the | (pipe) character. The filter is case sensitive and will not allow characters that TSDB does not allow at write time.",
+			},
+		},
+	}
+)
+
 var (
 	kEscapes = []string{
 		"_00", "_01", "_02", "_03", "_04", "_05", "_06", "_07",
@@ -94,6 +111,14 @@ var (
 		kNoVal, kNoVal, kNoVal, kNoVal, kNoVal, kNoVal, kNoVal, kNoVal,
 	}
 )
+
+func allFilterDescriptions() map[string]*FilterDescription {
+	result := make(map[string]*FilterDescription)
+	for k, v := range kTagFiltersByName {
+		result[k] = v.Description
+	}
+	return result
+}
 
 func newTimeSeriesSlice(
 	taggedTimeSeriesSet *tsdb.TaggedTimeSeriesSet) []TimeSeries {
@@ -280,21 +305,24 @@ func newAggregatorGenerator(
 }
 
 func newTagFilter(filterType, filterValue string) (tsdb.TagFilter, error) {
-	switch filterType {
-	case LiteralOr:
-		return newLiteralOr(filterValue)
-	default:
+	info, ok := kTagFiltersByName[filterType]
+	if !ok {
 		return nil, ErrUnsupportedFilter
 	}
+	return info.New(filterValue)
+}
+
+type literalOrType map[string]bool
+
+func (l literalOrType) Filter(s string) bool {
+	return l[s]
 }
 
 func newLiteralOr(filterValue string) (tsdb.TagFilter, error) {
 	tagValues := strings.Split(filterValue, "|")
-	tagMap := make(map[string]bool, len(tagValues))
+	result := make(literalOrType, len(tagValues))
 	for _, tagValue := range tagValues {
-		tagMap[unescape(tagValue)] = true
+		result[unescape(tagValue)] = true
 	}
-	return func(s string) bool {
-		return tagMap[s]
-	}, nil
+	return result, nil
 }

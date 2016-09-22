@@ -457,12 +457,12 @@ func TestAPI(t *testing.T) {
 	)
 
 	options = &tsdbimpl.QueryOptions{
-		HostNameFilter: func(s string) bool {
+		HostNameFilter: tagFilter(func(s string) bool {
 			return s == "host2" || s == "host3"
-		},
-		AppNameFilter: func(s string) bool {
+		}),
+		AppNameFilter: tagFilter(func(s string) bool {
 			return s == "AnApp"
-		},
+		}),
 		GroupByHostName: true,
 		GroupByAppName:  true,
 	}
@@ -515,12 +515,12 @@ func TestAPI(t *testing.T) {
 	)
 
 	options = &tsdbimpl.QueryOptions{
-		HostNameFilter: func(s string) bool {
+		HostNameFilter: tagFilter(func(s string) bool {
 			return s == "host2" || s == "host3"
-		},
-		AppNameFilter: func(s string) bool {
+		}),
+		AppNameFilter: tagFilter(func(s string) bool {
 			return s == "AnApp"
-		},
+		}),
 	}
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(
 		appStatus,
@@ -556,12 +556,12 @@ func TestAPI(t *testing.T) {
 	)
 
 	options = &tsdbimpl.QueryOptions{
-		HostNameFilter: func(s string) bool {
+		HostNameFilter: tagFilter(func(s string) bool {
 			return s == "host2" || s == "host3"
-		},
-		AppNameFilter: func(s string) bool {
+		}),
+		AppNameFilter: tagFilter(func(s string) bool {
 			return s == "No app"
-		},
+		}),
 	}
 	if _, err = tsdbimpl.Query(
 		appStatus,
@@ -648,4 +648,10 @@ func (b byTagsType) Less(i, j int) bool {
 		return true
 	}
 	return false
+}
+
+type tagFilter func(s string) bool
+
+func (t tagFilter) Filter(s string) bool {
+	return t(s)
 }

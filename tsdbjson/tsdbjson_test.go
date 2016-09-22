@@ -287,9 +287,9 @@ func TestTagFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertValueEquals(t, true, tagFilter("Bad To"))
-	assertValueEquals(t, true, tagFilter("the bone"))
-	assertValueEquals(t, false, tagFilter("the bon"))
+	assertValueEquals(t, true, tagFilter.Filter("Bad To"))
+	assertValueEquals(t, true, tagFilter.Filter("the bone"))
+	assertValueEquals(t, false, tagFilter.Filter("the bon"))
 
 	_, err = tsdbjson.NewTagFilter("NoSuchFilter", "abcd")
 	assertValueEquals(t, tsdbjson.ErrUnsupportedFilter, err)

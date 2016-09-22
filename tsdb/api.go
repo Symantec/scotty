@@ -2,9 +2,11 @@
 // The tsdb package must not depend on any other scotty packages.
 package tsdb
 
-// TagFilter represents an arbitrary filter on a tag value. It returns true
-// if a given tag value should be included or false otherwise.
-type TagFilter func(s string) bool
+// TagFilter represents an arbitrary filter on a tag value. Filter returns
+// true if a given tag value should be included or false otherwise.
+type TagFilter interface {
+	Filter(s string) bool
+}
 
 // TsValue represents a single timestamped value
 type TsValue struct {

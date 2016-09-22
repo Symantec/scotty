@@ -1570,9 +1570,7 @@ func main() {
 		"/api/config/filters",
 		tsdbexec.NewHandler(
 			func(req url.Values) (interface{}, error) {
-				return map[string]*tsdbjson.FilterDescription{
-					tsdbjson.LiteralOr: tsdbexec.LiteralOrDesc,
-				}, nil
+				return tsdbjson.AllFilterDescriptions(), nil
 			},
 		))
 	tsdbServeMux.Handle(

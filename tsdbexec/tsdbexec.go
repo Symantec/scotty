@@ -23,7 +23,7 @@ var (
 )
 
 func newTagFilter(spec *tsdbjson.FilterSpec) (
-	func(s string) bool, error) {
+	tsdb.TagFilter, error) {
 	if spec == nil {
 		return nil, nil
 	}

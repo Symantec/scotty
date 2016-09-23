@@ -20,10 +20,6 @@ var (
 		NaN:  newNaNUpdater,
 		Null: newNaNUpdater,
 	}
-	// Used exclusively by the pdiff aggregator.
-	kPdiff = updaterCreaterType{
-		None: newPdiffUpdater,
-	}
 )
 
 // Get returns a brand new updaterType based on number of time slices and
@@ -78,6 +74,7 @@ func (z zeroUpdaterType) Update(
 }
 
 // linearInterpolationType does linear interpolation
+// Instances of this type do not support simple assignment
 type linearInterpolationType struct {
 	// Linear interpolated values stored here. The index represents the
 	// time slice
@@ -88,7 +85,26 @@ type linearInterpolationType struct {
 	End int
 }
 
+// doLinearInterpolation is a convenience function that does linear
+// interpolation on g in a single step.
+//
+// values contains the linear interpolated values. values is always the
+// same length as g.
+//
+// Because linear interpolation cannot be done before the first value or
+// after the last value, start is the index in values where linear
+// interpolation begins inclusive; end is the index in values where
+// linear interpolation ends exclusive.
+func doLinearInterpolation(g getByIndexType) (
+	values []float64, start, end int) {
+	var l linearInterpolationType
+	l.Values = make([]float64, g.Len())
+	l.Init(g)
+	return l.Values, l.Start, l.End
+}
+
 // Init initializes this instance with g doing linear interpolation.
+// The Values field slice must be the same length as g.
 func (l *linearInterpolationType) Init(g getByIndexType) {
 	length := g.Len()
 	if length != len(l.Values) {
@@ -118,37 +134,6 @@ func (l *linearInterpolationType) Init(g getByIndexType) {
 			}
 			lastValidIndex = i
 			l.End = i + 1
-		}
-	}
-}
-
-// For pdiff.
-type pdiffUpdaterType struct {
-	interpolation linearInterpolationType
-	fillPolicy    FillPolicy
-}
-
-func newPdiffUpdater(size int, fp FillPolicy) updaterType {
-	return &pdiffUpdaterType{
-		interpolation: linearInterpolationType{
-			Values: make([]float64, size),
-		},
-		fillPolicy: fp,
-	}
-}
-
-func (p *pdiffUpdaterType) Update(
-	downAgg getByIndexType, aggregators adderType) {
-	// Use linear interpolation to approximate the deltas of counter metrics.
-	// If at 11:59 metric is 100 and at 12:02 metric is 190, we can still
-	// say that at 12:00 increase is 30 /min.
-	p.interpolation.Init(downAgg)
-	for i := p.interpolation.Start; i < p.interpolation.End-1; i++ {
-		diff := p.interpolation.Values[i+1] - p.interpolation.Values[i]
-		if diff >= 0 {
-			aggregators.Add(i, diff)
-		} else if p.fillPolicy == Zero {
-			aggregators.Add(i, 0)
 		}
 	}
 }

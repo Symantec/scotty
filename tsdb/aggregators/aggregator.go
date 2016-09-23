@@ -54,6 +54,7 @@ type downSampleType struct {
 	// downSamplePolicy understands how to convert between time slices and
 	// indexes.
 	downSamplePolicy downSamplePolicyType
+	optionalRateSpec *RateSpec
 }
 
 func _new(
@@ -61,7 +62,8 @@ func _new(
 	agg *Aggregator,
 	downSample float64,
 	downAgg *Aggregator,
-	fillPolicy FillPolicy) tsdb.Aggregator {
+	fillPolicy FillPolicy,
+	optionalRateSpec *RateSpec) tsdb.Aggregator {
 	if end < start {
 		panic("end cannot be less than start")
 	}
@@ -72,6 +74,10 @@ func _new(
 	result.aggregators = agg.aggListCreater(length)
 	result.downAgg = downAgg.aggListCreater(length)
 	result.updater = downAgg.updaterCreater.Get(length, fillPolicy)
+	if optionalRateSpec != nil {
+		rateSpecCopy := *optionalRateSpec
+		result.optionalRateSpec = &rateSpecCopy
+	}
 	return result
 
 }
@@ -94,8 +100,41 @@ func (d *downSampleType) Add(values tsdb.TimeSeries) {
 	d.downAgg.Clear()
 }
 
+func computeRate(
+	rateSpec *RateSpec, change, downsampleSize float64) (rate float64) {
+	if !rateSpec.Counter {
+		return change / downsampleSize
+	}
+	if change < 0.0 {
+		rate = (change + rateSpec.CounterMax) / downsampleSize
+	} else {
+		rate = change / downsampleSize
+	}
+	if rate < 0.0 {
+		return 0.0
+	}
+	if rateSpec.ResetValue > 0.0 && rate > rateSpec.ResetValue {
+		return 0.0
+	}
+	return
+}
+
 func (d *downSampleType) Aggregate() (result tsdb.TimeSeries) {
 	aggLen := d.aggregators.Len()
+	if d.optionalRateSpec != nil {
+		rateSpec := d.optionalRateSpec
+		values, start, end := doLinearInterpolation(d.aggregators)
+		dsSize := d.downSamplePolicy.DownSampleSize()
+		for i := start; i < end-1; i++ {
+			rate := computeRate(
+				rateSpec, values[i+1]-values[i], dsSize)
+			result = append(result, tsdb.TsValue{
+				Ts:    d.downSamplePolicy.TSOf(i),
+				Value: rate,
+			})
+		}
+		return
+	}
 	// Convert aggregators field to the aggregated time series with the help
 	// of the downSamplePolicy field.
 	for i := 0; i < aggLen; i++ {

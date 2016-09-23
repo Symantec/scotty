@@ -209,6 +209,7 @@ func parseQueryRequest(request *QueryRequest) (
 		parsedQueries[i].Aggregator.Type = request.Queries[i].Aggregator
 		parsedQueries[i].Aggregator.DownSample, err = parseDownSample(
 			request.Queries[i].DownSample)
+		parsedQueries[i].Aggregator.RateOptions = request.Queries[i].RateOptions
 		if err != nil {
 			return
 		}
@@ -238,7 +239,9 @@ func parseQueryRequest(request *QueryRequest) (
 }
 
 func newAggregatorGenerator(
-	aggregatorStr string, downSample *DownSampleSpec) (
+	aggregatorStr string,
+	downSample *DownSampleSpec,
+	rateOptions *RateSpec) (
 	tsdb.AggregatorGenerator, error) {
 	if downSample == nil {
 		return nil, ErrUnsupportedAggregator
@@ -253,6 +256,14 @@ func newAggregatorGenerator(
 	}
 	fill, _ := aggregators.ByFillPolicyName(downSample.Fill)
 	duration := downSample.DurationInSeconds
+	var rateSpec *aggregators.RateSpec
+	if rateOptions != nil {
+		rateSpec = &aggregators.RateSpec{
+			Counter:    rateOptions.Counter,
+			CounterMax: rateOptions.CounterMax,
+			ResetValue: rateOptions.ResetValue,
+		}
+	}
 	return func(start, end float64) (tsdb.Aggregator, error) {
 		if (end-start)/duration > kMaxDownSampleBuckets {
 			return nil, kErrTimeRangeTooBig
@@ -263,7 +274,8 @@ func newAggregatorGenerator(
 			aggregator,
 			duration,
 			downSampleAggregator,
-			fill), nil
+			fill,
+			rateSpec), nil
 	}, nil
 }
 

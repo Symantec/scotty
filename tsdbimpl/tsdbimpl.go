@@ -6,10 +6,10 @@ import (
 )
 
 func (o *QueryOptions) isIncluded(hostName, appName string) bool {
-	if o.HostNameFilter != nil && !o.HostNameFilter(hostName) {
+	if o.HostNameFilter != nil && !o.HostNameFilter.Filter(hostName) {
 		return false
 	}
-	if o.AppNameFilter != nil && !o.AppNameFilter(appName) {
+	if o.AppNameFilter != nil && !o.AppNameFilter.Filter(appName) {
 		return false
 	}
 	return true

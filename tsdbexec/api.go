@@ -17,12 +17,6 @@ var (
 	// NotFoundHandler is a net/http handler that reports a 404 error
 	// the TSDB API way.
 	NotFoundHandler = http.HandlerFunc(notFoundHandlerFunc)
-
-	// LiteralOrDesc is the description of the "literal_or" filter
-	LiteralOrDesc = &tsdbjson.FilterDescription{
-		Examples:    "host=literal_or(web01),  host=literal_or(web01|web02|web03)  {\"type\":\"literal_or\",\"tagk\":\"host\",\"filter\":\"web01|web02|web03\",\"groupBy\":false}",
-		Description: "Accepts one or more exact values and matches if the series contains any of them. Multiple values can be included and must be separated by the | (pipe) character. The filter is case sensitive and will not allow characters that TSDB does not allow at write time.",
-	}
 )
 
 // Suggest corresponds to /api/suggest TSDB API call.

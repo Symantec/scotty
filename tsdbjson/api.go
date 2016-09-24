@@ -17,11 +17,6 @@ const (
 	AppName = "appname"
 )
 
-const (
-	// LiteralOr is the name of TSDB "literal_or" filter.
-	LiteralOr = "literal_or"
-)
-
 var (
 	// The filter is unsupported.
 	ErrUnsupportedFilter = errors.New("tsdbjson: Unsupported filter")
@@ -47,6 +42,13 @@ type Filter struct {
 type FilterDescription struct {
 	Examples    string `json:"examples"`
 	Description string `json:"description"`
+}
+
+// AllFilterDescriptions returns all the filter descriptions keyed by
+// filter name. The return value is used to serve /api/config/filters
+// OpenTSDB requests.
+func AllFilterDescriptions() map[string]*FilterDescription {
+	return allFilterDescriptions()
 }
 
 // RateSpec represents the rate options for a query

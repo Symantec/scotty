@@ -46,9 +46,15 @@ func setConcurrentConnects(x uint) {
 }
 
 func setConcurrentPolls(x uint) {
-	close(pollSemaphore)
+	if pollSemaphore != nil {
+		close(pollSemaphore)
+	}
 	concurrentPolls = x
-	pollSemaphore = make(chan bool, concurrentPolls)
+	if x > 0 {
+		pollSemaphore = make(chan bool, concurrentPolls)
+	} else {
+		pollSemaphore = nil
+	}
 }
 
 func waitingToConnect(sweepStartTime time.Time) *State {
@@ -191,10 +197,12 @@ func (e *Endpoint) pollWithConnectorIndex(
 	defer conn.Close()
 	state = state.goToWaitingToPoll(time.Now())
 	e.logState(state, logger)
-	pollSemaphore <- true
-	defer func() {
-		<-pollSemaphore
-	}()
+	if pollSemaphore != nil {
+		pollSemaphore <- true
+		defer func() {
+			<-pollSemaphore
+		}()
+	}
 	state = state.goToPolling(time.Now())
 	e.logState(state, logger)
 	metrics, err := conn.Poll()

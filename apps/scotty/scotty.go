@@ -77,7 +77,7 @@ var (
 	fPollCount = flag.Uint(
 		"pollCount",
 		collector.ConcurrentPolls(),
-		"Maximum number of concurrent polls")
+		"Maximum number of concurrent polls. 0 means no limit.")
 	fConnectionCount = flag.Uint(
 		"connectionCount",
 		collector.ConcurrentConnects(),

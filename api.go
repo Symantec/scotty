@@ -176,6 +176,7 @@ func (e *Endpoint) Poll(sweepStartTime time.Time, logger Logger) {
 }
 
 // SetConcurrentPolls sets the maximum number of concurrent polls.
+// Zero means no limit.
 // Call SetConcurrentPolls at the beginning of the main() function before
 // calling Endpoint.Poll
 func SetConcurrentPolls(x uint) {
@@ -183,7 +184,7 @@ func SetConcurrentPolls(x uint) {
 }
 
 // ConcurrentPolls returns the maximum number of concurrent polls.
-// Default is 2 * number of CPUs
+// Default is 2 * number of CPUs. A return of 0 means no limit.
 func ConcurrentPolls() uint {
 	return concurrentPolls
 }

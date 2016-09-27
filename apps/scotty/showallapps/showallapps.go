@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -168,9 +167,8 @@ func (h *Handler) ServeHTTP(
 func (h *Handler) newView(
 	apps []*datastructs.ApplicationStatus) *view {
 	result := &view{
-		Apps: apps,
-		History: strconv.Itoa(
-			int((h.CollectionFreq + time.Minute - 1) / time.Minute)),
+		Apps:    apps,
+		History: "0",
 	}
 	result.Summary.Init(apps)
 	return result

@@ -611,6 +611,9 @@ func (s *Store) TsdbTimeSeries(
 
 // NamedIteratorForEndpoint returns an iterator for the given name that
 // iterates over metric values for all known timestamps for the given endpoint.
+// Since the name is used to track progress of iterating over the given
+// endpoint, caller should avoid creating two iterators with the same name
+// iterating over the same endpoint at the same time.
 // Although returned iterator iterates over values and timestamps in no
 // particular order, it will iterate over values of the same metric by
 // increasing timestamp. For now, this method uses the
@@ -643,11 +646,12 @@ func (s *Store) NamedIteratorForEndpoint(
 // reports summarised values by averaging / rolling up values for each time
 // period.
 //
-// NamedIteratorForEndpointRollUp summarises values by averaging both the
-// values and the timestamps of values for each time period.
+// NamedIteratorForEndpointRollUp summarises values by averaging the
+// values for each time period and emits each average with the start time
+// of the corresponding time period.
 // When averaging integer values, it rounds the average to the nearest integer.
 // For non-numeric values such as strings, it summarises by reporting the
-// first encountered value and timestamp in each time period.
+// first encountered value with the start timestamp of each time period.
 // It ignores any inactive flags encountered when summarising values.
 //
 // For each metric, NamedIteratorForEndpointRollUp reports at most one

@@ -19,7 +19,7 @@ var (
 		aggListCreater: func(size int) aggregatorListType {
 			return make(averageListType, size)
 		},
-		updaterCreater: kNaN,
+		updaterCreater: kLinearInterpolation,
 	}
 	Count = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
@@ -31,19 +31,19 @@ var (
 		aggListCreater: func(size int) aggregatorListType {
 			return make(maxListType, size)
 		},
-		updaterCreater: kNaN,
+		updaterCreater: kLinearInterpolation,
 	}
 	Min = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
 			return make(minListType, size)
 		},
-		updaterCreater: kNaN,
+		updaterCreater: kLinearInterpolation,
 	}
 	Sum = &Aggregator{
 		aggListCreater: func(size int) aggregatorListType {
 			return make(sumListType, size)
 		},
-		updaterCreater: kNaN,
+		updaterCreater: kLinearInterpolation,
 	}
 )
 

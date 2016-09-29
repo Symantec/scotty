@@ -9,7 +9,7 @@ func TestMinNone(t *testing.T) {
 	tester := newAggregatorTester(aggregators.Min, aggregators.None)
 	tester.ExpectNoneForNoValues()
 	tester.Expect(7.0, 7.0)
-	tester.ExpectNoneForNoValues()
+	tester.Expect(1.75)
 	tester.Expect(-3.5, 1.0, 9.0, -3.5, -2.5)
 	tester.Expect(2.25, 2.25, 6.0, 3.5)
 	tester.Verify(t)

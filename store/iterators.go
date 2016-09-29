@@ -1,6 +1,7 @@
 package store
 
 import (
+	"math"
 	"sort"
 )
 
@@ -239,6 +240,7 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 			}
 		}
 		n.namedIteratorType.Next(&record)
+		record.TimeStamp = math.Floor(record.TimeStamp/n.interval) * n.interval
 		n.aggregator.Add(&record)
 	}
 	if n.aggregator.IsEmpty() {

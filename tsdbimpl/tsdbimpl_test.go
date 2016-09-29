@@ -188,13 +188,6 @@ func TestAPI(t *testing.T) {
 	}
 	expected = &tsdb.TaggedTimeSeriesSet{
 		MetricName: "/foo",
-		Data: []tsdb.TaggedTimeSeries{
-			{
-				Values: tsdb.TimeSeries{
-					{500.0, 56.0}, {520.0, 57.5},
-				},
-			},
-		},
 	}
 	assertTaggedTimeSeriesSetEquals(
 		t,

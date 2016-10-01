@@ -2,6 +2,7 @@ package aggregators
 
 import (
 	"github.com/Symantec/scotty/tsdb"
+	"math"
 )
 
 // updaterType instances update aggregated values with values from downsampled
@@ -54,7 +55,20 @@ type downSampleType struct {
 	// downSamplePolicy understands how to convert between time slices and
 	// indexes.
 	downSamplePolicy downSamplePolicyType
+	// We ignore values with timestamps before clampStart
+	clampStart float64
+	size       int
+	// The rate specification
 	optionalRateSpec *RateSpec
+}
+
+func computeClampStart(start float64, downSample float64) float64 {
+	quotient := start / downSample
+	timeSliceId := math.Floor(quotient)
+	if timeSliceId == quotient {
+		return timeSliceId * downSample
+	}
+	return (timeSliceId + 1.0) * downSample
 }
 
 func _new(
@@ -70,10 +84,12 @@ func _new(
 	result := &downSampleType{
 		downSamplePolicy: newDownSamplePolicyType(start, downSample),
 	}
-	length := result.downSamplePolicy.IndexOf(end) + 1
-	result.aggregators = agg.aggListCreater(length)
-	result.downAgg = downAgg.aggListCreater(length)
-	result.updater = downAgg.updaterCreater.Get(length, fillPolicy)
+	result.size = result.downSamplePolicy.IndexOf(end)
+	result.aggregators = agg.aggListCreater(result.size)
+	result.downAgg = downAgg.aggListCreater(result.size)
+	result.updater = downAgg.updaterCreater.Get(result.size, fillPolicy)
+	// We set clampStart to be the start of first full time slice
+	result.clampStart = computeClampStart(start, downSample)
 	if optionalRateSpec != nil {
 		rateSpecCopy := *optionalRateSpec
 		result.optionalRateSpec = &rateSpecCopy
@@ -84,10 +100,16 @@ func _new(
 
 func (d *downSampleType) Add(values tsdb.TimeSeries) {
 	valueLen := len(values)
+	var start int
+	for ; start < valueLen && values[start].Ts < d.clampStart; start++ {
+	}
 	// Process incoming time series one time slice at a time
-	for startIdx, endIdx := 0, 0; startIdx < valueLen; startIdx = endIdx {
+	for startIdx, endIdx := start, start; startIdx < valueLen; startIdx = endIdx {
 		endIdx = d.downSamplePolicy.NextSample(values, startIdx)
 		downSampledIdx := d.downSamplePolicy.IndexOf(values[startIdx].Ts)
+		if downSampledIdx >= d.size {
+			break
+		}
 		// Add values in current time slice to d.downAgg one at a time.
 		for i := startIdx; i < endIdx; i++ {
 			d.downAgg.Add(downSampledIdx, values[i].Value)
@@ -138,10 +160,14 @@ func (d *downSampleType) Aggregate() (result tsdb.TimeSeries) {
 	// Convert aggregators field to the aggregated time series with the help
 	// of the downSamplePolicy field.
 	for i := 0; i < aggLen; i++ {
+		ts := d.downSamplePolicy.TSOf(i)
+		if ts < d.clampStart {
+			continue
+		}
 		value, ok := d.aggregators.Get(i)
 		if ok {
 			result = append(result, tsdb.TsValue{
-				Ts:    d.downSamplePolicy.TSOf(i),
+				Ts:    ts,
 				Value: value,
 			})
 		}

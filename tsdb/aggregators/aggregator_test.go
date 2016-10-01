@@ -142,6 +142,37 @@ func TestRateMissingValues(t *testing.T) {
 	assertValueDeepEqual(t, expected, aggregated)
 }
 
+func TestCount(t *testing.T) {
+	aggregator := aggregators.New(
+		1043.0,
+		2021.0,
+		aggregators.Count,
+		200.0,
+		aggregators.Avg,
+		aggregators.None,
+		nil)
+	aggregator.Add(tsdb.TimeSeries{
+		{1043.0, 42.0}, {1044.0, 54.0}, {1199.999, 49.5},
+		{1200.0, 35.0},
+		{1401.0, 20.0}, {1599.0, 30.0},
+		{1836.0, 98.0},
+		{2019.0, 1.3}})
+	aggregator.Add(nil)
+	aggregator.Add(tsdb.TimeSeries{
+		{1043.0, 42.0}, {1044.0, 54.0}, {1199.999, 49.5},
+		{1200.0, 53.0},
+		{1401.0, 20.0}, {1599.0, 30.0},
+		{1836.0, 98.0},
+		{2019.0, 1.3}})
+	aggregated := aggregator.Aggregate()
+	expected := tsdb.TimeSeries{
+		{1200.0, 2.0},
+		{1400.0, 2.0},
+		{1600.0, 0.0},
+		{1800.0, 2.0}}
+	assertValueDeepEqual(t, expected, aggregated)
+}
+
 func TestAverage(t *testing.T) {
 	aggregator := aggregators.New(
 		1000.0,
@@ -206,8 +237,7 @@ func TestAverageZero(t *testing.T) {
 		{1200.0, 0.0},
 		{1400.0, 768.75},
 		{1600.0, 24.75},
-		{1800.0, 74.5},
-		{2000.0, 0.0}}
+		{1800.0, 74.5}}
 	assertValueDeepEqual(t, expected, aggregated)
 }
 
@@ -324,10 +354,7 @@ func TestAverageStrangeStartAndEnd(t *testing.T) {
 		{1401.0, 20.0}, {1599.0, 30.0},
 		{1836.0, 98.0}})
 	aggregated := aggregator.Aggregate()
-	expected := tsdb.TimeSeries{
-		{1000.0, 35.0},
-		{1400.0, 25.0},
-		{1800.0, 98.0}}
+	expected := tsdb.TimeSeries{{1400.0, 25.0}}
 	assertValueDeepEqual(t, expected, aggregated)
 }
 
@@ -365,9 +392,8 @@ func TestNegativeStart(t *testing.T) {
 		{29027.0, 43.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
-		{-30000.0, -55.0},
 		{-10000.0, -5.0},
-		{0, 5.0}, {20000.0, 43.0}}
+		{0, 5.0}}
 	assertValueDeepEqual(t, expected, aggregated)
 }
 

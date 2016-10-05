@@ -43,6 +43,9 @@ fi
 mkdir -m 0755 -p "$LOG_DIR"
 chown "$USERNAME" "$LOG_DIR"
 
+chown -R "${USERNAME}:users" /var/lib/scotty
+chown -R "${USERNAME}:users" /etc/scotty
+
 PROG_ARGS="$PROG_ARGS --mdbServerHostname=$MDB_SERVER_HOST"
 
 if [ -n "$PERSISTENT_STORE_TYPE" ]; then

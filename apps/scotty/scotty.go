@@ -102,8 +102,6 @@ var (
 		"tsdbConfigFile",
 		"",
 		"tsdb configuration file")
-	fLogBufLines = flag.Uint(
-		"logbufLines", 1024, "Number of lines to store in the log buffer")
 	fPidFile = flag.String(
 		"pidfile", "", "Name of file to write my PID to")
 	fThreshhold = flag.Float64(
@@ -1448,7 +1446,7 @@ func newTsdbAdder(adder suggest.Adder) suggest.Adder {
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
-	circularBuffer := logbuf.New(*fLogBufLines)
+	circularBuffer := logbuf.New()
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
 	// Read configs early so that we will fail fast.

@@ -7,10 +7,11 @@ type updaterCreaterType map[FillPolicy]func(
 	size int, fp FillPolicy) updaterType
 
 var (
-	// Use NaN for missing values when fill policy is None, not linear
-	// interpolation. NaN is treated as a missing value in aggregations
-	kNaN = updaterCreaterType{
-		None: newNaNUpdater,
+	// Use LinearInterpolation for missing values when fill policy is None.
+	kLinearInterpolation = updaterCreaterType{
+		None: newLinearInterpolationUpdater,
+		NaN:  newNaNUpdater,
+		Null: newNaNUpdater,
 		Zero: newZeroUpdater,
 	}
 	// use zero for missing values when fill policy is None. Used by the
@@ -135,5 +136,25 @@ func (l *linearInterpolationType) Init(g getByIndexType) {
 			lastValidIndex = i
 			l.End = i + 1
 		}
+	}
+}
+
+type linearInterpolationUpdaterType struct {
+	interpolation linearInterpolationType
+}
+
+func newLinearInterpolationUpdater(size int, unusedFp FillPolicy) updaterType {
+	return &linearInterpolationUpdaterType{
+		interpolation: linearInterpolationType{
+			Values: make([]float64, size),
+		},
+	}
+}
+
+func (l *linearInterpolationUpdaterType) Update(
+	downAgg getByIndexType, aggregators adderType) {
+	l.interpolation.Init(downAgg)
+	for i := l.interpolation.Start; i < l.interpolation.End; i++ {
+		aggregators.Add(i, l.interpolation.Values[i])
 	}
 }

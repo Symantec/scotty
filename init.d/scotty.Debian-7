@@ -1,0 +1,127 @@
+#! /bin/bash --posix
+
+### BEGIN INIT INFO
+# Provides:		scotty
+# Required-Start:	$local_fs $network $syslog
+# Required-Stop:	$local_fs $network $syslog
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	Scotty daemon
+### END INIT INFO
+
+# /etc/init.d/scotty: start and stop the Dominator daemon
+
+. /lib/lsb/init-functions
+
+umask 022
+
+readonly default_log_dir='/var/log/scotty'
+
+DAEMON='/usr/local/sbin/scotty'
+FD_LIMIT=
+IMAGE_SERVER_HOSTNAME=
+LOG_DIR="$default_log_dir"
+LOG_QUOTA=
+LOGBUF_LINES=
+LOOP_PIDFILE='/var/run/scotty.loop.pid'
+PIDFILE='/var/run/scotty.pid'
+STATE_DIR=
+USERNAME='scotty'
+
+PROG_ARGS=
+
+[ -f /etc/default/scotty ] && . /etc/default/scotty
+
+test -x "$DAEMON" || exit 0
+
+export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
+
+if [ -n "$FD_LIMIT" ]; then
+    ulimit -n "$FD_LIMIT"
+fi
+
+mkdir -m 0755 -p "$LOG_DIR"
+chown "$USERNAME" "$LOG_DIR"
+
+chown -R "${USERNAME}:users" /var/lib/scotty
+chown -R "${USERNAME}:users" /etc/scotty
+
+PROG_ARGS="$PROG_ARGS --mdbServerHostname=$MDB_SERVER_HOST"
+
+if [ -n "$PERSISTENT_STORE_TYPE" ]; then
+    PROG_ARGS="$PROG_ARGS --persistentStoreType=$PERSISTENT_STORE_TYPE"
+fi
+
+if [ -n "$PAGE_COUNT" ]; then
+		PROG_ARGS="$PROG_ARGS --pageCount=$PAGE_COUNT"
+fi
+
+if [ -n "$BYTES_PER_PAGE" ]; then
+		PROG_ARGS="$PROG_ARGS --bytesPerPage=$BYTES_PER_PAGE"
+fi
+
+if [ -n "$COLLECT_FREQ" ]; then
+		PROG_ARGS="$PROG_ARGS --collectionFrequency=$COLLECT_FREQ --pstoreUpdateFrequency=$COLLECT_FREQ"
+fi
+
+if [ -n "$MEMORY_PERCENTAGE" ]; then
+		PROG_ARGS="$PROG_ARGS --memoryPercentage=$MEMORY_PERCENTAGE" 
+fi
+
+if [ -n "$LOG_DIR" ] && [ "$LOG_DIR" != "$default_log_dir" ]; then
+    PROG_ARGS="$PROG_ARGS -logDir=$LOG_DIR"
+fi
+
+if [ -n "$LOG_QUOTA" ]; then
+    PROG_ARGS="$PROG_ARGS -logQuota=$LOG_QUOTA"
+fi
+
+if [ -n "$LOGBUF_LINES" ]; then
+    PROG_ARGS="$PROG_ARGS -logbufLines=$LOGBUF_LINES"
+fi
+
+do_start ()
+{
+    start-stop-daemon --start --quiet --pidfile "$PIDFILE" \
+		      --exec "$DAEMON" --chuid "$USERNAME" --make-pidfile -- \
+		      $PROG_ARGS
+}
+
+start_loop ()
+{
+    echo "$BASHPID" > "$LOOP_PIDFILE"
+    while true; do
+	do_start
+	rm -f "$PIDFILE"
+	sleep 1
+    done
+}
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting scotty daemon" "scotty" || true
+	(start_loop < /dev/null &> /dev/null &)
+	;;
+  stop)
+	log_daemon_msg "Stopping scotty daemon" "scotty" || true
+	[ -s "$LOOP_PIDFILE" ] && kill -KILL $(cat "$LOOP_PIDFILE")
+	[ -s "$PIDFILE" ]      && kill -TERM $(cat "$PIDFILE")
+	rm -f "$LOOP_PIDFILE" "$PIDFILE"
+	;;
+
+  reload|force-reload)
+	$0 stop
+	$0 start
+	;;
+
+  restart)
+	$0 stop
+	$0 start
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/scotty {start|stop|reload|force-reload|restart}" || true
+	exit 1
+esac
+
+exit 0

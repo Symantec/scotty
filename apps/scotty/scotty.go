@@ -37,6 +37,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"runtime"
 	"runtime/debug"
 	"sort"
@@ -66,17 +67,13 @@ var (
 		"pageCount",
 		30*1000*1000,
 		"Total page count")
-	fAppFile = flag.String(
-		"appFile",
-		"apps.yaml",
-		"File containing mapping of ports to apps")
 	fMdbFile = flag.String(
 		"mdbFile",
-		"/var/lib/Dominator/mdb",
+		"/var/lib/scotty/mdb",
 		"Name of file from which to read mdb data.")
 	fPollCount = flag.Uint(
-		"pollCount",
-		collector.ConcurrentPolls(),
+		"concurrentPolls",
+		0,
 		"Maximum number of concurrent polls. 0 means no limit.")
 	fConnectionCount = flag.Uint(
 		"connectionCount",
@@ -90,24 +87,18 @@ var (
 		"pstoreUpdateFrequency",
 		30*time.Second,
 		"Amount of time between writing newest metrics to persistent storage")
-	fKafkaConfigFile = flag.String(
-		"kafkaConfigFile",
-		"",
-		"kafka configuration file")
-	fInfluxConfigFile = flag.String(
-		"influxConfigFile",
-		"",
-		"influx configuration file")
-	fTsdbConfigFile = flag.String(
-		"tsdbConfigFile",
-		"",
-		"tsdb configuration file")
+	fPersistentStoreType = flag.String(
+		"persistentStoreType",
+		"kafka",
+		"Type of persistent store must be either 'kafka','influx','tsdb', or 'none'")
 	fPidFile = flag.String(
 		"pidfile", "", "Name of file to write my PID to")
 	fThreshhold = flag.Float64(
 		"inactiveThreshhold", 0.1, "Ratio of inactive pages needed to begin purging inactive pages")
 	fDegree = flag.Uint(
 		"degree", 10, "Degree of btree")
+	fConfigDir = flag.String(
+		"configDir", "/etc/scotty", "Directory for scotty config files.")
 )
 
 // nameSetType represents a set of strings. Instances of this type
@@ -815,16 +806,20 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func newPStoreConsumers(maybeNilMemoryManager *memoryManagerType) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
-	if *fKafkaConfigFile != "" {
+	switch *fPersistentStoreType {
+	case "kafka":
 		result, err = kafka.ConsumerBuildersFromFile(
-			*fKafkaConfigFile)
-	}
-	if *fInfluxConfigFile != "" {
+			path.Join(*fConfigDir, "kafka.yaml"))
+	case "influx":
 		result, err = influx.ConsumerBuildersFromFile(
-			*fInfluxConfigFile)
-	}
-	if *fTsdbConfigFile != "" {
-		result, err = tsdb.ConsumerBuildersFromFile(*fTsdbConfigFile)
+			path.Join(*fConfigDir, "influx.yaml"))
+	case "tsdb":
+		result, err = tsdb.ConsumerBuildersFromFile(
+			path.Join(*fConfigDir, "tsdb.yaml"))
+	case "none":
+		// Do nothing
+	default:
+		log.Fatal("persistentStoreType flag must be kafka,influx,tsdb, or none.")
 	}
 	if maybeNilMemoryManager != nil {
 		memoryManager := maybeNilMemoryManager
@@ -838,7 +833,7 @@ func newPStoreConsumers(maybeNilMemoryManager *memoryManagerType) (
 }
 
 func createApplicationList() *datastructs.ApplicationList {
-	f, err := os.Open(*fAppFile)
+	f, err := os.Open(path.Join(*fConfigDir, "apps.yaml"))
 	if err != nil {
 		log.Fatal(err)
 	}

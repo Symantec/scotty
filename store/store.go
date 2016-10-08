@@ -142,10 +142,12 @@ func (s *Store) markEndpointActive(endpointId interface{}) {
 	s.byApplication[endpointId].MarkActive()
 }
 
-func (s *Store) latestByEndpoint(
+func (s *Store) latestByPrefixAndEndpoint(
+	prefix string,
 	endpointId interface{},
+	strategy MetricGroupingStrategy,
 	result Appender) {
-	s.byApplication[endpointId].Latest(result)
+	s.byApplication[endpointId].LatestByPrefix(prefix, strategy, result)
 }
 
 func (s *Store) visitAllEndpoints(v Visitor) (err error) {

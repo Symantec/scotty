@@ -50,7 +50,7 @@ func newWriter(c Config) (
 }
 
 func (w *writer) IsTypeSupported(t types.Type) bool {
-	return kafka.IsTypeSupported(t)
+	return kafka.IsTypeSupported(t) || t == types.String
 }
 
 func (w *writer) Write(records []pstore.Record) (err error) {
@@ -87,8 +87,12 @@ func createPoint(r *pstore.Record) (*client.Point, error) {
 		tags[k] = v
 	}
 	fields := map[string]interface{}{
-		kFieldName:  r.Path,
-		kFieldValue: kafka.ToFloat64(r),
+		kFieldName: r.Path,
+	}
+	if r.Kind == types.String {
+		fields[kFieldValue] = r.Value.(string)
+	} else {
+		fields[kFieldValue] = kafka.ToFloat64(r)
 	}
 	return client.NewPoint(r.Path, tags, fields, r.Timestamp)
 }

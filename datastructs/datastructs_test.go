@@ -12,7 +12,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"math"
 	"reflect"
-	"sort"
 	"testing"
 )
 
@@ -248,7 +247,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	}
 
 	stats := appStatus.All()
-	sort.Sort(sortByHostPort(stats))
+	ByHostAndName(stats)
 	assertValueEquals(t, 8, len(stats))
 	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
 	assertValueEquals(
@@ -311,7 +310,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	}
 
 	stats = appStatus.All()
-	sort.Sort(sortByHostPort(stats))
+	ByHostAndName(stats)
 	assertValueEquals(t, 8, len(stats))
 	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
 	assertValueEquals(
@@ -526,25 +525,4 @@ func assertApplication(
 			protocol,
 			app.Connectors()[0].Name())
 	}
-}
-
-type sortByHostPort []*ApplicationStatus
-
-func (s sortByHostPort) Len() int { return len(s) }
-
-func (s sortByHostPort) Swap(i, j int) {
-	s[i], s[j] = s[j], s[i]
-}
-
-func (s sortByHostPort) Less(i, j int) bool {
-	if s[i].EndpointId.HostName() < s[j].EndpointId.HostName() {
-		return true
-	}
-	if s[i].EndpointId.HostName() > s[j].EndpointId.HostName() {
-		return false
-	}
-	if s[i].EndpointId.Port() < s[j].EndpointId.Port() {
-		return true
-	}
-	return false
 }

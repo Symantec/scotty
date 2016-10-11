@@ -48,6 +48,29 @@ type TimestampedValue struct {
 // in place.
 type TimestampedValueList []*TimestampedValue
 
+type LatestMetric struct {
+	// The hostname, appname combination identify the endpoint
+	HostName string `json:"hostName,omitempty"`
+	AppName  string `json:"appName,omitempty"`
+
+	Path        string     `json:"path,omitempty"`
+	Description string     `json:"description"`
+	Unit        units.Unit `json:"unit,omitempty"`
+	Kind        types.Type `json:"kind"`
+	SubType     types.Type `json:"subType,omitempty"`
+	Bits        int        `json:"bits,omitempty"`
+	// The timestamp of the value in seconds past Jan 1, 1970 GMT
+	Timestamp interface{} `json:"timestamp"`
+	// value stored here.
+	Value interface{} `json:"value"`
+	// The following fields only apply to distribution metrics.
+
+	// This field is true if this distribution is not cumulative.
+	IsNotCumulative bool `json:"isNotCumulative,omitempty"`
+	// The upper limits for the distribution buckets.
+	UpperLimits []float64 `json:"upperLimits,omitempty"`
+}
+
 // EndpointMetric represents the values of a metric on an endpoint
 type EndpointMetric struct {
 	// The hostname, appname combination identify the endpoint

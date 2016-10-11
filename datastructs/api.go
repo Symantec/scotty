@@ -152,7 +152,7 @@ func (a *ApplicationStatuses) LogChangedMetricCount(
 	a.logChangedMetricCount(e, metricCount)
 }
 
-// GetAll returns the statuses for all the applications.
+// All returns the statuses for all the applications.
 // Clients are free to reorder the returned slice.
 func (a *ApplicationStatuses) All() []*ApplicationStatus {
 	return a.all()
@@ -161,7 +161,15 @@ func (a *ApplicationStatuses) All() []*ApplicationStatus {
 // AllWithStore works like All, but also returns the current store.
 func (a *ApplicationStatuses) AllWithStore() (
 	[]*ApplicationStatus, *store.Store) {
-	return a.allWithStore()
+	return a.allWithStore(nil)
+}
+
+// AllActiveWithStore is like AllWithStore but returns only the statuses
+// where Active is true.
+func (a *ApplicationStatuses) AllActiveWithStore() (
+	[]*ApplicationStatus, *store.Store) {
+	return a.allWithStore(
+		func(s *ApplicationStatus) bool { return s.Active })
 }
 
 // EndpointIdByHostAndName Returns the endpoint Id for given host and

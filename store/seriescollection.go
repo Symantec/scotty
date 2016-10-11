@@ -280,6 +280,22 @@ func (c *timeSeriesCollectionType) TsByPrefix(prefix string) (
 	return
 }
 
+func (c *timeSeriesCollectionType) TsAndTimeStampsByPrefix(prefix string) (
+	result []*timeSeriesType, resultTs map[int]*timestampSeriesType) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	resultTs = make(map[int]*timestampSeriesType)
+	for _, info := range c.metricInfoStore.ByInfo {
+		if strings.HasPrefix(info.Path(), prefix) {
+			ts := c.timeSeries[info]
+			groupId := ts.id.GroupId()
+			result = append(result, ts)
+			resultTs[groupId] = c.timestampSeries[groupId]
+		}
+	}
+	return
+}
+
 // LookupBatch looks up all the metrics in one go and returns the
 // following:
 // fetched: timeSeries already in this collection keyed by Metric.
@@ -637,13 +653,38 @@ func (c *timeSeriesCollectionType) ByPrefix(
 }
 
 // Latest values for this instance.
-func (c *timeSeriesCollectionType) Latest(result Appender) {
-	doneAppender := &doneAppenderType{Wrapped: result}
-	for _, timeSeries := range c.TsByPrefix("") {
-		timeSeries.Fetch(
-			c.applicationId, kPlusInf, kPlusInf, doneAppender)
-		if doneAppender.Done {
-			return
+func (c *timeSeriesCollectionType) LatestByPrefix(
+	prefix string, strategy MetricGroupingStrategy, result Appender) {
+	timeSeries, timestampSeries := c.TsAndTimeStampsByPrefix(prefix)
+	partition := strategy.orderedPartition(timeSeries)
+	tslen := len(timeSeries)
+	latestRecordSlice := make([]Record, 1)
+	latestTimeStamps := make(map[int][]float64)
+	merger := newMerger()
+	for startIdx, endIdx := 0, 0; startIdx < tslen; startIdx = endIdx {
+		endIdx = nextSubset(partition, startIdx)
+		group := timeSeries[startIdx:endIdx]
+		latestRecordSlice := latestRecordSlice[:0]
+		merger.MergeNewestFirst(
+			group,
+			func(ts *timeSeriesType, appender Appender) {
+				groupId := ts.id.GroupId()
+				if latestTimeStamps[groupId] == nil {
+					latestTimeStamps[groupId] = []float64{
+						timestampSeries[groupId].Latest(),
+					}
+				}
+				ts.FetchForwardWithTimeStamps(
+					c.applicationId,
+					latestTimeStamps[groupId],
+					appender)
+			},
+			AppenderLimit(AppendTo(&latestRecordSlice), 1),
+		)
+		if len(latestRecordSlice) >= 1 {
+			if !result.Append(&latestRecordSlice[0]) {
+				return
+			}
 		}
 	}
 }

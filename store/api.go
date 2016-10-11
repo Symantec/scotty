@@ -706,7 +706,17 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 func (s *Store) LatestByEndpoint(
 	endpointId interface{},
 	result Appender) {
-	s.latestByEndpoint(endpointId, result)
+	s.latestByPrefixAndEndpoint("", endpointId, GroupMetricExactly, result)
+}
+
+// LatestByEndpointStraegy returns the latest record for each metric group
+// in no particular order.
+func (s *Store) LatestByPrefixAndEndpointStrategy(
+	prefix string,
+	endpointId interface{},
+	strategy MetricGroupingStrategy,
+	result Appender) {
+	s.latestByPrefixAndEndpoint(prefix, endpointId, strategy, result)
 }
 
 // VisitAllEndpoints visits each endpoint registered with this instance.

@@ -124,7 +124,14 @@ func iteratorLimit(wrapped store.Iterator, limit int) store.Iterator {
 type sumMetricsType int64
 
 func (s *sumMetricsType) Append(r *store.Record) bool {
-	*s += sumMetricsType(r.Value.(int64))
+	switch i := r.Value.(type) {
+	case int64:
+		*s += sumMetricsType(i)
+	case int32:
+		*s += sumMetricsType(i)
+	default:
+		panic("Bad type")
+	}
 	return true
 }
 
@@ -258,6 +265,21 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	total = 0
 	aStore.LatestByEndpoint(kEndpoint1, &total)
 	assertValueEquals(t, 14, int(total))
+
+	aMetric[0].Value = int32(17)
+	aStore.AddBatch(kEndpoint1, 128.0, aMetric[:])
+
+	var result []store.Record
+	aStore.LatestByEndpoint(kEndpoint1, store.AppendTo(&result))
+	assertValueEquals(t, 2, len(result))
+
+	result = nil
+	aStore.LatestByPrefixAndEndpointStrategy(
+		"/foo/bar",
+		kEndpoint1,
+		store.GroupMetricByPathAndNumeric,
+		store.AppendTo(&result))
+	assertValueEquals(t, 1, len(result))
 }
 
 type descendingCheckerType struct {
@@ -1202,6 +1224,37 @@ func TestTsdbTimeSeries(t *testing.T) {
 	if ok {
 		t.Error("Expected not to find time series bob.")
 	}
+}
+
+func TestLatest(t *testing.T) {
+	aStore := newStore(t, "TestLatest", 2, 100, 1.0, 10)
+	aStore.RegisterEndpoint(kEndpoint0)
+	aMetric := metrics.SimpleList{
+		{
+			Path:        "Alice",
+			Description: "A description",
+			GroupId:     0,
+		},
+	}
+	playback := newPlaybackType(aMetric[:], 3)
+	playback.AddTimes(
+		0,
+		100.0, 200.0, 300.0,
+	)
+	playback.Add(
+		"Alice",
+		int64(357), int64(357), int64(357),
+	)
+	playback.Play(aStore, kEndpoint0)
+	expected := newExpectedTsValues()
+	expected.Add("Alice", 300.0, int64(357))
+	var results []store.Record
+	aStore.LatestByPrefixAndEndpointStrategy(
+		"Alice",
+		kEndpoint0,
+		store.GroupMetricByPathAndNumeric,
+		store.AppendTo(&results))
+	expected.CheckSlice(t, results)
 }
 
 func TestIterator(t *testing.T) {

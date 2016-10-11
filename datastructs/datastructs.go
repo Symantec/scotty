@@ -205,13 +205,13 @@ func (a *ApplicationStatuses) logChangedMetricCount(
 	}
 }
 
-func (a *ApplicationStatuses) _all() (result []*ApplicationStatus) {
-	result = make([]*ApplicationStatus, len(a.byEndpoint))
-	idx := 0
+func (a *ApplicationStatuses) _all(
+	filter func(*ApplicationStatus) bool) (result []*ApplicationStatus) {
 	for _, val := range a.byEndpoint {
-		acopy := *val
-		result[idx] = &acopy
-		idx++
+		if filter == nil || filter(val) {
+			acopy := *val
+			result = append(result, &acopy)
+		}
 	}
 	return
 }
@@ -219,14 +219,15 @@ func (a *ApplicationStatuses) _all() (result []*ApplicationStatus) {
 func (a *ApplicationStatuses) all() (result []*ApplicationStatus) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	return a._all()
+	return a._all(nil)
 }
 
-func (a *ApplicationStatuses) allWithStore() (
+func (a *ApplicationStatuses) allWithStore(
+	filter func(*ApplicationStatus) bool) (
 	result []*ApplicationStatus, astore *store.Store) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	return a._all(), a.currentStore
+	return a._all(filter), a.currentStore
 }
 
 func (a *ApplicationStatuses) endpointIdByHostAndName(host, name string) (

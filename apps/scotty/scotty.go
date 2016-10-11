@@ -584,6 +584,77 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.H.ServeHTTP(gzr, r)
 }
 
+type latestMetricsAppenderJSON struct {
+	result   *[]*messages.LatestMetric
+	hostName string
+	appName  string
+}
+
+func (a *latestMetricsAppenderJSON) Append(r *store.Record) bool {
+	// Skip inactive records
+	if !r.Active {
+		return true
+	}
+	jsonValue, jsonKind, jsonSubType := asJsonWithSubType(
+		r.Value,
+		r.Info.Kind(),
+		r.Info.SubType(),
+		r.Info.Unit())
+	var upperLimits []float64
+	if r.Info.Kind() == types.Dist {
+		upperLimits = r.Info.Ranges().UpperLimits
+	}
+	aMetric := &messages.LatestMetric{
+		HostName:        a.hostName,
+		AppName:         a.appName,
+		Path:            r.Info.Path(),
+		Kind:            jsonKind,
+		SubType:         jsonSubType,
+		Description:     r.Info.Description(),
+		Bits:            r.Info.Bits(),
+		Unit:            r.Info.Unit(),
+		Value:           jsonValue,
+		Timestamp:       duration.SinceEpochFloat(r.TimeStamp).String(),
+		IsNotCumulative: r.Info.IsNotCumulative(),
+		UpperLimits:     upperLimits,
+	}
+	*a.result = append(*a.result, aMetric)
+	return true
+}
+
+type latestMetricsAppender struct {
+	result   *[]*messages.LatestMetric
+	hostName string
+	appName  string
+}
+
+func (a *latestMetricsAppender) Append(r *store.Record) bool {
+	// Skip inactive records
+	if !r.Active {
+		return true
+	}
+	var upperLimits []float64
+	if r.Info.Kind() == types.Dist {
+		upperLimits = r.Info.Ranges().UpperLimits
+	}
+	aMetric := &messages.LatestMetric{
+		HostName:        a.hostName,
+		AppName:         a.appName,
+		Path:            r.Info.Path(),
+		Kind:            r.Info.Kind(),
+		SubType:         r.Info.SubType(),
+		Description:     r.Info.Description(),
+		Bits:            r.Info.Bits(),
+		Unit:            r.Info.Unit(),
+		Value:           r.Value,
+		Timestamp:       duration.FloatToTime(r.TimeStamp),
+		IsNotCumulative: r.Info.IsNotCumulative(),
+		UpperLimits:     upperLimits,
+	}
+	*a.result = append(*a.result, aMetric)
+	return true
+}
+
 // endpointMetricsAppender is an implementation of store.Appender that
 // appends to a messages.EndpointMetricsList.
 // endpointMetricsAppender is NOT threadsafe.
@@ -669,6 +740,41 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 	return true
 }
 
+func latestMetricsForEndpoint(
+	metricStore *store.Store,
+	app *datastructs.ApplicationStatus,
+	path string,
+	json bool) (result []*messages.LatestMetric) {
+	var appender store.Appender
+	if json {
+		appender = &latestMetricsAppenderJSON{
+			result:   &result,
+			hostName: app.EndpointId.HostName(),
+			appName:  app.Name,
+		}
+	} else {
+		appender = &latestMetricsAppender{
+			result:   &result,
+			hostName: app.EndpointId.HostName(),
+			appName:  app.Name,
+		}
+	}
+	metricStore.LatestByPrefixAndEndpointStrategy(
+		path,
+		app.EndpointId,
+		store.GroupMetricByPathAndNumeric,
+		store.AppenderFilterFunc(
+			appender,
+			func(r *store.Record) bool {
+				return r.Info.Path() == path || strings.HasPrefix(
+					r.Info.Path(), path+"/")
+			},
+		),
+	)
+	sort.Sort(latestByPath(result))
+	return
+}
+
 // gatherDataForEndpoint serves api/hosts pages.
 // metricStore is the metric store.
 // endpoint is the endpoint from which we are getting historical metrics.
@@ -702,7 +808,7 @@ func gatherDataForEndpoint(
 			math.Inf(1),
 			store.GroupMetricByKey,
 			appender)
-		if !isSingleton {
+		if len(result) == 0 && !isSingleton {
 			metricStore.ByPrefixAndEndpointStrategy(
 				path+"/",
 				endpoint,
@@ -715,6 +821,21 @@ func gatherDataForEndpoint(
 	}
 	sortMetricsByPath(result)
 	return
+}
+
+// byPath sorts metrics by path lexographically
+type latestByPath []*messages.LatestMetric
+
+func (b latestByPath) Len() int {
+	return len(b)
+}
+
+func (b latestByPath) Less(i, j int) bool {
+	return b[i].Path < b[j].Path
+}
+
+func (b latestByPath) Swap(i, j int) {
+	b[j], b[i] = b[i], b[j]
 }
 
 // byPath sorts metrics by path lexographically
@@ -767,6 +888,26 @@ func httpError(w http.ResponseWriter, status int) {
 			status,
 			http.StatusText(status)),
 		status)
+}
+
+// byEndpointHandler handles serving api/hosts requests
+type latestHandler struct {
+	AS *datastructs.ApplicationStatuses
+}
+
+func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	w.Header().Set("Content-Type", "application/json")
+	path := "/" + r.URL.Path
+	apps, metricStore := h.AS.AllActiveWithStore()
+	datastructs.ByHostAndName(apps)
+	data := make([]*messages.LatestMetric, 0)
+	for _, app := range apps {
+		data = append(
+			data,
+			latestMetricsForEndpoint(metricStore, app, path, true)...)
+	}
+	encodeJson(w, data, r.Form.Get("format") == "text")
 }
 
 // byEndpointHandler handles serving api/hosts requests
@@ -1503,6 +1644,14 @@ func main() {
 			gzipHandler{&byEndpointHandler{
 				AS: applicationStats,
 			}}))
+	http.Handle(
+		"/api/latest/",
+		http.StripPrefix(
+			"/api/latest/",
+			gzipHandler{&latestHandler{
+				AS: applicationStats,
+			}}))
+
 	http.Handle(
 		"/api/errors/",
 		gzipHandler{&errorHandler{

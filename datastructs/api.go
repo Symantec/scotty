@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/store"
 	"io"
+	"sort"
 	"sync"
 	"time"
 )
@@ -61,6 +62,12 @@ func (a *ApplicationStatus) Staleness() time.Duration {
 		return 0
 	}
 	return time.Now().Sub(a.LastReadTime)
+}
+
+// ByHostAndName sorts list by the hostname and then by application name
+// in ascending order.
+func ByHostAndName(list []*ApplicationStatus) {
+	sort.Sort(byHostAndName(list))
 }
 
 // ApplicationStatuses is thread safe representation of application statuses

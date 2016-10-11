@@ -16,6 +16,27 @@ import (
 	"time"
 )
 
+type byHostAndName []*ApplicationStatus
+
+func (b byHostAndName) Len() int { return len(b) }
+
+func (b byHostAndName) Less(i, j int) bool {
+	ihostname := b[i].EndpointId.HostName()
+	jhostname := b[j].EndpointId.HostName()
+	if ihostname < jhostname {
+		return true
+	} else if jhostname < ihostname {
+		return false
+	} else if b[i].Name < b[j].Name {
+		return true
+	}
+	return false
+}
+
+func (b byHostAndName) Swap(i, j int) {
+	b[j], b[i] = b[i], b[j]
+}
+
 type protocolType func(map[string]string) (sources.ConnectorList, error)
 
 func newTricorder(unused map[string]string) (sources.ConnectorList, error) {

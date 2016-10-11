@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
@@ -127,37 +126,12 @@ type Handler struct {
 	CollectionFreq time.Duration
 }
 
-type byNameAndPort []*datastructs.ApplicationStatus
-
-func (b byNameAndPort) Len() int { return len(b) }
-
-func (b byNameAndPort) Less(i, j int) bool {
-	ihostname := b[i].EndpointId.HostName()
-	jhostname := b[j].EndpointId.HostName()
-	if ihostname < jhostname {
-		return true
-	} else if jhostname < ihostname {
-		return false
-	} else if b[i].EndpointId.Port() < b[j].EndpointId.Port() {
-		return true
-	}
-	return false
-}
-
-func (b byNameAndPort) Swap(i, j int) {
-	b[j], b[i] = b[i], b[j]
-}
-
-func sortByNameAndPort(rows []*datastructs.ApplicationStatus) {
-	sort.Sort(byNameAndPort(rows))
-}
-
 func (h *Handler) ServeHTTP(
 	w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "text/html")
 	result := h.AS.All()
-	sortByNameAndPort(result)
+	datastructs.ByHostAndName(result)
 	v := h.newView(result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
 		fmt.Fprintln(w, "Error in template: %v\n", err)

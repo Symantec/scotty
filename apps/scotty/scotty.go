@@ -891,11 +891,11 @@ func httpError(w http.ResponseWriter, status int) {
 }
 
 // byEndpointHandler handles serving api/hosts requests
-type cisHandler struct {
+type latestHandler struct {
 	AS *datastructs.ApplicationStatuses
 }
 
-func (h cisHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
 	path := "/" + r.URL.Path
@@ -1645,10 +1645,10 @@ func main() {
 				AS: applicationStats,
 			}}))
 	http.Handle(
-		"/api/cis/",
+		"/api/latest/",
 		http.StripPrefix(
-			"/api/cis/",
-			gzipHandler{&cisHandler{
+			"/api/latest/",
+			gzipHandler{&latestHandler{
 				AS: applicationStats,
 			}}))
 

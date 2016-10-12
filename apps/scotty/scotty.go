@@ -34,6 +34,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/rpc"
 	"net/url"
 	"os"
 	"os/signal"
@@ -646,7 +647,7 @@ func (a *latestMetricsAppender) Append(r *store.Record) bool {
 		Description:     r.Info.Description(),
 		Bits:            r.Info.Bits(),
 		Unit:            r.Info.Unit(),
-		Value:           r.Value,
+		Value:           fixForGoRPC(r.Value, r.Info.Kind()),
 		Timestamp:       duration.FloatToTime(r.TimeStamp),
 		IsNotCumulative: r.Info.IsNotCumulative(),
 		UpperLimits:     upperLimits,
@@ -670,22 +671,31 @@ func newEndpointMetricsAppender(result *messages.EndpointMetricList) *endpointMe
 	return &endpointMetricsAppender{endpointMetrics: result}
 }
 
+func asDistribution(distTotals *store.DistributionTotals) (
+	result *messages.Distribution) {
+	if distTotals != nil {
+		result = &messages.Distribution{
+			Sum:           distTotals.Sum,
+			Count:         distTotals.Count(),
+			Counts:        distTotals.Counts,
+			RollOverCount: distTotals.RollOverCount,
+		}
+	}
+	return
+}
+
+func fixForGoRPC(value interface{}, kind types.Type) interface{} {
+	if kind == types.Dist {
+		return asDistribution(value.(*store.DistributionTotals))
+	}
+	return value
+}
+
 func asJsonWithSubType(
 	value interface{}, kind, subType types.Type, unit units.Unit) (
 	jsonValue interface{}, jsonKind, jsonSubType types.Type) {
 	if kind == types.Dist {
-		distTotals := value.(*store.DistributionTotals)
-		if distTotals == nil {
-			var result *messages.Distribution
-			jsonValue = result
-		} else {
-			jsonValue = &messages.Distribution{
-				Sum:           distTotals.Sum,
-				Count:         distTotals.Count(),
-				Counts:        distTotals.Counts,
-				RollOverCount: distTotals.RollOverCount,
-			}
-		}
+		jsonValue = asDistribution(value.(*store.DistributionTotals))
 		jsonKind = kind
 		jsonSubType = subType
 		return
@@ -898,7 +908,10 @@ type latestHandler struct {
 func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
-	path := "/" + r.URL.Path
+	var path string
+	if r.URL.Path != "" {
+		path = "/" + r.URL.Path
+	}
 	apps, metricStore := h.AS.AllActiveWithStore()
 	datastructs.ByHostAndName(apps)
 	data := make([]*messages.LatestMetric, 0)
@@ -1579,6 +1592,22 @@ func newTsdbAdder(adder suggest.Adder) suggest.Adder {
 	return &tsdbAdderType{wrapped: adder}
 }
 
+type rpcType struct {
+	AS *datastructs.ApplicationStatuses
+}
+
+func (t *rpcType) Latest(
+	path string, response *[]*messages.LatestMetric) error {
+	apps, metricStore := t.AS.AllActiveWithStore()
+	datastructs.ByHostAndName(apps)
+	for _, app := range apps {
+		*response = append(
+			*response,
+			latestMetricsForEndpoint(metricStore, app, path, false)...)
+	}
+	return nil
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
@@ -1604,6 +1633,11 @@ func main() {
 	}
 	applicationStats := createApplicationStats(
 		appList, logger, tagvAdder, maybeNilMemoryManager)
+	rpc.RegisterName(
+		"Scotty",
+		&rpcType{AS: applicationStats},
+	)
+	rpc.HandleHTTP()
 	connectionErrors := newConnectionErrorsType()
 	if consumerBuilders == nil {
 		startCollector(

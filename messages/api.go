@@ -2,6 +2,8 @@
 package messages
 
 import (
+	"encoding/gob"
+	_ "github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 )
@@ -60,8 +62,11 @@ type LatestMetric struct {
 	SubType     types.Type `json:"subType,omitempty"`
 	Bits        int        `json:"bits,omitempty"`
 	// The timestamp of the value in seconds past Jan 1, 1970 GMT
+	// For JSON this is a string like "123456789.987654321";
+	// For GoRPC this is a time.Time instance.
 	Timestamp interface{} `json:"timestamp"`
-	// value stored here.
+	// value stored here. The actual type stored depends on the Kind and
+	// SubType fields
 	Value interface{} `json:"value"`
 	// The following fields only apply to distribution metrics.
 
@@ -107,3 +112,8 @@ type Error struct {
 // ErrorList represents a list of Error instances. Clients should treat
 // ErrorList instances as immutable.
 type ErrorList []*Error
+
+func init() {
+	var dist *Distribution
+	gob.RegisterName("*scotty.messages.Distribution", dist)
+}

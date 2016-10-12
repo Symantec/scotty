@@ -14,6 +14,9 @@ REST urls (always use GET)
 		Returns every metric under /a/path from someAppName on
 		someHostName along with values for the last hour.
 		If no metrics match, returns an empty list.
+	http://scottyhostname.com:6980/api/latest/a/path
+		Returns the latest values of all metrics under /a/path on all
+		endpoints sorted by hostname first, appname second, and path third.
 	http://scottyhostname.com:6980/api/errors
 		Returns a list of every endpoint that scotty cannot currently
 		reach along with the timestamp of the last attempt and the
@@ -92,6 +95,33 @@ Sample JSON for api/error call
 		}
 	]
 
+Sample JSON for api/latest call
+
+	[
+		{
+			"hostName": "first.net",
+			"appName": "My App",
+			"path": "/proc/args",
+			"description": "Program args",
+			"unit": "None",
+			"kind": "string",
+			"timestamp": "1476307345.592506885",
+			"value": "-f --size=1000"
+		},
+		{
+			"hostName": "second.net",
+			"appName": "My App",
+			"path": "/proc/args",
+			"description": "Program args",
+			"unit": "None",
+			"kind": "string",
+			"timestamp": "1476307345.554426431",
+			"value": "--size=2000"
+		},
+
+		...
+	]
+
 For more information on the json schema, see the scotty/messages package
 
 Scotty GO RPC
@@ -109,7 +139,7 @@ The output are the latest metrics as []*messages.LatestMetric.
 The output are sorted first by hostname then by application name and then by
 metric path.
 
-GO RPC Example code:
+GO RPC scotty.Latest Example code:
 
 	import "fmt"
 	import "github.com/Symantec/scotty/messages"

@@ -753,7 +753,7 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 func latestMetricsForEndpoint(
 	metricStore *store.Store,
 	app *datastructs.ApplicationStatus,
-	path string,
+	canonicalPath string,
 	json bool) (result []*messages.LatestMetric) {
 	var appender store.Appender
 	if json {
@@ -770,14 +770,14 @@ func latestMetricsForEndpoint(
 		}
 	}
 	metricStore.LatestByPrefixAndEndpointStrategy(
-		path,
+		canonicalPath,
 		app.EndpointId,
 		store.GroupMetricByPathAndNumeric,
 		store.AppenderFilterFunc(
 			appender,
 			func(r *store.Record) bool {
-				return r.Info.Path() == path || strings.HasPrefix(
-					r.Info.Path(), path+"/")
+				return r.Info.Path() == canonicalPath || strings.HasPrefix(
+					r.Info.Path(), canonicalPath+"/")
 			},
 		),
 	)
@@ -788,22 +788,24 @@ func latestMetricsForEndpoint(
 // gatherDataForEndpoint serves api/hosts pages.
 // metricStore is the metric store.
 // endpoint is the endpoint from which we are getting historical metrics.
-// path is the path of the metrics or the empty string for all metrics
+// canonicalPath is the path of the metrics or the empty string for all
+// metrics. canonicalPath is returned from canonicalisePath().
 // history is the amount of time to go back in minutes.
-// If isSingleton is true, fetched metrics have to match path exactly.
-// Otherwise fetched metrics have to be found underneath path.
+// If isSingleton is true, fetched metrics have to match canonicalPath
+// exactly.
+// Otherwise fetched metrics have to be found underneath canonicalPath.
 // On no match, gatherDataForEndpoint returns an empty
 // messages.EndpointMetricsList instance
 func gatherDataForEndpoint(
 	metricStore *store.Store,
 	endpoint *collector.Endpoint,
-	path string,
+	canonicalPath string,
 	history int,
 	isSingleton bool) (result messages.EndpointMetricList) {
 	result = make(messages.EndpointMetricList, 0)
 	now := duration.TimeToFloat(time.Now())
 	appender := newEndpointMetricsAppender(&result)
-	if path == "" {
+	if canonicalPath == "" {
 		metricStore.ByEndpointStrategy(
 			endpoint,
 			now-60.0*float64(history),
@@ -812,7 +814,7 @@ func gatherDataForEndpoint(
 			appender)
 	} else {
 		metricStore.ByNameAndEndpointStrategy(
-			path,
+			canonicalPath,
 			endpoint,
 			now-60.0*float64(history),
 			math.Inf(1),
@@ -820,7 +822,7 @@ func gatherDataForEndpoint(
 			appender)
 		if len(result) == 0 && !isSingleton {
 			metricStore.ByPrefixAndEndpointStrategy(
-				path+"/",
+				canonicalPath+"/",
 				endpoint,
 				now-60.0*float64(history),
 				math.Inf(1),
@@ -890,6 +892,16 @@ func (h errorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	encodeJson(w, h.ConnectionErrors.GetErrors(), r.Form.Get("format") == "text")
 }
 
+// canonicalisePath removes any trailing slashes from path and ensures it has
+// exactly one leading slash. The one exception to this is that if
+// path is empty, canonicalisePath returns the empty string.
+func canonicalisePath(path string) string {
+	if path == "" {
+		return ""
+	}
+	return "/" + strings.Trim(path, "/")
+}
+
 func httpError(w http.ResponseWriter, status int) {
 	http.Error(
 		w,
@@ -908,10 +920,7 @@ type latestHandler struct {
 func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
-	var path string
-	if r.URL.Path != "" {
-		path = "/" + r.URL.Path
-	}
+	path := canonicalisePath(r.URL.Path)
 	apps, metricStore := h.AS.AllActiveWithStore()
 	datastructs.ByHostAndName(apps)
 	data := make([]*messages.LatestMetric, 0)
@@ -941,7 +950,7 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if len(hostNameAndPath) == 2 {
 		host, name, path = hostNameAndPath[0], hostNameAndPath[1], ""
 	} else {
-		host, name, path = hostNameAndPath[0], hostNameAndPath[1], "/"+hostNameAndPath[2]
+		host, name, path = hostNameAndPath[0], hostNameAndPath[1], canonicalisePath(hostNameAndPath[2])
 	}
 	history, err := strconv.Atoi(r.Form.Get("history"))
 	isSingleton := r.Form.Get("singleton") != ""
@@ -1600,6 +1609,7 @@ func (t *rpcType) Latest(
 	path string, response *[]*messages.LatestMetric) error {
 	apps, metricStore := t.AS.AllActiveWithStore()
 	datastructs.ByHostAndName(apps)
+	path = canonicalisePath(path)
 	for _, app := range apps {
 		*response = append(
 			*response,

@@ -53,6 +53,7 @@ const (
 	kPStoreIteratorName       = "pstore"
 	kCollectorIteratorName    = "collector"
 	kLookAheadWritingToPStore = 5
+	kLeaseSpan                = 60
 )
 
 var (
@@ -241,11 +242,13 @@ type pstoreHandlerType struct {
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
 	visitorMetricsStore *visitorMetricsStoreType
+	maybeNilCoord       store.Coordinator
 }
 
 func newPStoreHandler(
 	appList *datastructs.ApplicationList,
-	consumer *pstore.ConsumerWithMetricsBuilder) *pstoreHandlerType {
+	consumer *pstore.ConsumerWithMetricsBuilder,
+	maybeNilCoord store.Coordinator) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
@@ -255,6 +258,7 @@ func newPStoreHandler(
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
 		visitorMetricsStore: &visitorMetricsStoreType{},
+		maybeNilCoord:       maybeNilCoord,
 	}
 }
 
@@ -282,6 +286,10 @@ func (p *pstoreHandlerType) Visit(
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
 	iterator, timeLeft := p.namedIterator(theStore, endpointId)
+	if p.maybeNilCoord != nil {
+		iterator = store.NamedIteratorCoordinate(
+			iterator, p.maybeNilCoord, kLeaseSpan)
+	}
 	p.consumer.Write(iterator, hostName, appName)
 	p.visitorMetricsStore.MaybeIncreaseTimeLeft(
 		duration.FromFloat(timeLeft))
@@ -1520,12 +1528,14 @@ func startCollector(
 func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
 	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
-	logger *log.Logger) []*totalCountType {
+	logger *log.Logger,
+	maybeNilCoord store.Coordinator) []*totalCountType {
 	result := make([]*totalCountType, len(consumerBuilders))
 	for i := range result {
 		pstoreHandler := newPStoreHandler(
 			stats.ApplicationList(),
-			consumerBuilders[i])
+			consumerBuilders[i],
+			maybeNilCoord)
 		result[i] = pstoreHandler.TotalCount()
 		var attributes pstore.ConsumerAttributes
 		pstoreHandler.Attributes(&attributes)
@@ -1657,10 +1667,12 @@ func main() {
 			metricNameAdder,
 			maybeNilMemoryManager)
 	} else {
+		// TODO: Supply coordinator
 		totalCounts := startPStoreLoops(
 			applicationStats,
 			consumerBuilders,
-			logger)
+			logger,
+			nil)
 		startCollector(
 			applicationStats,
 			connectionErrors,

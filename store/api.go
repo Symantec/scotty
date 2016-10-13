@@ -300,6 +300,24 @@ func IteratorFilter(
 		wrapped: iterator}
 }
 
+// IteratorCoordinate returns an Iterator like given one except that it
+// waits to emit each record until it can obtain a lease for a time range
+// including that record. minLeaseSpanInSeconds is the minimum size of a
+// lease and must be positive
+func IteratorCoordinate(
+	iterator Iterator,
+	coord Coordinator,
+	minLeaseSpanInSeconds float64) Iterator {
+	if minLeaseSpanInSeconds <= 0.0 {
+		panic(minLeaseSpanInSeconds)
+	}
+	return &coordinatorIteratorType{
+		coordinator: coord,
+		wrapped:     iterator,
+		leaseSpan:   minLeaseSpanInSeconds,
+	}
+}
+
 // NamedIteratorFilterFunc returns an Iterator like the given one except
 // that it yields only metric values for which filter returns true.
 func NamedIteratorFilterFunc(
@@ -316,6 +334,19 @@ func NamedIteratorFilter(
 	return &changedNamedIteratorType{
 		NamedIterator: ni,
 		change:        IteratorFilter(ni, filter)}
+}
+
+// NamedIteratorCoordinate returns an Iterator like given one except that
+// it waits to emit each record until it can obtain a lease for a time
+// range including that record. minLeaseSpanInSeconds is the minimum size
+// of a lease and must be positive
+func NamedIteratorCoordinate(
+	ni NamedIterator,
+	coord Coordinator,
+	minLeaseSpanInSeconds float64) NamedIterator {
+	return &changedNamedIteratorType{
+		NamedIterator: ni,
+		change:        IteratorCoordinate(ni, coord, minLeaseSpanInSeconds)}
 }
 
 // NamedIterator iterates over metric values stored in scotty.
@@ -746,4 +777,25 @@ func (s *Store) MarkEndpointInactive(
 // MarkEndpointActive marks given endpoint as active.
 func (s *Store) MarkEndpointActive(endpointId interface{}) {
 	s.markEndpointActive(endpointId)
+}
+
+// Coordinator coordinates writes to persistent stores across multiple scotty
+// processes. Each scotty process should have only one coordinator.
+type Coordinator interface {
+	// Lease acquires a lease on a time range.
+	// A lease includes an inclusive start time and an exclusive end time.
+	// Times are in seconds since Jan 1, 1970 GMT.
+	// Lease blocks the caller until it can acquire and return a lease.
+	// Once Lease returns, the caller keeps the acquired lease indefinitely
+	// even if a new leader is elected. Any leases issued to the new leader
+	// will start on or after the end time of this lease.
+	// The start time of the returned lease will always be as early as
+	// possible but may be after timeToInclude.
+	// The difference between the start and end times of the returned lease
+	// will be at least minSpanInSeconds and the lease will extend at
+	// least minSpanInSeconds past timeToInclude; however, as stated earlier
+	// the start time may also come after timeToInclude in which case the
+	// returned lease will not contain the timeToInclude.
+	Lease(minSpanInSeconds, timeToInclude float64) (
+		startTimeInSecondsInclusive, endTimeInSecondsExclusive float64)
 }

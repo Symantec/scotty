@@ -780,22 +780,66 @@ func (s *Store) MarkEndpointActive(endpointId interface{}) {
 }
 
 // Coordinator coordinates writes to persistent stores across multiple scotty
-// processes. Each scotty process should have only one coordinator.
+// processes. Each scotty process should have only one coordinator shared
+// among the goroutines writing to persistent store. This one coordinator
+// assigns a lease to the scotty process. The lease gives the scotty process
+// permission to write the metric values with timestamps falling within the
+// lease's time range to persistent store.
+//
+// The primary purpose of the lease system is to ensure that only one scotty
+// process at any given time is writing to persistent store. We call this
+// one scotty process the leader. Only the leader can acquire a new lease
+// or extend an existing lease. If a non-leader tries to acquire or extend a
+// lease, it blocks until such time that it is elected the leader.
+// Eventually, more than one scotty process may think it is the leader for
+// a short time; therefore, the second purpose of the lease system is to
+// ensure that at most one scotty process writes metric values for each
+// time range. Once a coordinator instance assigns a lease to its scotty
+// process, the time range in that lease forever becomes the responsibility of
+// that process. After that, no other scotty process will ever get a
+// lease with a time range overlapping with the already assigned time range.
+//
+// If a metric value time stamp comes before the start of the assigned
+// lease, the scotty process should skip writing that particular value as
+// likely the timestamp is the responsibility of another process.
+// If a metric value timestamp falls within the assigned lease, the scotty
+// process may safely write that value at any time as the lease will never
+// be assigned to another process. If a metric value timestamp comes after
+// the assigned lease, the scotty process should request an extension of its
+// lease. If another scotty process is responsible for times after the
+// assigned lease, an extension may not be possible. Whenever an extension
+// can't be granted, the coordinator instance will assign a brand new lease
+// to its scotty process with the earliest possible start time.
+//
+// Although leases never expire, for simplicity sake, a coordinator instance
+// maintains one and only one active lease for its scotty process. When
+// the coordinator must assign a new lease instead of extending the old
+// one, record of the old lease is gone even though in theory, it is still
+// in effect as no other process will be assigned to it. This forgetting
+// of previous leases is ok because once a scotty process gets a lease, it
+// should maintain its leadership role as long as it is running. Therefore,
+// it will always be able to extend its lease. However, in rare cases, a
+// running scotty process may loose its leadership role over network failures.
+// It is in these rare cases, that the scotty process would be given a brand
+// new lease whenever it regained its leadership role.
+//
+// Note that while the leasing system that coordinator instances use prevent
+// multiple scotty processes from writing metrics for the same time, it
+// makes no guarantee that values are being written for all times. For
+// instance, a scotty process could die immediately after acquiring or
+// extending a lease but before it can write the values falling within
+// that lease leaving those values forever lost.
 type Coordinator interface {
-	// Lease acquires a lease on a time range.
-	// A lease includes an inclusive start time and an exclusive end time.
-	// Times are in seconds since Jan 1, 1970 GMT.
-	// Lease blocks the caller until it can acquire and return a lease.
-	// Once Lease returns, the caller keeps the acquired lease indefinitely
-	// even if a new leader is elected. Any leases issued to the new leader
-	// will start on or after the end time of this lease.
-	// The start time of the returned lease will always be as early as
-	// possible but may be after timeToInclude.
-	// The difference between the start and end times of the returned lease
-	// will be at least minSpanInSeconds and the lease will extend at
-	// least minSpanInSeconds past timeToInclude; however, as stated earlier
-	// the start time may also come after timeToInclude in which case the
-	// returned lease will not contain the timeToInclude.
+	// Lease acquires a lease. When possible, Lease will extend the
+	// existing lease to include timeToInclude rather than acquiring a
+	// brand new lease. If the current lease already includes timeToInclude,
+	// it is returned unchanged. If the current process is not the leader,
+	// and Lease must acquire a new lease or extend the existing lease to
+	// include timeToInclude, Lease blocks the caller until such time that
+	// the current process is elected leader. If Lease must extend the
+	// existing lease or acquire a new lease, the returned lease will be
+	// at least minSpanInSeconds in length and end at least minSpanInSeconds
+	// after timeToInclude.
 	Lease(minSpanInSeconds, timeToInclude float64) (
 		startTimeInSecondsInclusive, endTimeInSecondsExclusive float64)
 }

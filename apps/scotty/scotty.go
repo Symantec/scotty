@@ -12,6 +12,7 @@ import (
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/apps/scotty/splash"
+	"github.com/Symantec/scotty/consul"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
@@ -101,6 +102,8 @@ var (
 		"degree", 10, "Degree of btree")
 	fConfigDir = flag.String(
 		"configDir", "/etc/scotty", "Directory for scotty config files.")
+	fCoord = flag.String(
+		"coordinator", "", "Leadership election specifications")
 )
 
 // nameSetType represents a set of strings. Instances of this type
@@ -1628,6 +1631,14 @@ func (t *rpcType) Latest(
 	return nil
 }
 
+type blockingCoordinatorType struct {
+}
+
+func (b *blockingCoordinatorType) Lease(float64, float64) (
+	float64, float64) {
+	select {}
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
@@ -1667,12 +1678,20 @@ func main() {
 			metricNameAdder,
 			maybeNilMemoryManager)
 	} else {
-		// TODO: Supply coordinator
+		var coord store.Coordinator
+		if *fCoord != "" {
+			var err error
+			coord, err = consul.NewCoordinator(logger)
+			if err != nil {
+				logger.Println(err)
+				coord = &blockingCoordinatorType{}
+			}
+		}
 		totalCounts := startPStoreLoops(
 			applicationStats,
 			consumerBuilders,
 			logger,
-			nil)
+			coord)
 		startCollector(
 			applicationStats,
 			connectionErrors,

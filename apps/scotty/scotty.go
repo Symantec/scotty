@@ -205,6 +205,7 @@ func (t *totalCountType) Update(
 
 type visitorMetricsType struct {
 	TimeLeft time.Duration
+	Blocked  bool
 }
 
 type visitorMetricsStoreType struct {
@@ -233,6 +234,12 @@ func (v *visitorMetricsStoreType) MaybeIncreaseTimeLeft(
 	}
 }
 
+func (v *visitorMetricsStoreType) SetBlocked(b bool) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	v.metrics.Blocked = b
+}
+
 // pstoreHandlerType implements store.Visitor.
 // Its Visit method writes the latest values for each endpoint to
 // persistent storage. It uses a pstore.Consumer to buffer writes to
@@ -248,13 +255,23 @@ type pstoreHandlerType struct {
 	maybeNilCoord       store.Coordinator
 }
 
+type coordinatorBuilderType interface {
+	WithStateListener(listener func(blocked bool)) store.Coordinator
+}
+
 func newPStoreHandler(
 	appList *datastructs.ApplicationList,
 	consumer *pstore.ConsumerWithMetricsBuilder,
-	maybeNilCoord store.Coordinator) *pstoreHandlerType {
+	maybeNilCoordBuilder coordinatorBuilderType) *pstoreHandlerType {
 	bucketer := tricorder.NewGeometricBucketer(1e-4, 1000.0)
 	perMetricWriteTimes := bucketer.NewCumulativeDistribution()
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
+	visitorMetricsStore := &visitorMetricsStoreType{}
+	var maybeNilCoord store.Coordinator
+	if maybeNilCoordBuilder != nil {
+		maybeNilCoord = maybeNilCoordBuilder.WithStateListener(
+			visitorMetricsStore.SetBlocked)
+	}
 	return &pstoreHandlerType{
 		consumer:            consumer.Build(),
 		appList:             appList,
@@ -395,6 +412,14 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		group,
 		units.None,
 		"approximate time writer is behind"); err != nil {
+		return
+	}
+	if err = tricorder.RegisterMetricInGroup(
+		fmt.Sprintf("writer/%s/blocked", p.Name()),
+		&visitorData.Blocked,
+		group,
+		units.None,
+		"true if writer is awaiting a lease"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetricInGroup(
@@ -1532,13 +1557,13 @@ func startPStoreLoops(
 	stats *datastructs.ApplicationStatuses,
 	consumerBuilders []*pstore.ConsumerWithMetricsBuilder,
 	logger *log.Logger,
-	maybeNilCoord store.Coordinator) []*totalCountType {
+	maybeNilCoordBuilder coordinatorBuilderType) []*totalCountType {
 	result := make([]*totalCountType, len(consumerBuilders))
 	for i := range result {
 		pstoreHandler := newPStoreHandler(
 			stats.ApplicationList(),
 			consumerBuilders[i],
-			maybeNilCoord)
+			maybeNilCoordBuilder)
 		result[i] = pstoreHandler.TotalCount()
 		var attributes pstore.ConsumerAttributes
 		pstoreHandler.Attributes(&attributes)
@@ -1632,11 +1657,22 @@ func (t *rpcType) Latest(
 }
 
 type blockingCoordinatorType struct {
+	listener func(blocked bool)
 }
 
 func (b *blockingCoordinatorType) Lease(float64, float64) (
 	float64, float64) {
+	if b.listener != nil {
+		b.listener(true)
+	}
 	select {}
+}
+
+func (b *blockingCoordinatorType) WithStateListener(
+	listener func(blocked bool)) store.Coordinator {
+	result := *b
+	result.listener = listener
+	return &result
 }
 
 func main() {
@@ -1678,7 +1714,7 @@ func main() {
 			metricNameAdder,
 			maybeNilMemoryManager)
 	} else {
-		var coord store.Coordinator
+		var coord coordinatorBuilderType
 		if *fCoord != "" {
 			var err error
 			coord, err = consul.NewCoordinator(logger)

@@ -1,7 +1,6 @@
 package consul
 
 import (
-	"github.com/Symantec/scotty/store"
 	"github.com/hashicorp/consul/api"
 	"log"
 	"math"
@@ -176,25 +175,32 @@ func (c *coordinator) CheckExistingLease(minLeaseSpan, timeToInclude int64) (
 	return
 }
 
-func (c *coordinator) Lease(minLeaseSpan, timeToInclude float64) (
+func (c *coordinator) Lease(
+	minLeaseSpan, timeToInclude float64, listener func(blocked bool)) (
 	start, end float64) {
 	iMinLeaseSpan := roundUp(minLeaseSpan)
 	iTimeToInclude := roundUp(timeToInclude)
 	var updateCh <-chan struct{}
 	istart, iend, updateCh := c.CheckExistingLease(
 		iMinLeaseSpan, iTimeToInclude)
+	if listener != nil && updateCh != nil {
+		listener(true)
+	}
 	// Keep trying until we have an acceptable lease
 	for updateCh != nil {
 		<-updateCh
 		istart, iend, updateCh = c.CheckExistingLease(
 			iMinLeaseSpan, iTimeToInclude)
+		if listener != nil && updateCh == nil {
+			listener(false)
+		}
 	}
 	start = float64(istart)
 	end = float64(iend)
 	return
 }
 
-func newCoordinator(logger *log.Logger) (result store.Coordinator, err error) {
+func newCoordinator(logger *log.Logger) (result *coordinator, err error) {
 	coord := &coordinator{}
 
 	// Best I can tell, these calls don't do any network RPC's. They seem to

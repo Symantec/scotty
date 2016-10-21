@@ -21,6 +21,28 @@ func (f *filterIteratorType) Next(r *Record) bool {
 	return false
 }
 
+type coordinatorIteratorType struct {
+	wrapped     Iterator
+	coordinator Coordinator
+	leaseSpan   float64
+	startTime   float64
+	endTime     float64
+}
+
+func (c *coordinatorIteratorType) Next(r *Record) bool {
+	for c.wrapped.Next(r) {
+		if r.TimeStamp >= c.endTime {
+			c.startTime, c.endTime = c.coordinator.Lease(
+				c.leaseSpan, r.TimeStamp)
+		}
+		// r.TimeStamp < c.endTime
+		if r.TimeStamp >= c.startTime {
+			return true
+		}
+	}
+	return false
+}
+
 type changedNamedIteratorType struct {
 	NamedIterator
 	change Iterator

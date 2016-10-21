@@ -277,7 +277,7 @@ func newPStoreHandler(
 		appList:             appList,
 		totalTimeSpentDist:  bucketer.NewCumulativeDistribution(),
 		perMetricWriteTimes: perMetricWriteTimes,
-		visitorMetricsStore: &visitorMetricsStoreType{},
+		visitorMetricsStore: visitorMetricsStore,
 		maybeNilCoord:       maybeNilCoord,
 	}
 }

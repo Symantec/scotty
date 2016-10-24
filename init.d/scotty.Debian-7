@@ -28,6 +28,7 @@ LOOP_PIDFILE='/var/run/scotty.loop.pid'
 PIDFILE='/var/run/scotty.pid'
 CONSUL_LOOP_PIDFILE='/var/run/consul.loop.pid'
 CONSUL_PIDFILE='/var/run/consul.pid'
+CONSUL_CONFIG='/etc/consul.d/client'
 STATE_DIR=
 USERNAME='scotty'
 
@@ -86,11 +87,15 @@ if [ -n "$LOGBUF_LINES" ]; then
     PROG_ARGS="$PROG_ARGS -logbufLines=$LOGBUF_LINES"
 fi
 
+if [ $(ls -A "$CONSUL_CONFIG") ]; then
+    PROG_ARGS="$PROG_ARGS -coordinator=consul"
+fi
+
 do_consul_start ()
 {
     start-stop-daemon --start --quiet --pidfile "$CONSUL_PIDFILE" \
 			--exec "$CONSUL_DAEMON" --chuid "$USERNAME" --make-pidfile -- \
-		      agent -config-dir "/etc/consul.d/client"
+		      agent -config-dir "$CONSUL_CONFIG"
 }
 
 
@@ -125,7 +130,7 @@ start_loop ()
 case "$1" in
   start)
 	log_daemon_msg "Starting scotty daemon" "scotty" || true
-	(start_consul < /dev/null &> /dev/null &)
+	[ $(ls -A "$CONSUL_CONFIG") ] && (start_consul < /dev/null &> /dev/null &)
 	(start_loop < /dev/null &> /dev/null &)
 	;;
   stop)

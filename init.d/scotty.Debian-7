@@ -18,6 +18,7 @@ umask 022
 readonly default_log_dir='/var/log/scotty'
 
 DAEMON='/usr/local/sbin/scotty'
+CONSUL_DAEMON='/usr/local/sbin/consul'
 FD_LIMIT=65536
 IMAGE_SERVER_HOSTNAME=
 LOG_DIR="$default_log_dir"
@@ -25,6 +26,9 @@ LOG_QUOTA=
 LOGBUF_LINES=
 LOOP_PIDFILE='/var/run/scotty.loop.pid'
 PIDFILE='/var/run/scotty.pid'
+CONSUL_LOOP_PIDFILE='/var/run/consul.loop.pid'
+CONSUL_PIDFILE='/var/run/consul.pid'
+CONSUL_CONFIG='/etc/consul.d/client'
 STATE_DIR=
 USERNAME='scotty'
 
@@ -33,6 +37,7 @@ PROG_ARGS=
 [ -f /etc/default/scotty ] && . /etc/default/scotty
 
 test -x "$DAEMON" || exit 0
+test -x "$CONSUL_DAEMON" || exit 0
 
 export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
 
@@ -45,6 +50,8 @@ chown "$USERNAME" "$LOG_DIR"
 
 chown -R "${USERNAME}:users" /var/lib/scotty
 chown -R "${USERNAME}:users" /etc/scotty
+chown -R "${USERNAME}:users" /var/consul
+chown -R "${USERNAME}:users" /etc/consul.d
 
 PROG_ARGS="$PROG_ARGS --mdbServerHostname=$MDB_SERVER_HOST"
 
@@ -80,12 +87,35 @@ if [ -n "$LOGBUF_LINES" ]; then
     PROG_ARGS="$PROG_ARGS -logbufLines=$LOGBUF_LINES"
 fi
 
+if [ $(ls -A "$CONSUL_CONFIG") ]; then
+    PROG_ARGS="$PROG_ARGS -coordinator=consul"
+fi
+
+do_consul_start ()
+{
+    start-stop-daemon --start --quiet --pidfile "$CONSUL_PIDFILE" \
+			--exec "$CONSUL_DAEMON" --chuid "$USERNAME" --make-pidfile -- \
+		      agent -config-dir "$CONSUL_CONFIG"
+}
+
+
 do_start ()
 {
     start-stop-daemon --start --quiet --pidfile "$PIDFILE" \
 		      --exec "$DAEMON" --chuid "$USERNAME" --make-pidfile -- \
 		      $PROG_ARGS
 }
+
+start_consul ()
+{
+    echo "$BASHPID" > "$CONSUL_LOOP_PIDFILE"
+    while true; do
+	do_consul_start
+	rm -f "$CONSUL_PIDFILE"
+	sleep 1
+    done
+}
+
 
 start_loop ()
 {
@@ -100,13 +130,16 @@ start_loop ()
 case "$1" in
   start)
 	log_daemon_msg "Starting scotty daemon" "scotty" || true
+	[ $(ls -A "$CONSUL_CONFIG") ] && (start_consul < /dev/null &> /dev/null &)
 	(start_loop < /dev/null &> /dev/null &)
 	;;
   stop)
 	log_daemon_msg "Stopping scotty daemon" "scotty" || true
 	[ -s "$LOOP_PIDFILE" ] && kill -KILL $(cat "$LOOP_PIDFILE")
+	[ -s "$CONSUL_LOOP_PIDFILE" ] && kill -KILL $(cat "$CONSUL_LOOP_PIDFILE")
 	[ -s "$PIDFILE" ]      && kill -TERM $(cat "$PIDFILE")
-	rm -f "$LOOP_PIDFILE" "$PIDFILE"
+	[ -s "$CONSUL_PIDFILE" ]      && kill -TERM $(cat "$CONSUL_PIDFILE")
+	rm -f "$LOOP_PIDFILE" "$PIDFILE" "$CONSUL_LOOP_PIDFILE" "$CONSUL_PIDFILE"
 	;;
 
   reload|force-reload)

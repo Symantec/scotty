@@ -1,0 +1,96 @@
+#! /bin/bash --posix
+
+### BEGIN INIT INFO
+# Provides:		consul
+# Required-Start:	$local_fs $network $syslog
+# Required-Stop:	$local_fs $network $syslog
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	Consul agent
+### END INIT INFO
+
+# /etc/init.d/consul: start and stop the consul agent
+
+. /lib/lsb/init-functions
+
+umask 022
+
+readonly default_log_dir='/var/log/consul'
+
+DAEMON='/usr/local/sbin/consul'
+FD_LIMIT=65536
+IMAGE_SERVER_HOSTNAME=
+LOG_DIR="$default_log_dir"
+LOG_QUOTA=
+LOGBUF_LINES=
+LOOP_PIDFILE='/var/run/consul.loop.pid'
+PIDFILE='/var/run/consul.pid'
+CONSUL_CONFIG='/etc/consul.d/client'
+STATE_DIR=
+USERNAME='consul'
+
+PROG_ARGS=
+
+[ -f /etc/default/consul ] && . /etc/default/consul
+
+test -x "$DAEMON" || exit 0
+
+export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
+
+if [ -n "$FD_LIMIT" ]; then
+    ulimit -n "$FD_LIMIT"
+fi
+
+mkdir -m 0755 -p "$LOG_DIR"
+chown "$USERNAME" "$LOG_DIR"
+
+chown -R "${USERNAME}:users" /var/consul
+chown -R "${USERNAME}:users" /etc/consul.d
+
+PROG_ARGS="$PROG_ARGS agent -config-dir $CONSUL_CONFIG"
+
+do_start ()
+{
+    start-stop-daemon --start --quiet --pidfile "$PIDFILE" \
+		      --exec "$DAEMON" --chuid "$USERNAME" --make-pidfile -- \
+		      $PROG_ARGS
+}
+
+start_loop ()
+{
+    echo "$BASHPID" > "$LOOP_PIDFILE"
+    while true; do
+	do_start
+	rm -f "$PIDFILE"
+	sleep 1
+    done
+}
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting consul agent" "consul" || true
+	[ $(ls -A "$CONSUL_CONFIG") ] && (start_loop < /dev/null &> /dev/null &)
+	;;
+  stop)
+	log_daemon_msg "Stopping consul agent" "consul" || true
+	[ -s "$LOOP_PIDFILE" ] && kill -KILL $(cat "$LOOP_PIDFILE")
+	[ -s "$PIDFILE" ]      && kill -TERM $(cat "$PIDFILE")
+	rm -f "$LOOP_PIDFILE" "$PIDFILE"
+	;;
+
+  reload|force-reload)
+	$0 stop
+	$0 start
+	;;
+
+  restart)
+	$0 stop
+	$0 start
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/consul {start|stop|reload|force-reload|restart}" || true
+	exit 1
+esac
+
+exit 0

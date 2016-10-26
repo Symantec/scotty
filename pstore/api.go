@@ -236,15 +236,21 @@ type ConsumerMetrics struct {
 // ConsumerMetricsStore stores metrics for a consumer.
 // ConsumerMetricStore instances are safe to use with multiple goroutines.
 type ConsumerMetricsStore struct {
-	w           *RecordWriterWithMetrics
-	filterer    store.Filterer
-	lock        sync.Mutex
-	recordCount uint64
+	w                  *RecordWriterWithMetrics
+	filterer           store.Filterer
+	lock               sync.Mutex
+	recordCount        uint64
+	removedRecordCount uint64
 }
 
 // Adds count to the total number of records consumer must write out.
 func (s *ConsumerMetricsStore) AddToRecordCount(count uint64) {
 	s.addToRecordCount(count)
+}
+
+// Removed count from the total number of records consumer must write out.
+func (s *ConsumerMetricsStore) RemoveFromRecordCount(count uint64) {
+	s.removeFromRecordCount(count)
 }
 
 // Returns true if consumer is to write out this record or false otherwise.

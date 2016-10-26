@@ -303,11 +303,13 @@ func IteratorFilter(
 // IteratorCoordinate returns an Iterator like given one except that it
 // waits to emit each record until it can obtain a lease for a time range
 // including that record. minLeaseSpanInSeconds is the minimum size of a
-// lease and must be positive
+// lease and must be positive. skipped is a pointer to a uint64 that gets
+// incremented each time a record is skipped.
 func IteratorCoordinate(
 	iterator Iterator,
 	coord Coordinator,
-	minLeaseSpanInSeconds float64) Iterator {
+	minLeaseSpanInSeconds float64,
+	skipped *uint64) Iterator {
 	if minLeaseSpanInSeconds <= 0.0 {
 		panic(minLeaseSpanInSeconds)
 	}
@@ -315,6 +317,7 @@ func IteratorCoordinate(
 		coordinator: coord,
 		wrapped:     iterator,
 		leaseSpan:   minLeaseSpanInSeconds,
+		skipped:     skipped,
 	}
 }
 
@@ -339,14 +342,21 @@ func NamedIteratorFilter(
 // NamedIteratorCoordinate returns an Iterator like given one except that
 // it waits to emit each record until it can obtain a lease for a time
 // range including that record. minLeaseSpanInSeconds is the minimum size
-// of a lease and must be positive
+// of a lease and must be positive. Calling Commit on returned result
+// calls updateSkipped with the number of records skipped since the last
+// commit.
 func NamedIteratorCoordinate(
 	ni NamedIterator,
 	coord Coordinator,
-	minLeaseSpanInSeconds float64) NamedIterator {
-	return &changedNamedIteratorType{
-		NamedIterator: ni,
-		change:        IteratorCoordinate(ni, coord, minLeaseSpanInSeconds)}
+	minLeaseSpanInSeconds float64,
+	updateSkipped func(uint64)) NamedIterator {
+	result := &coordinatorNamedIteratorType{
+		wrapped:       ni,
+		updateSkipped: updateSkipped,
+	}
+	result.change = IteratorCoordinate(
+		ni, coord, minLeaseSpanInSeconds, &result.skippedSoFar)
+	return result
 }
 
 // NamedIterator iterates over metric values stored in scotty.

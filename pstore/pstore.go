@@ -309,13 +309,22 @@ func (s *ConsumerMetricsStore) metrics(m *ConsumerMetrics) {
 func (s *ConsumerMetricsStore) getRecordCount() uint64 {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	return s.recordCount
+	if s.recordCount > s.removedRecordCount {
+		return s.recordCount - s.removedRecordCount
+	}
+	return 0
 }
 
 func (s *ConsumerMetricsStore) addToRecordCount(count uint64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.recordCount += count
+}
+
+func (s *ConsumerMetricsStore) removeFromRecordCount(count uint64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.removedRecordCount += count
 }
 
 func toFilterer(w LimitedRecordWriter) store.Filterer {

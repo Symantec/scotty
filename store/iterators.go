@@ -24,6 +24,7 @@ func (f *filterIteratorType) Next(r *Record) bool {
 type coordinatorIteratorType struct {
 	wrapped     Iterator
 	coordinator Coordinator
+	skipped     *uint64
 	leaseSpan   float64
 	startTime   float64
 	endTime     float64
@@ -39,8 +40,34 @@ func (c *coordinatorIteratorType) Next(r *Record) bool {
 		if r.TimeStamp >= c.startTime {
 			return true
 		}
+		if c.skipped != nil {
+			(*c.skipped)++
+		}
 	}
 	return false
+}
+
+type coordinatorNamedIteratorType struct {
+	wrapped       NamedIterator
+	change        Iterator
+	updateSkipped func(uint64)
+	skippedSoFar  uint64
+}
+
+func (c *coordinatorNamedIteratorType) Next(r *Record) bool {
+	return c.change.Next(r)
+}
+
+func (c *coordinatorNamedIteratorType) Name() string {
+	return c.wrapped.Name()
+}
+
+func (c *coordinatorNamedIteratorType) Commit() {
+	c.wrapped.Commit()
+	if c.updateSkipped != nil {
+		c.updateSkipped(c.skippedSoFar)
+	}
+	c.skippedSoFar = 0
 }
 
 type changedNamedIteratorType struct {

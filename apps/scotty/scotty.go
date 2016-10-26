@@ -62,6 +62,10 @@ var (
 		"portNum",
 		6980,
 		"Port number for scotty.")
+	fTsdbPort = flag.Int(
+		"tsdbPortNum",
+		4242,
+		"OpenTSDB Port number for scotty.")
 	fBytesPerPage = flag.Uint(
 		"bytesPerPage",
 		1024,
@@ -307,8 +311,21 @@ func (p *pstoreHandlerType) Visit(
 	appName := p.appList.ByPort(port).Name()
 	iterator, timeLeft := p.namedIterator(theStore, endpointId)
 	if p.maybeNilCoord != nil {
+		// aMetricStore from the consumer exposes the same filtering that
+		// the consumer does internally
+		aMetricStore := p.ConsumerMetricsStore()
+		// Even though, the consumer filters out the records it can't write,
+		// we have to do the same filtering here so that we get an accurate
+		// count of skipped records with timestamps coming before the start
+		// of our lease.
+		iterator = store.NamedIteratorFilter(iterator, aMetricStore)
+		// RemoveFromRecordCount removes skipped records from the total
+		// count of records to write.
 		iterator = store.NamedIteratorCoordinate(
-			iterator, p.maybeNilCoord, kLeaseSpan)
+			iterator,
+			p.maybeNilCoord,
+			kLeaseSpan,
+			aMetricStore.RemoveFromRecordCount)
 	}
 	p.consumer.Write(iterator, hostName, appName)
 	p.visitorMetricsStore.MaybeIncreaseTimeLeft(
@@ -1842,7 +1859,7 @@ func main() {
 	)
 
 	go func() {
-		if err := http.ListenAndServe(":4242", tsdbServeMux); err != nil {
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fTsdbPort), tsdbServeMux); err != nil {
 			log.Fatal(err)
 		}
 	}()

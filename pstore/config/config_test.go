@@ -5,105 +5,42 @@ import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
-	"github.com/Symantec/tricorder/go/tricorder/types"
+	"github.com/Symantec/scotty/pstore/config/utils"
 	"testing"
 	"time"
 )
 
-type nilWriter struct {
-}
-
-func (n nilWriter) Write(records []pstore.Record) error {
-	return nil
-}
-
-func (n nilWriter) IsTypeSupported(kind types.Type) bool {
-	return true
-}
-
-type configType struct {
-	SomeField string `yaml:"someField"`
-}
-
-func (c *configType) NewWriter() (pstore.LimitedRecordWriter, error) {
-	return nilWriter{}, nil
-}
-
-func (c *configType) Reset() {
-	*c = configType{}
-}
-
-type configPlus struct {
-	Writer   configType            `yaml:"writer"`
-	Consumer config.ConsumerConfig `yaml:"consumer"`
-}
-
-func (c *configPlus) NewConsumerBuilder() (
-	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.Consumer.NewConsumerBuilder(&c.Writer)
-}
-
-func (c *configPlus) Reset() {
-	config.Reset(&c.Writer, &c.Consumer)
-}
-
-type configList []configPlus
-
-func (c configList) Len() int {
-	return len(c)
-}
-
-func (c configList) NewConsumerBuilderByIndex(i int) (
-	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c[i].NewConsumerBuilder()
-}
-
-func (c configList) NameAt(i int) string {
-	return c[i].Consumer.Name
-}
-
-func (c *configList) Reset() {
-	*c = nil
-}
-
-func consumerBuildersFromString(s string) (
-	result []*pstore.ConsumerWithMetricsBuilder, err error) {
-	buffer := bytes.NewBuffer(([]byte)(s))
-	var c configList
-	if err = config.Read(buffer, &c); err != nil {
-		return
-	}
-	return config.CreateConsumerBuilders(c)
-}
-
-func buildAll(list []*pstore.ConsumerWithMetricsBuilder) (
-	result []*pstore.ConsumerWithMetrics) {
-	result = make([]*pstore.ConsumerWithMetrics, len(list))
-	for i := range result {
-		result[i] = list[i].Build()
-	}
-	return
-}
-
 func TestReadConfig(t *testing.T) {
 	configFile := `
 # a comment
-- writer:
-    someField: "some value"
+- kafka:
+    endpoints:
+      - "http://10.0.0.1:9092"
+    topic: someTopic
+    apiKey: someApiKey
+    tenantId: someTenantId
+    clientId: someClientId
   consumer:
     recordsPerSecond: 124
-    name: "some name"
+    name: "kafka pstore"
     concurrency: 7
     batchSize: 730
     rollUpSpan: 2m15s
-- writer:
-    someField: "hello"
+- influx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
   consumer:
-    name: "minimal"
-- writer:
-    someField: "another"
+    name: "influx store"
+- openTSDB:
+    hostAndPort: "localhost:8084"
+    timeout: 37s
   consumer:
-    name: "zero"
+    name: "tsdb store"
     rollUpSpan: -2m
 `
 	consumerBuilders, err := consumerBuildersFromString(configFile)
@@ -112,7 +49,7 @@ func TestReadConfig(t *testing.T) {
 	}
 	consumers := buildAll(consumerBuilders)
 	assertValueEquals(t, 3, len(consumers))
-	assertValueEquals(t, "some name", consumers[0].Name())
+	assertValueEquals(t, "kafka pstore", consumers[0].Name())
 	var attributes pstore.ConsumerAttributes
 	consumers[0].Attributes(&attributes)
 	assertValueEquals(
@@ -124,7 +61,7 @@ func TestReadConfig(t *testing.T) {
 			RollUpSpan:       135 * time.Second,
 		},
 		attributes)
-	assertValueEquals(t, "minimal", consumers[1].Name())
+	assertValueEquals(t, "influx store", consumers[1].Name())
 	consumers[1].Attributes(&attributes)
 	assertValueEquals(
 		t,
@@ -133,7 +70,7 @@ func TestReadConfig(t *testing.T) {
 			BatchSize:   1000,
 		},
 		attributes)
-	assertValueEquals(t, "zero", consumers[2].Name())
+	assertValueEquals(t, "tsdb store", consumers[2].Name())
 	consumers[2].Attributes(&attributes)
 	assertValueEquals(
 		t,
@@ -144,60 +81,190 @@ func TestReadConfig(t *testing.T) {
 		attributes)
 }
 
-func TestReadConfigDupName(t *testing.T) {
+func TestReadConfigMisspelled(t *testing.T) {
 	configFile := `
 # a comment
-- writer:
-    someField: "some value"
+- kafka:
+    endpoints:
+      - "http://10.0.0.1:9092"
+    topic: someTopic
+    apiKey: someApiKey
+    tenantId: someTenantId
+    clientId: someClientId
   consumer:
     recordsPerSecond: 124
-    name: "some name"
+    name: "kafka pstore"
     concurrency: 7
     batchSize: 730
-- writer:
-	someField: "hello"
+    rollUpSpan: 2m15s
+- influxx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
   consumer:
-    name: "minimal"
-- writer:
-	someField: "another"
+    name: "influx store"
+- openTSDB:
+    hostAndPort: "localhost:8084"
+    timeout: 37s
   consumer:
-    recordsPerSecond: -235
-    concurrency: -2
-    # dup name
-    name: "minimal"
-    batchSize: -17
+    name: "tsdb store"
+    rollUpSpan: -2m
 `
 	_, err := consumerBuildersFromString(configFile)
 	if err == nil {
-		t.Error("Expected an error, got nil.")
+		t.Error("Expected error: misspelled field influxx")
 	}
 }
 
-func TestConfigMissingName(t *testing.T) {
+func TestReadConfigMisspelled2(t *testing.T) {
 	configFile := `
 # a comment
-- writer:
-    someField: "some value"
+- kafka:
+    endpoints:
+      - "http://10.0.0.1:9092"
+    topic: someTopic
+    apiKey: someApiKey
+    tenantId: someTenantId
+    clientId: someClientId
   consumer:
     recordsPerSecond: 124
-    name: "some name"
+    name: "kafka pstore"
     concurrency: 7
     batchSize: 730
-- writer:
-    someField: "hello"
+    rollUpSpan: 2m15s
+- influx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
   consumer:
-    name: "minimal"
-- writer:
-	someField: "another"
+    name: "influx store"
+- openTSDB:
+    hostAndPorts: "localhost:8084"
+    timeout: 37s
   consumer:
-    recordsPerSecond: -235
-    concurrency: -2
-    # missing name
-    batchSize: -17
+    name: "tsdb store"
+    rollUpSpan: -2m
 `
 	_, err := consumerBuildersFromString(configFile)
 	if err == nil {
-		t.Error("Expected an error, got nil.")
+		t.Error("Expected error: misspelled field hostAndPorts")
+	}
+}
+
+func TestReadConfigMissingName(t *testing.T) {
+	configFile := `
+# a comment
+- kafka:
+    endpoints:
+      - "http://10.0.0.1:9092"
+    topic: someTopic
+    apiKey: someApiKey
+    tenantId: someTenantId
+    clientId: someClientId
+  consumer:
+    recordsPerSecond: 124
+    concurrency: 7
+    batchSize: 730
+    rollUpSpan: 2m15s
+- influx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
+  consumer:
+    name: "influx store"
+- openTSDB:
+    hostAndPort: "localhost:8084"
+    timeout: 37s
+  consumer:
+    name: "tsdb store"
+    rollUpSpan: -2m
+`
+	_, err := consumerBuildersFromString(configFile)
+	if err == nil {
+		t.Error("Expected an error: missing name for kafka")
+	}
+}
+
+func TestReadConfigDupName(t *testing.T) {
+	configFile := `
+# a comment
+- kafka:
+    endpoints:
+      - "http://10.0.0.1:9092"
+    topic: someTopic
+    apiKey: someApiKey
+    tenantId: someTenantId
+    clientId: someClientId
+  consumer:
+    recordsPerSecond: 124
+    name: "kafka pstore"
+    concurrency: 7
+    batchSize: 730
+    rollUpSpan: 2m15s
+- influx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
+  consumer:
+    name: "influx store"
+- openTSDB:
+    hostAndPort: "localhost:8084"
+    timeout: 37s
+  consumer:
+    name: "kafka pstore"
+    rollUpSpan: -2m
+`
+	_, err := consumerBuildersFromString(configFile)
+	if err == nil {
+		t.Error("Expected an error: dup name 'kafka pstore'")
+	}
+}
+
+func TestReadConfigNoPersistentStore(t *testing.T) {
+	configFile := `
+# a comment
+- consumer:
+    recordsPerSecond: 124
+    name: "kafka pstore"
+    concurrency: 7
+    batchSize: 730
+    rollUpSpan: 2m15s
+- influx:
+    database: aDatabase
+    hostAndPort: "http://10.0.1.1:8086"
+    username: foo
+    password: apassword
+    precision: ms
+    writeConsistency: one
+    retentionPolicy: myPolicy
+  consumer:
+    name: "influx store"
+- openTSDB:
+    hostAndPort: "localhost:8084"
+    timeout: 37s
+  consumer:
+    name: "tsdb pstore"
+    rollUpSpan: -2m
+`
+	_, err := consumerBuildersFromString(configFile)
+	if err == nil {
+		t.Error("Expected an error: Missing store in first block'")
 	}
 }
 
@@ -224,7 +291,7 @@ boo: 3
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var m mixedType
-	if err := config.Read(buffer, &m); err == nil {
+	if err := utils.Read(buffer, &m); err == nil {
 		t.Error("Expected error here.")
 	}
 
@@ -233,7 +300,7 @@ public: 1
 boo: 3
 `
 	buffer = bytes.NewBuffer(([]byte)(configFile))
-	if err := config.Read(buffer, &m); err != nil {
+	if err := utils.Read(buffer, &m); err != nil {
 		t.Error("Expected this to unmarshal.")
 	}
 	assertValueEquals(
@@ -246,4 +313,23 @@ func assertValueEquals(
 	if expected != actual {
 		t.Errorf("Expected %v, got %v", expected, actual)
 	}
+}
+
+func consumerBuildersFromString(s string) (
+	result []*pstore.ConsumerWithMetricsBuilder, err error) {
+	buffer := bytes.NewBuffer(([]byte)(s))
+	var c config.ConfigList
+	if err = utils.Read(buffer, &c); err != nil {
+		return
+	}
+	return c.CreateConsumerBuilders()
+}
+
+func buildAll(list []*pstore.ConsumerWithMetricsBuilder) (
+	result []*pstore.ConsumerWithMetrics) {
+	result = make([]*pstore.ConsumerWithMetrics, len(list))
+	for i := range result {
+		result[i] = list[i].Build()
+	}
+	return
 }

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/config"
+	"github.com/Symantec/scotty/pstore/config/utils"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
@@ -26,7 +26,7 @@ clientId: someClientId
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := config.Read(buffer, &aconfig); err != nil {
+	if err := utils.Read(buffer, &aconfig); err != nil {
 		t.Fatal(err)
 	}
 	expected := Config{
@@ -42,108 +42,23 @@ clientId: someClientId
 	}
 }
 
-func TestKafkaConfigPlus(t *testing.T) {
+func TestKafkaConfigError(t *testing.T) {
 	configFile := `
 # A comment
-writer:
-  endpoints:
+endpoint:
     - 10.0.0.1:9092
     - 10.0.1.3:9092
     - 10.0.1.6:9092
-  topic: someTopic
-  apiKey: someApiKey
-  tenantId: someTenantId
-  clientId: someClientId
-consumer:
-  recordsPerSecond: 20
-  debugMetricRegex: foo
-  debugHostRegex: bar
-  debugFilePath: hello
-  name: r15i11
-  concurrency: 2
-  batchSize: 700
+topic: someTopic
+apiKey: someApiKey
+tenantId: someTenantId
+clientId: someClientId
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
-	var aconfig ConfigPlus
-	if err := config.Read(buffer, &aconfig); err != nil {
-		t.Fatal(err)
+	var aconfig Config
+	if err := utils.Read(buffer, &aconfig); err == nil {
+		t.Error("Expected error: misspelled endpoint")
 	}
-	expected := ConfigPlus{
-		Writer: Config{
-			ApiKey:   "someApiKey",
-			TenantId: "someTenantId",
-			ClientId: "someClientId",
-			Topic:    "someTopic",
-			Endpoints: []string{
-				"10.0.0.1:9092", "10.0.1.3:9092", "10.0.1.6:9092"},
-		},
-		Consumer: config.ConsumerConfig{
-			Name:             "r15i11",
-			Concurrency:      2,
-			BatchSize:        700,
-			DebugMetricRegex: "foo",
-			DebugHostRegex:   "bar",
-			RecordsPerSecond: 20,
-			DebugFilePath:    "hello",
-		},
-	}
-	if !reflect.DeepEqual(expected, aconfig) {
-		t.Errorf("Expected %v, got %v", expected, aconfig)
-	}
-}
-
-func TestKafkaConfigPlusError(t *testing.T) {
-	configFile := `
-# A comment
-writer:
-  endpoint:
-    - 10.0.0.1:9092
-    - 10.0.1.3:9092
-    - 10.0.1.6:9092
-  topic: someTopic
-  apiKey: someApiKey
-  tenantId: someTenantId
-  clientId: someClientId
-consumer:
-  recordsPerSecond: 20
-  debugMetricRegex: foo
-  debugHostRegex: bar
-  debugFilePath: hello
-  name: r15i11
-  concurrency: 2
-  batchSize: 700
-`
-	buffer := bytes.NewBuffer(([]byte)(configFile))
-	var aconfig ConfigPlus
-	if err := config.Read(buffer, &aconfig); err == nil {
-		t.Error("Expected error for misspelled endpoint")
-	}
-}
-
-func TestSerializeInt(t *testing.T) {
-	ser := recordSerializerType{TenantId: "myTenantId", ApiKey: "myApiKey"}
-	bytes, err := ser.Serialize(
-		&pstore.Record{
-			Kind:      types.Int64,
-			Timestamp: time.Date(2014, 5, 13, 9, 53, 20, 0, time.UTC),
-			Value:     int64(-59),
-			Path:      "/my/path",
-			HostName:  "ash1",
-			Tags:      pstore.TagGroup{pstore.TagAppName: "horse"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	verifySerialization(
-		t,
-		bytes,
-		"1",
-		"myTenantId",
-		"myApiKey",
-		"2014-05-13T09:53:20.000Z",
-		-59,
-		"_my_path",
-		"ash1",
-		"horse")
 }
 
 func TestSerializeBool(t *testing.T) {

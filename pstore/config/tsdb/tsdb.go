@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/kafka"
+	"github.com/Symantec/scotty/pstore/config/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/prometheus/prometheus/storage/remote/opentsdb"
 	"github.com/prometheus/prometheus/util/httputil"

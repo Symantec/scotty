@@ -3,7 +3,7 @@ package influx
 import (
 	"errors"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/kafka"
+	"github.com/Symantec/scotty/pstore/config/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/influxdata/influxdb/client/v2"
 )

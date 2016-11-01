@@ -203,6 +203,14 @@ func (s *Store) registerMetrics(d *tricorder.DirectorySpec) (err error) {
 		return
 	}
 	if err = d.RegisterMetricInGroup(
+		"/timeSpan",
+		primitiveMetrics.TimeSpan,
+		storeGroup,
+		units.Second,
+		"Span of time in store"); err != nil {
+		return
+	}
+	if err = d.RegisterMetricInGroup(
 		"/valuePageCount",
 		metrics.PagesPerMetricDist.Sum,
 		storeGroup,

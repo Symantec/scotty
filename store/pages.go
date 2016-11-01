@@ -47,6 +47,16 @@ func (p *tsPageType) Clear() {
 	*p = (*p)[:0]
 }
 
+func (p tsPageType) Latest() (latest float64, ok bool) {
+	length := len(p)
+	if length == 0 {
+		return
+	}
+	latest = p[length-1].TimeStamp
+	ok = true
+	return
+}
+
 func (p tsPageType) Len() int {
 	return len(p)
 }
@@ -88,6 +98,16 @@ func (p *pageType) Add(val tsValueType) {
 
 func (p *pageType) Clear() {
 	*p = (*p)[:0]
+}
+
+func (p pageType) Latest() (latest float64, ok bool) {
+	length := len(p)
+	if length == 0 {
+		return
+	}
+	latest = p[length-1].TimeStamp
+	ok = true
+	return
 }
 
 func (p pageType) IsFull() bool {

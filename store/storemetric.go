@@ -2,7 +2,9 @@ package store
 
 import (
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"sync"
+	"time"
 )
 
 // This file contains all the code related to tracking scotty store metrics.
@@ -15,6 +17,11 @@ var (
 type storePrimitiveMetricsType struct {
 	UniqueMetricValueCount int64
 	TimeStampPageCount     int64
+	LatestEvictedTimeStamp float64
+}
+
+func (s *storePrimitiveMetricsType) TimeSpan() time.Duration {
+	return time.Since(duration.FloatToTime(s.LatestEvictedTimeStamp))
 }
 
 type storeMetricsType struct {
@@ -28,6 +35,14 @@ func (s *storeMetricsType) Metrics(v *storePrimitiveMetricsType) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	*v = s.values
+}
+
+func (s *storeMetricsType) UpdateLatestEvictedTimeStamp(ts float64) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if ts > s.values.LatestEvictedTimeStamp {
+		s.values.LatestEvictedTimeStamp = ts
+	}
 }
 
 // Call when a value series gives up a page.
@@ -83,5 +98,8 @@ func (s *storeMetricsType) AddUniqueValues(count int) {
 func newStoreMetricsType() *storeMetricsType {
 	return &storeMetricsType{
 		PagesPerMetricDist: kBucketer.NewNonCumulativeDistribution(),
+		values: storePrimitiveMetricsType{
+			LatestEvictedTimeStamp: duration.TimeToFloat(time.Now()),
+		},
 	}
 }

@@ -4,7 +4,7 @@ package kafka
 import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/config"
+	"github.com/Symantec/scotty/pstore/config/utils"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 )
 
@@ -21,20 +21,10 @@ func ToFloat64(r *pstore.Record) float64 {
 // FromFile creates a new writer from a configuration file.
 func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
 	var c Config
-	if err = config.ReadFromFile(filename, &c); err != nil {
+	if err = utils.ReadFromFile(filename, &c); err != nil {
 		return
 	}
 	return c.NewWriter()
-}
-
-// ConsumerBuildersFromFile creates consumer builders from a configuration file.
-func ConsumerBuildersFromFile(filename string) (
-	result []*pstore.ConsumerWithMetricsBuilder, err error) {
-	var c ConfigList
-	if err = config.ReadFromFile(filename, &c); err != nil {
-		return
-	}
-	return config.CreateConsumerBuilders(c)
 }
 
 // NewFakeWriter creates a new writer that dumps the JSON to stdout.
@@ -50,7 +40,7 @@ func NewFakeWriterToPath(path string) (pstore.LimitedRecordWriter, error) {
 }
 
 // Config represents the configuration of kafka.
-// Config implements both config.Config and config.WriterFactory
+// Config implements utils.Config
 type Config struct {
 	// The KAFKA endpoints in "hostname:port" format.
 	// At least one is required.
@@ -76,46 +66,4 @@ func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {
 
 func (c *Config) Reset() {
 	*c = Config{}
-}
-
-// ConfigPlus represents an entire kafka configuration.
-// ConfigPlus implements config.Config and config.WriterFactory
-type ConfigPlus struct {
-	Writer   Config                `yaml:"writer"`
-	Consumer config.ConsumerConfig `yaml:"consumer"`
-}
-
-func (c *ConfigPlus) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	type configPlusFields ConfigPlus
-	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configPlusFields)(c))
-}
-
-func (c *ConfigPlus) NewConsumerBuilder() (
-	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c.Consumer.NewConsumerBuilder(&c.Writer)
-}
-
-func (c *ConfigPlus) Reset() {
-	config.Reset(&c.Writer, &c.Consumer)
-}
-
-// ConfigList represents a list of entire kafka configurations.
-// ConfigList implements config.Config and config.ConsumerBuilderFactoryList
-type ConfigList []ConfigPlus
-
-func (c ConfigList) Len() int {
-	return len(c)
-}
-
-func (c ConfigList) NewConsumerBuilderByIndex(i int) (
-	*pstore.ConsumerWithMetricsBuilder, error) {
-	return c[i].NewConsumerBuilder()
-}
-
-func (c ConfigList) NameAt(i int) string {
-	return c[i].Consumer.Name
-}
-
-func (c *ConfigList) Reset() {
-	*c = nil
 }

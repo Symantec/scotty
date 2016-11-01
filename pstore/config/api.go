@@ -2,80 +2,28 @@
 package config
 
 import (
-	"bytes"
+	"errors"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
-	"gopkg.in/yaml.v2"
-	"io"
-	"os"
+	"github.com/Symantec/scotty/pstore/config/influx"
+	"github.com/Symantec/scotty/pstore/config/kafka"
+	"github.com/Symantec/scotty/pstore/config/tsdb"
+	"github.com/Symantec/scotty/pstore/config/utils"
 	"time"
 )
 
-// Config implementations may be read from a yaml configuration file.
-type Config interface {
-	// Reset resets this instance in place
-	Reset()
-}
-
-// Read uses contents from r to initialize c
-func Read(r io.Reader, c Config) error {
-	var content bytes.Buffer
-	if _, err := content.ReadFrom(r); err != nil {
-		return err
+// ConsumerBuildersFromFile creates consumer builders from a configuration file.
+func ConsumerBuildersFromFile(filename string) (
+	result []*pstore.ConsumerWithMetricsBuilder, err error) {
+	var c ConfigList
+	if err = utils.ReadFromFile(filename, &c); err != nil {
+		return
 	}
-	c.Reset()
-	if err := yaml.Unmarshal(content.Bytes(), c); err != nil {
-		return err
-	}
-	return nil
-}
-
-// ReadFromFile uses the configuration file stored at filename to
-// initialize c.
-func ReadFromFile(filename string, c Config) error {
-	f, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if err = Read(f, c); err != nil {
-		return err
-	}
-	return nil
+	return c.CreateConsumerBuilders()
 }
 
 type WriterFactory interface {
 	NewWriter() (pstore.LimitedRecordWriter, error)
-}
-
-// List represents a list of items read from a configuration file
-type List interface {
-	// Len returns the number of items in the list.
-	Len() int
-}
-
-// ConsumerBuilderFactoryList instances contain a list of items for creating
-// consumer builders.
-type ConsumerBuilderFactoryList interface {
-	List
-	// Create a Consumer builder from item at given index.
-	NewConsumerBuilderByIndex(idx int) (
-		*pstore.ConsumerWithMetricsBuilder, error)
-	// Returns the name of the item at the given index.
-	NameAt(idx int) string
-}
-
-// CreateConsumerBuilders creates consumer builders from c.
-func CreateConsumerBuilders(c ConsumerBuilderFactoryList) (
-	list []*pstore.ConsumerWithMetricsBuilder, err error) {
-	return createConsumerBuilders(c)
-}
-
-// Reset resets all the configs.
-func Reset(configs ...Config) {
-	for i := range configs {
-		configs[i].Reset()
-	}
 }
 
 // ConsumerConfig creates a consumer builder
@@ -108,8 +56,8 @@ type ConsumerConfig struct {
 
 func (c *ConsumerConfig) UnmarshalYAML(
 	unmarshal func(interface{}) error) error {
-	return yamlutil.StrictUnmarshalYAML(
-		unmarshal, (*ConsumerConfigFields)(c))
+	type consumerConfigFields ConsumerConfig
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*consumerConfigFields)(c))
 }
 
 // NewConsumerBuilder creates a new consumer builder using the given
@@ -123,6 +71,46 @@ func (c *ConsumerConfig) Reset() {
 	*c = ConsumerConfig{}
 }
 
-// ConsumerConfigFields is a view of the ConsumerConfig that has no
-// UnmarshalYAML method.
-type ConsumerConfigFields ConsumerConfig
+// ConfigPlus represents one persistent store.
+type ConfigPlus struct {
+	// One of these pointer fields must be non-nil
+	Kafka    *kafka.Config  `yaml:"kafka"`
+	Influx   *influx.Config `yaml:"influx"`
+	OpenTSDB *tsdb.Config   `yaml:"openTSDB"`
+	Consumer ConsumerConfig `yaml:"consumer"`
+}
+
+func (c *ConfigPlus) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type configPlusFields ConfigPlus
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configPlusFields)(c))
+}
+
+func (c *ConfigPlus) NewConsumerBuilder() (
+	*pstore.ConsumerWithMetricsBuilder, error) {
+	switch {
+	case c.Kafka != nil:
+		return c.Consumer.NewConsumerBuilder(c.Kafka)
+	case c.Influx != nil:
+		return c.Consumer.NewConsumerBuilder(c.Influx)
+	case c.OpenTSDB != nil:
+		return c.Consumer.NewConsumerBuilder(c.OpenTSDB)
+	default:
+		return nil, errors.New("One writer field must be defined.")
+	}
+}
+
+func (c *ConfigPlus) Reset() {
+	*c = ConfigPlus{}
+}
+
+// ConfigList represents a list of persistent stores.
+type ConfigList []ConfigPlus
+
+func (c ConfigList) CreateConsumerBuilders() (
+	list []*pstore.ConsumerWithMetricsBuilder, err error) {
+	return c.createConsumerBuilders()
+}
+
+func (c *ConfigList) Reset() {
+	*c = nil
+}

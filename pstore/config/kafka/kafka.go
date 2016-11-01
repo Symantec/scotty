@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Symantec/scotty/lib/retry"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -216,10 +217,13 @@ func (f *fakeWriter) printLine(args ...interface{}) {
 }
 
 type writer struct {
-	broker     *kafka.Broker
-	producer   kafka.DistributingProducer
 	topic      string
 	serializer recordSerializerType
+	clientId   string
+	endpoints  []string
+	retry      retry.Retry
+	broker     *kafka.Broker
+	producer   kafka.DistributingProducer
 }
 
 func newWriter(c Config) (
@@ -233,21 +237,29 @@ func newWriter(c Config) (
 	awriter.topic = c.Topic
 	awriter.serializer.TenantId = c.TenantId
 	awriter.serializer.ApiKey = c.ApiKey
-	awriter.broker, err = kafka.Dial(c.Endpoints, kafka.NewBrokerConf(c.ClientId))
-	if err != nil {
-		return
-	}
-	var count int32
-	count, err = awriter.broker.PartitionCount(c.Topic)
-	if err != nil {
-		return
-	}
-	conf := kafka.NewProducerConf()
-	conf.RequiredAcks = proto.RequiredAcksLocal
-	producer := awriter.broker.Producer(conf)
-	awriter.producer = newChannelProducer(producer, count)
+	awriter.clientId = c.ClientId
+	awriter.endpoints = c.Endpoints
 	result = &awriter
 	return
+}
+
+func (w *writer) ensureInitialized() error {
+	return w.retry.Do(func() (err error) {
+		w.broker, err = kafka.Dial(w.endpoints, kafka.NewBrokerConf(w.clientId))
+		if err != nil {
+			return
+		}
+		var count int32
+		count, err = w.broker.PartitionCount(w.topic)
+		if err != nil {
+			return
+		}
+		conf := kafka.NewProducerConf()
+		conf.RequiredAcks = proto.RequiredAcksLocal
+		producer := w.broker.Producer(conf)
+		w.producer = newChannelProducer(producer, count)
+		return
+	})
 }
 
 func (w *writer) IsTypeSupported(t types.Type) bool {
@@ -263,6 +275,9 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 			return
 		}
 		msgs[i] = &proto.Message{Value: payload}
+	}
+	if err = w.ensureInitialized(); err != nil {
+		return
 	}
 	_, err = w.producer.Distribute(w.topic, msgs...)
 	return

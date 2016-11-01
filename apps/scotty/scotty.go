@@ -37,6 +37,10 @@ var (
 		"portNum",
 		6980,
 		"Port number for scotty.")
+	fTsdbPort = flag.Int(
+		"tsdbPortNum",
+		4242,
+		"OpenTSDB Port number for scotty.")
 	fBytesPerPage = flag.Uint(
 		"bytesPerPage",
 		1024,
@@ -410,7 +414,7 @@ func main() {
 	)
 
 	go func() {
-		if err := http.ListenAndServe(":4242", tsdbServeMux); err != nil {
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fTsdbPort), tsdbServeMux); err != nil {
 			log.Fatal(err)
 		}
 	}()

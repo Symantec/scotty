@@ -358,9 +358,12 @@ func (t *timestampSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.pages.GiveUpPage(page, nil) {
-		latest, ok := page.Times().Latest()
-		if ok {
-			t.metrics.UpdateLatestEvictedTimeStamp(latest)
+		// Only update latest evicted timestamp for active timestamp series
+		if t.active {
+			latest, ok := page.Times().Latest()
+			if ok {
+				t.metrics.UpdateLatestEvictedTimeStamp(latest)
+			}
 		}
 		t.metrics.RemoveTimeStampPage()
 	}
@@ -465,9 +468,12 @@ func (t *timeSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 	defer t.lock.Unlock()
 	oldLen := t.pages.Len()
 	if t.pages.GiveUpPage(page, nil) {
-		latest, ok := page.Values().Latest()
-		if ok {
-			t.metrics.UpdateLatestEvictedTimeStamp(latest)
+		// Only update latest evicted timestamp for active time series
+		if t.lastValue.Value != gInactive {
+			latest, ok := page.Values().Latest()
+			if ok {
+				t.metrics.UpdateLatestEvictedTimeStamp(latest)
+			}
 		}
 		t.metrics.RemoveValuePage(oldLen, page.Values().Len())
 	}

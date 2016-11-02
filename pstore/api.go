@@ -4,6 +4,7 @@ package pstore
 import (
 	"bytes"
 	"fmt"
+	"github.com/Symantec/scotty/lib/gate"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -99,6 +100,7 @@ type RecordWriterMetrics struct {
 	LastWriteErrorTS      time.Time
 	LastSuccessfulWriteTS time.Time
 	TimeSpentWriting      time.Duration
+	Paused                bool
 }
 
 func (w *RecordWriterMetrics) SuccessfulWriteRatio() float64 {
@@ -113,12 +115,25 @@ type RecordWriterWithMetrics struct {
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
 	// Client populates this to collect batch sizes
 	BatchSizes *tricorder.CumulativeDistribution
+	gate       gate.Gate
 	lock       sync.Mutex
 	metrics    RecordWriterMetrics
 }
 
 func (w *RecordWriterWithMetrics) Write(records []Record) error {
 	return w.write(records)
+}
+
+// Pause pauses this writer so that subsequent calls to Write block.
+func (w *RecordWriterWithMetrics) Pause() {
+	w.gate.Pause()
+	w.setPauseMetric(true)
+}
+
+// Resume resumes this writer. Any blocked calls to Write resume immediatley.
+func (w *RecordWriterWithMetrics) Resume() {
+	w.gate.Resume()
+	w.setPauseMetric(false)
 }
 
 // Metrics stores the current metrics at m
@@ -241,6 +256,16 @@ type ConsumerMetricsStore struct {
 	lock               sync.Mutex
 	recordCount        uint64
 	removedRecordCount uint64
+}
+
+// Pause pauses the writer in the corresponding consumer
+func (s *ConsumerMetricsStore) Pause() {
+	s.w.Pause()
+}
+
+// Resume resumes the writer in the corresponding consumer
+func (s *ConsumerMetricsStore) Resume() {
+	s.w.Resume()
 }
 
 // Adds count to the total number of records consumer must write out.

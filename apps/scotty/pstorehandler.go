@@ -6,9 +6,7 @@ import (
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/influx"
-	"github.com/Symantec/scotty/pstore/kafka"
-	"github.com/Symantec/scotty/pstore/tsdb"
+	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
@@ -31,10 +29,6 @@ var (
 		"pstoreUpdateFrequency",
 		30*time.Second,
 		"Amount of time between writing newest metrics to persistent storage")
-	fPersistentStoreType = flag.String(
-		"persistentStoreType",
-		"kafka",
-		"Type of persistent store must be either 'kafka','influx','tsdb', or 'none'")
 )
 
 // a totalCountType instance updates the total count of values to write in a
@@ -400,20 +394,10 @@ func createNamedIterator(
 
 func newPStoreConsumers(maybeNilMemoryManager *memoryManagerType) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
-	switch *fPersistentStoreType {
-	case "kafka":
-		result, err = kafka.ConsumerBuildersFromFile(
-			path.Join(*fConfigDir, "kafka.yaml"))
-	case "influx":
-		result, err = influx.ConsumerBuildersFromFile(
-			path.Join(*fConfigDir, "influx.yaml"))
-	case "tsdb":
-		result, err = tsdb.ConsumerBuildersFromFile(
-			path.Join(*fConfigDir, "tsdb.yaml"))
-	case "none":
-		// Do nothing
-	default:
-		log.Fatal("persistentStoreType flag must be kafka,influx,tsdb, or none.")
+	result, err = config.ConsumerBuildersFromFile(
+		path.Join(*fConfigDir, "pstore.yaml"))
+	if err != nil {
+		return
 	}
 	if maybeNilMemoryManager != nil {
 		memoryManager := maybeNilMemoryManager

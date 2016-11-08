@@ -156,18 +156,18 @@ func (c ConsumerConfig) newConsumerBuilder(wf WriterFactory) (
 	return builder, nil
 }
 
-func createConsumerBuilders(c ConsumerBuilderFactoryList) (
+func (c ConfigList) createConsumerBuilders() (
 	list []*pstore.ConsumerWithMetricsBuilder, err error) {
-	result := make([]*pstore.ConsumerWithMetricsBuilder, c.Len())
-	nameSet := make(map[string]bool, c.Len())
+	result := make([]*pstore.ConsumerWithMetricsBuilder, len(c))
+	nameSet := make(map[string]bool, len(c))
 	for i := range result {
-		name := c.NameAt(i)
+		name := c[i].Consumer.Name
 		if nameSet[name] {
 			err = errors.New(fmt.Sprintf("config: Duplicate consumer name found: %s", name))
 			return
 		}
 		nameSet[name] = true
-		if result[i], err = c.NewConsumerBuilderByIndex(i); err != nil {
+		if result[i], err = c[i].NewConsumerBuilder(); err != nil {
 			return
 		}
 	}

@@ -44,6 +44,7 @@ func (t *throttleWriter) Write(records []Record) error {
 }
 
 func (w *RecordWriterWithMetrics) write(records []Record) error {
+	w.gate.Await()
 	ctime := time.Now()
 	result := w.W.Write(records)
 	timeTaken := time.Now().Sub(ctime)
@@ -76,6 +77,12 @@ func (w *RecordWriterWithMetrics) logWriteError(
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	w.metrics.logWriteError(err, timeTaken)
+}
+
+func (w *RecordWriterWithMetrics) setPauseMetric(paused bool) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.metrics.Paused = paused
 }
 
 func (w *RecordWriterWithMetrics) logDistributions(

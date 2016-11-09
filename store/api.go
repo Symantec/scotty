@@ -374,8 +374,9 @@ func NamedIteratorCoordinate(
 // NamedIterator with a particular name at a time to iterate over the same
 // group of items. If the caller creates multiple NamedIterator instances with
 // the same name to iterate over the same group of items and calls Commit on
-// all of them, the last iterator to save its progress wins overwriting the
-// progress of the others with its own.
+// all of them, the first iterator to save its progress wins. When the
+// the other iterators try to save their progress, they see the progress
+// already updated since they were created, so they don't save.
 type NamedIterator interface {
 	// Name returns the name of the iterator.
 	Name() string

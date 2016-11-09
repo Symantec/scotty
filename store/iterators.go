@@ -83,6 +83,7 @@ func (c *changedNamedIteratorType) Next(r *Record) bool {
 type namedIteratorDataType struct {
 	startTimeStamps map[int]float64
 	completed       map[*MetricInfo]float64
+	seqNo           uint64
 }
 
 type namedIteratorType struct {
@@ -90,6 +91,7 @@ type namedIteratorType struct {
 	timeSeriesCollection *timeSeriesCollectionType
 	// startTimeStamps does not change during this instance's lifetime
 	startTimeStamps map[int]float64
+	seqNo           uint64
 	timestamps      map[int][]float64
 	completed       map[*MetricInfo]float64
 	timeSeries      []*timeSeriesType
@@ -161,11 +163,13 @@ func (n *namedIteratorType) snapshot() *namedIteratorDataType {
 	if !n.hasNext() {
 		return &namedIteratorDataType{
 			startTimeStamps: n.nextStartTimeStamps(),
+			seqNo:           n.seqNo + 1,
 		}
 	}
 	return &namedIteratorDataType{
 		startTimeStamps: n.startTimeStamps,
 		completed:       copyCompleted(n.completed),
+		seqNo:           n.seqNo + 1,
 	}
 }
 
@@ -175,6 +179,7 @@ func (n *namedIteratorType) Name() string {
 
 func (n *namedIteratorType) Commit() {
 	n.timeSeriesCollection.saveProgress(n.name, n.snapshot())
+	n.seqNo++
 }
 
 func (n *namedIteratorType) hasNext() bool {

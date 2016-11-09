@@ -111,12 +111,14 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 	strategy MetricGroupingStrategy) (NamedIterator, float64) {
 	var startTimes map[int]float64
 	var completed map[*MetricInfo]float64
+	var seqNo uint64
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	snapshot := c.iterators[name]
 	if snapshot != nil {
 		startTimes = snapshot.startTimeStamps
 		completed = snapshot.completed
+		seqNo = snapshot.seqNo
 	}
 	timesByGroup := make(map[int][]float64, len(c.timestampSeries))
 	for groupId, series := range c.timestampSeries {
@@ -129,6 +131,7 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		name:                 name,
 		timeSeriesCollection: c,
 		startTimeStamps:      startTimes,
+		seqNo:                seqNo,
 		timestamps:           timesByGroup,
 		completed:            copyCompleted(completed),
 		timeSeries:           allTimeSeries,
@@ -173,12 +176,14 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 	NamedIterator, float64) {
 	var startTimes map[int]float64
 	var completed map[*MetricInfo]float64
+	var seqNo uint64
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	snapshot := c.iterators[name]
 	if snapshot != nil {
 		startTimes = snapshot.startTimeStamps
 		completed = snapshot.completed
+		seqNo = snapshot.seqNo
 	}
 	timesByGroup := make(map[int][]float64, len(c.timestampSeries))
 	for groupId, series := range c.timestampSeries {
@@ -194,6 +199,7 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 			name:                 name,
 			timeSeriesCollection: c,
 			startTimeStamps:      startTimes,
+			seqNo:                seqNo,
 			timestamps:           timesByGroup,
 			completed:            copyCompleted(completed),
 			timeSeries:           allTimeSeries,
@@ -210,7 +216,19 @@ func (c *timeSeriesCollectionType) saveProgress(
 	name string, progress *namedIteratorDataType) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.iterators[name] = progress
+	oldProgress := c.iterators[name]
+	// We expect the first saved sequence number to be 1.
+	expectedSeqNo := uint64(1)
+	// Otherwise we expected the sequence number to increment by 1 with each
+	// save
+	if oldProgress != nil {
+		expectedSeqNo = oldProgress.seqNo + 1
+	}
+	// Save only if the sequence number matches. Otherwise, it is a race
+	// and we ignore.
+	if progress.seqNo == expectedSeqNo {
+		c.iterators[name] = progress
+	}
 }
 
 func (c *timeSeriesCollectionType) tsAll() (

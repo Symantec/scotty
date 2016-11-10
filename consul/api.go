@@ -2,27 +2,48 @@
 package consul
 
 import (
+	"errors"
+	"github.com/Symantec/scotty/lib/retry"
 	"github.com/Symantec/scotty/store"
 	"log"
 )
 
+// Coordinator represents scotty's connection with consul
 type Coordinator struct {
 	coord    *coordinator
 	listener func(blocked bool)
 }
 
-// NewCoordinator returns a new coordinator for consul that implements
-// store.Coordinator.
-// The returned coordinator writes any errors encountered to logger as the
-// Lease method on returned instance must block until success.
+var (
+	// ErrMissing indicates that the resource is missing.
+	ErrMissing = errors.New("consul: Missing.")
+)
+
+var (
+	kRetry       retry.Retry
+	kCoordinator *Coordinator
+)
+
+// The first call to GetCoordinator returns a new coordinator for consul
+// that implements store.Coordinator and uses passed logger. Successive
+// calls return the same, already created coordinator and ignore the
+// logger parameter.
+// Blocking methods of the returned coordinator such as the Lease method
+// write any errors encountered to logger. If logger is nil, blocking
+// methods write errors to stderr. Non blocking methods that return an
+// error do not log error messages.
 // The Consul agent runs on the local machine at port 8500 so no other
 // configuration is needed.
-func NewCoordinator(logger *log.Logger) (*Coordinator, error) {
-	result, err := newCoordinator(logger)
-	if err != nil {
-		return nil, err
-	}
-	return &Coordinator{coord: result}, nil
+func GetCoordinator(logger *log.Logger) (*Coordinator, error) {
+	err := kRetry.Do(func() error {
+		result, err := newCoordinator(logger)
+		if err != nil {
+			return err
+		}
+		kCoordinator = &Coordinator{coord: result}
+		return nil
+	})
+	return kCoordinator, err
 }
 
 // Lease implements Lease from store.Coordinator
@@ -42,4 +63,38 @@ func (c *Coordinator) WithStateListener(
 	result := *c
 	result.listener = listener
 	return &result
+}
+
+// PutPStoreConfig stores a new scotty config file
+func (c *Coordinator) PutPStoreConfig(value string) error {
+	return c.coord.kernel.Put(kConfigFileKey, value)
+}
+
+// GetPStoreConfig gets the current scotty config file. If none exists,
+// returns "", ErrMissing
+func (c *Coordinator) GetPStoreConfig() (result string, err error) {
+	result, ok, _, err := c.coord.kernel.get(kConfigFileKey, 0)
+	if err != nil {
+		return
+	}
+	if !ok {
+		err = ErrMissing
+	}
+	return
+}
+
+// WatchPStoreConfig returns the contents of the scotty config file in
+// returned channel. Each time the config file changes, the returned
+// channel emits the entire contents of the file. If the caller calls
+// WatchPStoreConfig before the config file is created, the returned
+// channel blocks until the config file is created. If the config file
+// already exists when the caller calls WatchPStoreConfig, the returned
+// channel emits the initial contents of the file immediately.
+//
+// If done is non-nil, the caller can close done to signal that it wants
+// the watch terminated. Termination of the watch closes the returned
+// channel. Termination may not happen until several minutes after the
+// call closes the done channel.
+func (c *Coordinator) WatchPStoreConfig(done <-chan struct{}) <-chan string {
+	return c.coord.kernel.Watch(kConfigFileKey, done)
 }

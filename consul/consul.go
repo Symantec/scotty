@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	kNextStartKey = "service/scotty/nextStart"
-	kLockKey      = "service/scotty/leader"
+	kNextStartKey  = "service/scotty/nextStart"
+	kLockKey       = "service/scotty/leader"
+	kConfigFileKey = "service/scotty/configFile"
 )
 
 type kernelType struct {
@@ -20,10 +21,18 @@ type kernelType struct {
 	logger *log.Logger
 }
 
+func (k *kernelType) printf(format string, v ...interface{}) {
+	if k.logger == nil {
+		log.Printf(format, v...)
+	} else {
+		k.logger.Printf(format, v...)
+	}
+}
+
 func (k *kernelType) mustSucceed(f func() error) {
 	sleepDur := 10 * time.Second
 	for err := f(); err != nil; err = f() {
-		k.logger.Printf("Consul Error: %v; retry in: %v", err, sleepDur)
+		k.printf("Consul Error: %v; retry in: %v", err, sleepDur)
 		time.Sleep(sleepDur)
 		sleepDur *= 2
 	}
@@ -99,6 +108,82 @@ func (k *kernelType) CAS(lastStart, nextStart int64) bool {
 		return false
 	}
 	return k.cas(nextStart, modifyIndex)
+}
+
+func (k *kernelType) Put(key string, value string) error {
+	kvPair := &api.KVPair{Key: key, Value: ([]byte)(value)}
+	_, err := k.kv.Put(kvPair, nil)
+	return err
+}
+
+func (k *kernelType) get(key string, index uint64) (
+	value string, ok bool, nextIndex uint64, err error) {
+	options := &api.QueryOptions{WaitIndex: index}
+	kvPair, qm, err := k.kv.Get(key, options)
+	if err != nil {
+		return
+	}
+	if kvPair != nil {
+		value = string(kvPair.Value)
+		ok = true
+	}
+	nextIndex = qm.LastIndex
+	return
+}
+
+func (k *kernelType) Get(key string, index uint64) (
+	value string, ok bool, nextIndex uint64) {
+	k.mustSucceed(func() error {
+		var err error
+		value, ok, nextIndex, err = k.get(key, index)
+		return err
+	})
+	return
+}
+
+func (k *kernelType) Watch(key string, done <-chan struct{}) <-chan string {
+	result := make(chan string)
+	go func() {
+		defer close(result)
+		var index uint64
+		var lastValue string
+		firstValue := true
+		for {
+			var value string
+			var ok bool
+			// Unfortunately we cannot interrupt blocking Get call.
+			if done != nil {
+				select {
+				case <-done:
+					return
+				default:
+					value, ok, index = k.Get(key, index)
+				}
+			} else {
+				value, ok, index = k.Get(key, index)
+			}
+			// If value not found, try again
+			if !ok {
+				continue
+			}
+			if firstValue || value != lastValue {
+				// Check for done here as pushing to channel could
+				// block forever
+				if done != nil {
+					select {
+					case <-done:
+						return
+					case result <- value:
+					}
+				} else {
+					result <- value
+				}
+				lastValue = value
+				firstValue = false
+			}
+		}
+	}()
+	return result
 }
 
 type coordinator struct {

@@ -289,7 +289,7 @@ func main() {
 		var coord coordinatorBuilderType
 		if *fCoord != "" {
 			var err error
-			coord, err = consul.NewCoordinator(logger)
+			coord, err = consul.GetCoordinator(logger)
 			if err != nil {
 				logger.Println(err)
 				coord = &blockingCoordinatorType{}

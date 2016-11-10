@@ -174,7 +174,7 @@ func (n *namedIteratorType) Name() string {
 }
 
 func (n *namedIteratorType) Commit() {
-	n.timeSeriesCollection.saveProgress(n.name, n.snapshot())
+	n.timeSeriesCollection.SaveProgress(n.name, n.snapshot())
 }
 
 func (n *namedIteratorType) hasNext() bool {

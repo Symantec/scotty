@@ -741,6 +741,11 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 		name, endpointId, dur, int(maxFrames), strategy)
 }
 
+// StartAtBeginning removes the stored state for iterators with given names.
+func (s *Store) StartAtBeginning(endpointId interface{}, names ...string) {
+	s.startAtBeginning(endpointId, names)
+}
+
 // LatestByEndpoint returns the latest records for each metric for a
 // given endpoint.
 // LatestByEndpoint appends the records to result in no particular order.

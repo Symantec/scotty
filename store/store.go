@@ -124,6 +124,10 @@ func (s *Store) namedIteratorForEndpointRollUp(
 		strategy)
 }
 
+func (s *Store) startAtBeginning(endpointId interface{}, names []string) {
+	s.byApplication[endpointId].StartAtBeginning(names)
+}
+
 func (s *Store) byEndpoint(
 	endpointId interface{},
 	start, end float64,

@@ -7,6 +7,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config/influx"
 	"github.com/Symantec/scotty/pstore/config/kafka"
+	"github.com/Symantec/scotty/pstore/config/mock"
 	"github.com/Symantec/scotty/pstore/config/tsdb"
 	"github.com/Symantec/scotty/pstore/config/utils"
 	"time"
@@ -77,6 +78,7 @@ type ConfigPlus struct {
 	Kafka    *kafka.Config  `yaml:"kafka"`
 	Influx   *influx.Config `yaml:"influx"`
 	OpenTSDB *tsdb.Config   `yaml:"openTSDB"`
+	Mock     *mock.Config   `yaml:"mock"`
 	Consumer ConsumerConfig `yaml:"consumer"`
 }
 
@@ -94,6 +96,8 @@ func (c *ConfigPlus) NewConsumerBuilder() (
 		return c.Consumer.NewConsumerBuilder(c.Influx)
 	case c.OpenTSDB != nil:
 		return c.Consumer.NewConsumerBuilder(c.OpenTSDB)
+	case c.Mock != nil:
+		return c.Consumer.NewConsumerBuilder(c.Mock)
 	default:
 		return nil, errors.New("One writer field must be defined.")
 	}

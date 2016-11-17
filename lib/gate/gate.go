@@ -1,41 +1,83 @@
 package gate
 
-// Opens gate by setting channel to nil and returning previous value of
-// channel in one go. Caller must close returned channel to unblock any
-// goroutines waiting on gate to open.
-func (g *Gate) clearChannel() (result chan struct{}) {
-	g.lock.Lock()
-	defer g.lock.Unlock()
-	if g.ch != nil {
-		result = g.ch
-		g.ch = nil
-	}
-	return
+func _new() *Gate {
+	var result Gate
+	result.zeroReached.L = &result.lock
+	result.wakeup.L = &result.lock
+	result.noDrainsInProgress.L = &result.lock
+	return &result
 }
 
-func (g *Gate) resume() {
-	if c := g.clearChannel(); c != nil {
-		close(c)
+func (g *Gate) enter() bool {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	for g.paused && !g.ended {
+		g.wakeup.Wait()
+	}
+	if g.ended {
+		return false
+	}
+	g.count++
+	return true
+}
+
+func (g *Gate) exit() {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	g.count--
+	if g.count < 0 {
+		panic("negative count of goroutines in critical section")
+	}
+	if g.count == 0 {
+		g.zeroReached.Broadcast()
+	}
+}
+
+func (g *Gate) _drainCriticalSection() {
+	g.drainsInProgress++
+	for g.count > 0 {
+		g.zeroReached.Wait()
+	}
+	g.drainsInProgress--
+	if g.drainsInProgress == 0 {
+		g.noDrainsInProgress.Broadcast()
+	}
+}
+
+func (g *Gate) _waitForDraining() {
+	for g.drainsInProgress > 0 {
+		g.noDrainsInProgress.Wait()
 	}
 }
 
 func (g *Gate) pause() {
 	g.lock.Lock()
 	defer g.lock.Unlock()
-	if g.ch == nil {
-		g.ch = make(chan struct{})
-	}
+	g.paused = true
+	g._drainCriticalSection()
 }
 
-func (g *Gate) get() <-chan struct{} {
+func (g *Gate) resume() {
 	g.lock.Lock()
 	defer g.lock.Unlock()
-	return g.ch
+	g._waitForDraining()
+	g.paused = false
+	// Wake up anyone waiting in Enter function.
+	g.wakeup.Broadcast()
 }
 
-func (g *Gate) await() {
-	if c := g.get(); c != nil {
-		// If gate is closed, we must block the caller
-		<-c
-	}
+func (g *Gate) end() {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	g.ended = true
+	g._drainCriticalSection()
+	// Wake up anyone waiting in Enter function so that Enter returns false.
+	g.wakeup.Broadcast()
+}
+
+func (g *Gate) start() {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+	g._waitForDraining()
+	g.ended = false
 }

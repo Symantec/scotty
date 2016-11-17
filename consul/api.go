@@ -67,13 +67,13 @@ func (c *Coordinator) WithStateListener(
 
 // PutPStoreConfig stores a new scotty config file
 func (c *Coordinator) PutPStoreConfig(value string) error {
-	return c.coord.kernel.Put(kConfigFileKey, value)
+	return c.coord.conn.Put(kConfigFileKey, value)
 }
 
 // GetPStoreConfig gets the current scotty config file. If none exists,
 // returns "", ErrMissing
 func (c *Coordinator) GetPStoreConfig() (result string, err error) {
-	result, ok, _, err := c.coord.kernel.get(kConfigFileKey, 0)
+	result, ok, _, err := c.coord.conn.get(kConfigFileKey, 0)
 	if err != nil {
 		return
 	}
@@ -96,5 +96,5 @@ func (c *Coordinator) GetPStoreConfig() (result string, err error) {
 // channel. Termination may not happen until several minutes after the
 // call closes the done channel.
 func (c *Coordinator) WatchPStoreConfig(done <-chan struct{}) <-chan string {
-	return c.coord.kernel.Watch(kConfigFileKey, done)
+	return c.coord.conn.Watch(kConfigFileKey, done)
 }

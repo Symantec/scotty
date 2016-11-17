@@ -44,7 +44,10 @@ func (t *throttleWriter) Write(records []Record) error {
 }
 
 func (w *RecordWriterWithMetrics) write(records []Record) error {
-	w.gate.Await()
+	// When gate is paused, goroutines block on Enter
+	w.gate.Enter()
+	// In this case, our critical section of code is empty
+	w.gate.Exit()
 	ctime := time.Now()
 	result := w.W.Write(records)
 	timeTaken := time.Now().Sub(ctime)

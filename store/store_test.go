@@ -41,6 +41,14 @@ type playbackType struct {
 	original       metrics.SimpleList
 }
 
+func countItems(iter store.Iterator) (result int) {
+	var r store.Record
+	for iter.Next(&r) {
+		result++
+	}
+	return result
+}
+
 func newPlaybackType(mlist metrics.List, valueCount int) *playbackType {
 	length := mlist.Len()
 	original := make(metrics.SimpleList, length)
@@ -1487,6 +1495,70 @@ func TestIterator(t *testing.T) {
 	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"aThirdIterator", kEndpoint0, 0)
 	filteredExpected.Iterate(t, iterator)
+
+	// Test StartAtBeginning
+	toStartAtBeginningIterator0, _ := aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning0", kEndpoint0, 0)
+	toStartAtBeginningIterator1, _ := aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning1", kEndpoint0, 0)
+	toStartAtBeginningIterator2, _ := aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning2", kEndpoint0, 0)
+	count0 := countItems(toStartAtBeginningIterator0)
+	count1 := countItems(toStartAtBeginningIterator1)
+	count2 := countItems(toStartAtBeginningIterator2)
+
+	if count0 == 0 || count1 == 0 || count2 == 0 {
+		t.Fatal("Expected items to iterate over")
+	}
+
+	// Commit all progress
+	toStartAtBeginningIterator0.Commit()
+	toStartAtBeginningIterator1.Commit()
+	toStartAtBeginningIterator2.Commit()
+
+	// Start just 0 and 1 at beginning
+	aStore.StartAtBeginning(
+		kEndpoint0, "toStartAtBeginning0", "toStartAtBeginning1")
+
+	toStartAtBeginningIterator0, _ = aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning0", kEndpoint0, 0)
+	toStartAtBeginningIterator1, _ = aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning1", kEndpoint0, 0)
+	toStartAtBeginningIterator2, _ = aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning2", kEndpoint0, 0)
+	assertValueEquals(t, count0, countItems(toStartAtBeginningIterator0))
+	assertValueEquals(t, count1, countItems(toStartAtBeginningIterator1))
+	assertValueEquals(t, 0, countItems(toStartAtBeginningIterator2))
+
+	toStartAtBeginningIterator0.Commit()
+	toStartAtBeginningIterator1.Commit()
+
+	toStartAtBeginningIterator0, _ = aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning0", kEndpoint0, 0)
+	toStartAtBeginningIterator1, _ = aStore.NamedIteratorForEndpoint(
+		"toStartAtBeginning1", kEndpoint0, 0)
+
+	assertValueEquals(t, 0, countItems(toStartAtBeginningIterator0))
+	assertValueEquals(t, 0, countItems(toStartAtBeginningIterator1))
+
+	// Test multiple commits
+	multipleCommitsIterator, _ := aStore.NamedIteratorForEndpoint(
+		"multipleCommitsIterator", kEndpoint0, 0)
+	iterCount := 0
+	var r store.Record
+	for multipleCommitsIterator.Next(&r) {
+		iterCount++
+		multipleCommitsIterator.Commit()
+	}
+	if iterCount == 0 {
+		t.Error("Oops didn't get any records")
+	}
+	multipleCommitsIterator, _ = aStore.NamedIteratorForEndpoint(
+		"multipleCommitsIterator", kEndpoint0, 0)
+
+	// All the commits should have happened so we should be at the end
+	// of the data here.
+	assertValueEquals(t, false, multipleCommitsIterator.Next(&r))
 }
 
 func TestMissingValue(t *testing.T) {

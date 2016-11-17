@@ -105,25 +105,35 @@ func newTimeSeriesCollectionType(
 	return result
 }
 
-func (c *timeSeriesCollectionType) NewNamedIterator(
-	name string,
-	maxFrames int,
-	strategy MetricGroupingStrategy) (NamedIterator, float64) {
-	var startTimes map[int]float64
-	var completed map[*MetricInfo]float64
+func (c *timeSeriesCollectionType) NamedIteratorInfo(name string) (
+	startTimes map[int]float64,
+	completed map[*MetricInfo]float64,
+	timestampSeries []*timestampSeriesType) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	timestampSeries = c.tsAllTimeStamps()
 	snapshot := c.iterators[name]
 	if snapshot != nil {
 		startTimes = snapshot.startTimeStamps
 		completed = snapshot.completed
 	}
-	timesByGroup := make(map[int][]float64, len(c.timestampSeries))
-	for groupId, series := range c.timestampSeries {
+	return
+}
+
+func (c *timeSeriesCollectionType) NewNamedIterator(
+	name string,
+	maxFrames int,
+	strategy MetricGroupingStrategy) (NamedIterator, float64) {
+	startTimes,
+		completed,
+		timestampSeries := c.NamedIteratorInfo(name)
+	allTimeSeries := c.TsAll()
+	timesByGroup := make(map[int][]float64, len(timestampSeries))
+	for _, series := range timestampSeries {
+		groupId := series.GroupId()
 		timesByGroup[groupId] = series.FindAfter(
 			startTimes[groupId], maxFrames)
 	}
-	allTimeSeries := c.tsAll()
 	strategy.orderedPartition(allTimeSeries)
 	result := &namedIteratorType{
 		name:                 name,
@@ -134,15 +144,16 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		timeSeries:           allTimeSeries,
 		strategy:             strategy,
 	}
-	timeLeft := c.timeLeft(result.nextStartTimeStamps())
+	timeLeft := timeLeft(timestampSeries, result.nextStartTimeStamps())
 	return result, timeLeft
 }
 
-func (c *timeSeriesCollectionType) timeLeft(
+func timeLeft(
+	timestampSeries []*timestampSeriesType,
 	startTimes map[int]float64) float64 {
 	result := 0.0
-	for groupId, series := range c.timestampSeries {
-		first := startTimes[groupId]
+	for _, series := range timestampSeries {
+		first := startTimes[series.GroupId()]
 		if first == 0.0 {
 			first = series.Earliest()
 		}
@@ -155,14 +166,10 @@ func (c *timeSeriesCollectionType) timeLeft(
 }
 
 func (c *timeSeriesCollectionType) TimeLeft(name string) float64 {
-	var startTimes map[int]float64
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	snapshot := c.iterators[name]
-	if snapshot != nil {
-		startTimes = snapshot.startTimeStamps
-	}
-	return c.timeLeft(startTimes)
+	startTimes,
+		_,
+		timestampSeries := c.NamedIteratorInfo(name)
+	return timeLeft(timestampSeries, startTimes)
 }
 
 func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
@@ -171,23 +178,17 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 	maxFrames int,
 	strategy MetricGroupingStrategy) (
 	NamedIterator, float64) {
-	var startTimes map[int]float64
-	var completed map[*MetricInfo]float64
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	snapshot := c.iterators[name]
-	if snapshot != nil {
-		startTimes = snapshot.startTimeStamps
-		completed = snapshot.completed
-	}
-	timesByGroup := make(map[int][]float64, len(c.timestampSeries))
-	for groupId, series := range c.timestampSeries {
-		nextTimes := series.FindAfter(
-			startTimes[groupId], 0)
+	startTimes,
+		completed,
+		timestampSeries := c.NamedIteratorInfo(name)
+	allTimeSeries := c.TsAll()
+	timesByGroup := make(map[int][]float64, len(timestampSeries))
+	for _, series := range timestampSeries {
+		groupId := series.GroupId()
+		nextTimes := series.FindAfter(startTimes[groupId], 0)
 		chopForRollUp(duration, maxFrames, &nextTimes)
 		timesByGroup[groupId] = nextTimes
 	}
-	allTimeSeries := c.tsAll()
 	strategy.orderedPartition(allTimeSeries)
 	result := &rollUpNamedIteratorType{
 		namedIteratorType: &namedIteratorType{
@@ -202,11 +203,19 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		strategy: strategy,
 		interval: duration,
 	}
-	timeLeft := c.timeLeft(result.nextStartTimeStamps())
+	timeLeft := timeLeft(timestampSeries, result.nextStartTimeStamps())
 	return result, timeLeft
 }
 
-func (c *timeSeriesCollectionType) saveProgress(
+func (c *timeSeriesCollectionType) StartAtBeginning(names []string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	for _, name := range names {
+		delete(c.iterators, name)
+	}
+}
+
+func (c *timeSeriesCollectionType) SaveProgress(
 	name string, progress *namedIteratorDataType) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -221,12 +230,24 @@ func (c *timeSeriesCollectionType) tsAll() (
 	return
 }
 
+func (c *timeSeriesCollectionType) TsAll() []*timeSeriesType {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.tsAll()
+}
+
 func (c *timeSeriesCollectionType) tsAllTimeStamps() (
 	result []*timestampSeriesType) {
 	for _, ts := range c.timestampSeries {
 		result = append(result, ts)
 	}
 	return
+}
+
+func (c *timeSeriesCollectionType) TsAllTimeStamps() []*timestampSeriesType {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.tsAllTimeStamps()
 }
 
 func (c *timeSeriesCollectionType) TsAllAndTimeStampsMarkingInactive() (

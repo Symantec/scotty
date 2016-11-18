@@ -272,6 +272,21 @@ type rollUpNamedIteratorType struct {
 }
 
 func (n *rollUpNamedIteratorType) Next(result *Record) bool {
+	// When rolling up, we use the exclusive end timestamp of the range
+	// instead of the inclusive start time stamp of the range.
+	// By doing this we ensure that if the roll up span changes during run
+	// time, we won't overwrite data for the same timestamp or earlier
+	// timestamp for a given time series.
+	//
+	// We know that the timestamp for the next range we write out will be
+	// strictly after the timestamp we just visited because we use the
+	// exclusive end timestamp. We also know that the last timestamp we wrote
+	// out is on or before the timestamp we just visited since we have to be
+	// past a range to write it out.
+	//
+	// Both of these are always true regardless of how the roll up span changes.
+	// So we can be confident that we will never overwrite data for the
+	// same timestamp or earlier one.
 	var record Record
 	for n.namedIteratorType.peek(&record) {
 		// Can't roll up inactive values with active ones so we
@@ -285,10 +300,13 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 			if !n.strategy.Equal(record.Info, n.aggregator.FirstInfo()) || frameId != getFrameId(n.aggregator.FirstTs(), n.interval) {
 				n.aggregator.Result(result)
 				n.aggregator.Clear()
+				// Use exclusive latest timestamp instead of inclusive earliest
+				result.TimeStamp += n.interval
 				return true
 			}
 		}
 		n.namedIteratorType.Next(&record)
+		// Normalise timestamps
 		record.TimeStamp = math.Floor(record.TimeStamp/n.interval) * n.interval
 		n.aggregator.Add(&record)
 	}
@@ -297,6 +315,8 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 	}
 	n.aggregator.Result(result)
 	n.aggregator.Clear()
+	// Use exclusive latest timestamp instead of inclusive earliest
+	result.TimeStamp += n.interval
 	return true
 }
 

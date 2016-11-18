@@ -822,22 +822,22 @@ func TestRollUpIterator(t *testing.T) {
 	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	expected := newExpectedTsValues()
-	expected.Add("Int", 120000.0, int64(26667))
-	expected.Add("Float", 96000.0, 5.75)
-	expected.Add("String", 96000.0, "hello")
-	expected.Add("Inactive", 120000.0, 24.0)
+	expected.Add("Int", 120120.0, int64(26667))
+	expected.Add("Float", 96120.0, 5.75)
+	expected.Add("String", 96120.0, "hello")
+	expected.Add("Inactive", 120120.0, 24.0)
 
-	expected.Add("Int", 120240.0, int64(31500))
-	expected.Add("Float", 96240.0, 9.125)
-	expected.Add("String", 96240.0, "bee")
+	expected.Add("Int", 120360.0, int64(31500))
+	expected.Add("Float", 96360.0, 9.125)
+	expected.Add("String", 96360.0, "bee")
 
-	expected.Add("Int", 120360.0, int64(23250))
-	expected.Add("Float", 96360.0, 1.875)
-	expected.Add("String", 96360.0, "long")
-	expected.Add("Inactive", 120360.0, 11.0)
+	expected.Add("Int", 120480.0, int64(23250))
+	expected.Add("Float", 96480.0, 1.875)
+	expected.Add("String", 96480.0, "long")
+	expected.Add("Inactive", 120480.0, 11.0)
 
-	expected.Add("Float", 96480.0, 3.1875)
-	expected.Add("String", 96480.0, "near")
+	expected.Add("Float", 96600.0, 3.1875)
+	expected.Add("String", 96600.0, "near")
 
 	beginning := expected.Checkpoint()
 
@@ -976,10 +976,10 @@ func TestRollUpIterator(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected = newExpectedTsValues()
-	expected.Add("Int", 120480.0, int64(28000))
-	expected.Add("Float", 96600.0, 12.0)
-	expected.Add("String", 96600.0, "far")
-	expected.Add("Inactive", 120480.0, 8.3)
+	expected.Add("Int", 120600.0, int64(28000))
+	expected.Add("Float", 96720.0, 12.0)
+	expected.Add("String", 96720.0, "far")
+	expected.Add("Inactive", 120600.0, 8.3)
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1019,9 +1019,9 @@ func TestRollUpIteratorBool(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30000.0, true)
-	expected.Add("path", 30300.0, false)
-	expected.Add("path", 30900.0, true)
+	expected.Add("path", 30300.0, true)
+	expected.Add("path", 30600.0, false)
+	expected.Add("path", 31200.0, true)
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1060,9 +1060,9 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30000.0, int8(1))
-	expected.Add("path", 30300.0, int8(-128))
-	expected.Add("path", 30900.0, int8(127))
+	expected.Add("path", 30300.0, int8(1))
+	expected.Add("path", 30600.0, int8(-128))
+	expected.Add("path", 31200.0, int8(127))
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1105,9 +1105,9 @@ func TestIteratorSamePathDifferentTypeRollUp(t *testing.T) {
 
 	expected := newExpectedTsValues()
 
-	expected.Add("foo", 1200.0, int64(1525))
-	expected.Add("foo", 1260.0, float64(1830.0))
-	expected.Add("foo", 1320.0, "hello")
+	expected.Add("foo", 1260.0, int64(1525))
+	expected.Add("foo", 1320.0, float64(1830.0))
+	expected.Add("foo", 1380.0, "hello")
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1541,24 +1541,26 @@ func TestIterator(t *testing.T) {
 	assertValueEquals(t, 0, countItems(toStartAtBeginningIterator0))
 	assertValueEquals(t, 0, countItems(toStartAtBeginningIterator1))
 
-	// Test multiple commits
+	// Test SetIteratorTo
 	multipleCommitsIterator, _ := aStore.NamedIteratorForEndpoint(
 		"multipleCommitsIterator", kEndpoint0, 0)
-	iterCount := 0
-	var r store.Record
-	for multipleCommitsIterator.Next(&r) {
-		iterCount++
-		multipleCommitsIterator.Commit()
-	}
-	if iterCount == 0 {
+	totalItems := countItems(multipleCommitsIterator)
+	if totalItems == 0 {
 		t.Error("Oops didn't get any records")
 	}
+
 	multipleCommitsIterator, _ = aStore.NamedIteratorForEndpoint(
 		"multipleCommitsIterator", kEndpoint0, 0)
-
-	// All the commits should have happened so we should be at the end
-	// of the data here.
-	assertValueEquals(t, false, multipleCommitsIterator.Next(&r))
+	aStore.SetIteratorTo(kEndpoint0, "copy", "multipleCommitsIterator")
+	var r store.Record
+	for multipleCommitsIterator.Next(&r) {
+		copyIterator, _ := aStore.NamedIteratorForEndpoint(
+			"copy", kEndpoint0, 0)
+		assertValueEquals(t, totalItems, countItems(copyIterator))
+		totalItems--
+		multipleCommitsIterator.Commit()
+		aStore.SetIteratorTo(kEndpoint0, "copy", "multipleCommitsIterator")
+	}
 }
 
 func TestMissingValue(t *testing.T) {
@@ -2664,7 +2666,7 @@ func TestWithDistributions(t *testing.T) {
 	expectedTsValues = newExpectedTsValues()
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3000.0,
+		3500.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{9, 15, 10, 3},
 			Sum:           200.0,
@@ -2672,7 +2674,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3000.0,
+		3500.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{6, 4},
 			Sum:           500.0,
@@ -2680,7 +2682,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"mint",
-		3000.0,
+		3500.0,
 		int64(74))
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
@@ -2807,13 +2809,13 @@ func TestWithLists(t *testing.T) {
 
 	// Remember, iterator never emits rolled up value from last time
 	// period as more values could come in.
-	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
-	expectedTsValues.Add("/list/uint32", 1800.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1800.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1900.0, []uint32{2, 3, 5, 7})
 
 	expectedTsValues.Add(
-		"/list/string", 2700.0, []string{"hello", "goodbye"})
+		"/list/string", 2800.0, []string{"hello", "goodbye"})
 	expectedTsValues.Add(
-		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
+		"/list/string", 2900.0, []string{"foo", "bar", "baz"})
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"aRollUpIterator",

@@ -215,6 +215,20 @@ func (c *timeSeriesCollectionType) StartAtBeginning(names []string) {
 	}
 }
 
+func (c *timeSeriesCollectionType) SetIteratorTo(destName, srcName string) {
+	if destName == srcName {
+		return
+	}
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	srcProgress, ok := c.iterators[srcName]
+	if !ok {
+		delete(c.iterators, destName)
+	} else {
+		c.iterators[destName] = srcProgress
+	}
+}
+
 func (c *timeSeriesCollectionType) SaveProgress(
 	name string, progress *namedIteratorDataType) {
 	c.lock.Lock()

@@ -746,6 +746,14 @@ func (s *Store) StartAtBeginning(endpointId interface{}, names ...string) {
 	s.startAtBeginning(endpointId, names)
 }
 
+// SetIteratorTo sets the position of future iterators named destName to be
+// the same as future iterators named srcName. Commiting an existing
+// iterator named destName after making this call will have no effect.
+func (s *Store) SetIteratorTo(
+	endpointId interface{}, destName, srcName string) {
+	s.setIteratorTo(endpointId, destName, srcName)
+}
+
 // LatestByEndpoint returns the latest records for each metric for a
 // given endpoint.
 // LatestByEndpoint appends the records to result in no particular order.
@@ -770,6 +778,11 @@ func (s *Store) LatestByPrefixAndEndpointStrategy(
 // same error immediately.
 func (s *Store) VisitAllEndpoints(v Visitor) error {
 	return s.visitAllEndpoints(v)
+}
+
+// Endpoints returns all the endpoints in this store
+func (s *Store) Endpoints() []interface{} {
+	return s.endpoints()
 }
 
 // RegisterMetrics registers metrics under d associated with this Store

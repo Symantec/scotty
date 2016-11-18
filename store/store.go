@@ -128,6 +128,11 @@ func (s *Store) startAtBeginning(endpointId interface{}, names []string) {
 	s.byApplication[endpointId].StartAtBeginning(names)
 }
 
+func (s *Store) setIteratorTo(
+	endpointId interface{}, destName, srcName string) {
+	s.byApplication[endpointId].SetIteratorTo(destName, srcName)
+}
+
 func (s *Store) byEndpoint(
 	endpointId interface{},
 	start, end float64,
@@ -159,6 +164,13 @@ func (s *Store) visitAllEndpoints(v Visitor) (err error) {
 		if err = v.Visit(s, endpointId); err != nil {
 			return
 		}
+	}
+	return
+}
+
+func (s *Store) endpoints() (result []interface{}) {
+	for endpointId := range s.byApplication {
+		result = append(result, endpointId)
 	}
 	return
 }

@@ -278,7 +278,7 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 	}
 	if err = tricorder.RegisterMetricInGroup(
 		fmt.Sprintf("writer/%s/valuesNotWritten", p.Name()),
-		&data.ValuesNotWritten,
+		data.ValuesNotWritten,
 		group,
 		units.None,
 		"Number of values not written to persistent storage"); err != nil {

@@ -44,10 +44,10 @@ func (t *throttleWriter) Write(records []Record) error {
 }
 
 func (w *RecordWriterWithMetrics) write(records []Record) error {
-	// When gate is paused, goroutines block on Enter
-	w.gate.Enter()
-	// In this case, our critical section of code is empty
-	w.gate.Exit()
+	if !w.criticalSection.Enter() {
+		return ErrDisabled
+	}
+	defer w.criticalSection.Exit()
 	ctime := time.Now()
 	result := w.W.Write(records)
 	timeTaken := time.Now().Sub(ctime)
@@ -58,6 +58,15 @@ func (w *RecordWriterWithMetrics) write(records []Record) error {
 			uint(len(records)), result.Error(), timeTaken)
 	}
 	return result
+}
+
+func (w *RecordWriterWithMetrics) setMetrics(m *RecordWriterMetrics) {
+	temp := *m
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	temp.Paused = w.metrics.Paused
+	temp.Disabled = w.metrics.Disabled
+	w.metrics = temp
 }
 
 func (w *RecordWriterWithMetrics) _metrics(m *RecordWriterMetrics) {
@@ -86,6 +95,12 @@ func (w *RecordWriterWithMetrics) setPauseMetric(paused bool) {
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	w.metrics.Paused = paused
+}
+
+func (w *RecordWriterWithMetrics) setDisabledMetric(b bool) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.metrics.Disabled = b
 }
 
 func (w *RecordWriterWithMetrics) logDistributions(
@@ -308,21 +323,18 @@ func (c asyncConsumerTypeAdapter) Write(
 
 func (s *ConsumerMetricsStore) metrics(m *ConsumerMetrics) {
 	s.w.Metrics(&m.RecordWriterMetrics)
-	recordCount := s.getRecordCount()
-	if m.ValuesWritten < recordCount {
-		m.ValuesNotWritten = recordCount - m.ValuesWritten
-	} else {
-		m.ValuesNotWritten = 0
-	}
-}
-
-func (s *ConsumerMetricsStore) getRecordCount() uint64 {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if s.recordCount > s.removedRecordCount {
-		return s.recordCount - s.removedRecordCount
-	}
-	return 0
+	m.TotalValues = s.recordCount
+	m.SkippedValues = s.removedRecordCount
+}
+
+func (s *ConsumerMetricsStore) setMetrics(m *ConsumerMetrics) {
+	s.w.SetMetrics(&m.RecordWriterMetrics)
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.recordCount = m.TotalValues
+	s.removedRecordCount = m.SkippedValues
 }
 
 func (s *ConsumerMetricsStore) addToRecordCount(count uint64) {
@@ -354,7 +366,7 @@ func toFilterer(w LimitedRecordWriter) store.Filterer {
 
 func newConsumerWithMetricsBuilder(
 	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
-	writerWithMetrics := &RecordWriterWithMetrics{W: w}
+	writerWithMetrics := NewRecordWriterWithMetrics(w)
 	ptr := &ConsumerWithMetrics{
 		attributes: ConsumerAttributes{
 			BatchSize:   kDefaultBufferSize,
@@ -383,6 +395,17 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 			hooks:   b.hooks}
 	}
 	result.metricsStore.w.W = writer
+
+	// fix up writer with metrics
+	if b.paused {
+		result.metricsStore.w.Pause()
+	}
+	// fix up metrics
+	result.metricsStore.w.BatchSizes = result.attributes.BatchSizes
+	result.metricsStore.w.PerMetricWriteTimes = result.attributes.PerMetricWriteTimes
+	result.metricsStore.SetMetrics(&b.metrics)
+
+	// Set up consumer
 	if result.attributes.Concurrency == 1 {
 		result.consumer = toConsumerType(
 			NewConsumer(

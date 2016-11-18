@@ -3,6 +3,7 @@ package pstore
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/lib/gate"
 	"github.com/Symantec/scotty/store"
@@ -16,6 +17,10 @@ import (
 // Commonly used keys in TagGroup instances
 const (
 	TagAppName = "appname"
+)
+
+var (
+	ErrDisabled = errors.New("pstore: Writer disabled.")
 )
 
 // TagGroup represents arbitrary key-value pairs describing a metric.
@@ -101,6 +106,7 @@ type RecordWriterMetrics struct {
 	LastSuccessfulWriteTS time.Time
 	TimeSpentWriting      time.Duration
 	Paused                bool
+	Disabled              bool
 }
 
 func (w *RecordWriterMetrics) SuccessfulWriteRatio() float64 {
@@ -114,26 +120,52 @@ type RecordWriterWithMetrics struct {
 	// Client populates this to collect write times per metric
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
 	// Client populates this to collect batch sizes
-	BatchSizes *tricorder.CumulativeDistribution
-	gate       gate.Gate
-	lock       sync.Mutex
-	metrics    RecordWriterMetrics
+	BatchSizes      *tricorder.CumulativeDistribution
+	criticalSection *gate.Gate
+	lock            sync.Mutex
+	metrics         RecordWriterMetrics
+}
+
+// NewRecordWriterWithMetrics returns a new RecordWriterWithMetrics.
+// Use this method instead of initialising RecordWithMetrics directly.
+func NewRecordWriterWithMetrics(writer RecordWriter) *RecordWriterWithMetrics {
+	return &RecordWriterWithMetrics{
+		W:               writer,
+		criticalSection: gate.New(),
+	}
+}
+
+// SetMetrics sets the metrics in this instance to m but leaves the Paused
+// and Disabled metrics in this instance unchanged.
+func (w *RecordWriterWithMetrics) SetMetrics(m *RecordWriterMetrics) {
+	w.setMetrics(m)
 }
 
 func (w *RecordWriterWithMetrics) Write(records []Record) error {
 	return w.write(records)
 }
 
-// Pause pauses this writer so that subsequent calls to Write block.
+// Pause pauses this writer so that subsequent calls to Write block. Any
+// in progress calls wo Write will complete before Pause returns.
 func (w *RecordWriterWithMetrics) Pause() {
-	w.gate.Pause()
+	w.criticalSection.Pause()
 	w.setPauseMetric(true)
 }
 
 // Resume resumes this writer. Any blocked calls to Write resume immediatley.
 func (w *RecordWriterWithMetrics) Resume() {
-	w.gate.Resume()
 	w.setPauseMetric(false)
+	w.criticalSection.Resume()
+}
+
+// Disable disables this writer so that future calls to Write return
+// ErrDisabled. Any in progress calls to Write will complete before Disable
+// returns. If this writer is currently paused, Disable resumes it so
+// that any blocking calls to Write return ErrDisabled. Calling Write on
+// a disabled writer does not update any metrics.
+func (w *RecordWriterWithMetrics) Disable() {
+	w.criticalSection.End()
+	w.setDisabledMetric(true)
 }
 
 // Metrics stores the current metrics at m
@@ -244,8 +276,25 @@ func (c *Consumer) Flush() error {
 // ConsumerMetrics represents metrics for a consumer.
 type ConsumerMetrics struct {
 	RecordWriterMetrics
-	// The number of values this consumer has yet to write out.
-	ValuesNotWritten uint64
+	// Total values to write or skip
+	TotalValues uint64
+	// Values skipped
+	SkippedValues uint64
+}
+
+// Zero values not written zeros out the values not written by setting
+// TotalValues to ValuesWritten and SkippedValues to 0.
+func (c *ConsumerMetrics) ZeroValuesNotWritten() {
+	c.SkippedValues = 0
+	c.TotalValues = c.ValuesWritten
+}
+
+// ValuesNotWritten returns the number of values not written
+func (c *ConsumerMetrics) ValuesNotWritten() uint64 {
+	if c.TotalValues <= c.ValuesWritten+c.SkippedValues {
+		return 0
+	}
+	return c.TotalValues - c.SkippedValues - c.ValuesWritten
 }
 
 // ConsumerMetricsStore stores metrics for a consumer.
@@ -258,7 +307,8 @@ type ConsumerMetricsStore struct {
 	removedRecordCount uint64
 }
 
-// Pause pauses the writer in the corresponding consumer
+// Pause pauses the writer in the corresponding consumer waiting for any
+// in progress writes to complete
 func (s *ConsumerMetricsStore) Pause() {
 	s.w.Pause()
 }
@@ -266,6 +316,13 @@ func (s *ConsumerMetricsStore) Pause() {
 // Resume resumes the writer in the corresponding consumer
 func (s *ConsumerMetricsStore) Resume() {
 	s.w.Resume()
+}
+
+// DisableWrites causes all future writes to underlying persistent store of
+// corresponding consumer to return an error. Any in progress writes
+// will complete before DisableWrites returns.
+func (s *ConsumerMetricsStore) DisableWrites() {
+	s.w.Disable()
 }
 
 // Adds count to the total number of records consumer must write out.
@@ -283,9 +340,14 @@ func (s *ConsumerMetricsStore) Filter(r *store.Record) bool {
 	return s.filterer.Filter(r)
 }
 
-// Metrics writes the consumer's metrics to m.
+// Metrics writes the metrics of corresponding consumer to m.
 func (s *ConsumerMetricsStore) Metrics(m *ConsumerMetrics) {
 	s.metrics(m)
+}
+
+// SetMetrics sets the metrics for corresponding consumer to m.
+func (s *ConsumerMetricsStore) SetMetrics(m *ConsumerMetrics) {
+	s.setMetrics(m)
 }
 
 // ConsumerAttributes represent the unchanging attributes of a particular
@@ -303,7 +365,9 @@ type ConsumerAttributes struct {
 	// the same time period length. 0 means client should feed this
 	// consumer store.NamedIterator instances that report all metric
 	// values.
-	RollUpSpan time.Duration
+	RollUpSpan          time.Duration
+	BatchSizes          *tricorder.CumulativeDistribution
+	PerMetricWriteTimes *tricorder.CumulativeDistribution
 }
 
 // TotalRecordsPerSecond returns RecordsPerSecond * Concurrency
@@ -364,8 +428,10 @@ type RecordWriteHooker interface {
 // instance.
 // These instances are NOT safe to use with multiple goroutines.
 type ConsumerWithMetricsBuilder struct {
-	c     *ConsumerWithMetrics
-	hooks []RecordWriteHooker
+	c       *ConsumerWithMetrics
+	hooks   []RecordWriteHooker
+	metrics ConsumerMetrics
+	paused  bool
 }
 
 // NewConsumerWithMetricsBuilder creates a new instance that will
@@ -373,6 +439,12 @@ type ConsumerWithMetricsBuilder struct {
 func NewConsumerWithMetricsBuilder(
 	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	return newConsumerWithMetricsBuilder(w)
+}
+
+// SetConsumerMetrics ensures that built instance with have metrics equal
+// to m.
+func (b *ConsumerWithMetricsBuilder) SetConsumerMetrics(m *ConsumerMetrics) {
+	b.metrics = *m
 }
 
 // AddHook adds a hook for writes. hook must be non-nil.
@@ -418,6 +490,15 @@ func (b *ConsumerWithMetricsBuilder) SetRollUpSpan(dur time.Duration) {
 	b.c.attributes.RollUpSpan = dur
 }
 
+// RollUpSpan returns the length of time periods for rolled up values
+func (b *ConsumerWithMetricsBuilder) RollUpSpan() time.Duration {
+	return b.c.attributes.RollUpSpan
+}
+
+func (b *ConsumerWithMetricsBuilder) Name() string {
+	return b.c.name
+}
+
 // SetName sets the name of the consumer. Default is the empty string.
 func (b *ConsumerWithMetricsBuilder) SetName(name string) {
 	b.c.name = name
@@ -427,15 +508,25 @@ func (b *ConsumerWithMetricsBuilder) SetName(name string) {
 // use to record write times. The default is not to record write times.
 func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
 	d *tricorder.CumulativeDistribution) {
-	b.c.metricsStore.w.PerMetricWriteTimes = d
+	b.c.attributes.PerMetricWriteTimes = d
 }
 
-// SetPerMetricBatchSizeDist sets the distribution that the consumer will
+// SetBatchSizeDist sets the distribution that the consumer will
 // use to record the batch size of values written out.
 // The default is not to record batch sizes.
-func (b *ConsumerWithMetricsBuilder) SetPerMetricBatchSizeDist(
+func (b *ConsumerWithMetricsBuilder) SetBatchSizeDist(
 	d *tricorder.CumulativeDistribution) {
-	b.c.metricsStore.w.BatchSizes = d
+	b.c.attributes.BatchSizes = d
+}
+
+// Pause causes the built consumer's writer to be paused.
+func (b *ConsumerWithMetricsBuilder) SetPaused(paused bool) {
+	b.paused = paused
+}
+
+// Paused returns whether or not built consumer will be paused.
+func (b *ConsumerWithMetricsBuilder) Paused() bool {
+	return b.paused
 }
 
 // Build builds the ConsumerWithMetrics instance and destroys this builder.

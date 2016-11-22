@@ -398,7 +398,7 @@ func main() {
 			},
 		))
 	tsdbServeMux.Handle(
-		"/api",
+		"/api/",
 		tsdbexec.NotFoundHandler,
 	)
 

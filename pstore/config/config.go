@@ -153,6 +153,7 @@ func (c ConsumerConfig) newConsumerBuilder(wf WriterFactory) (
 	builder.SetBufferSize(c.BatchSize)
 	builder.SetRollUpSpan(c.RollUpSpan)
 	builder.SetName(c.Name)
+	builder.SetPaused(c.Paused)
 	return builder, nil
 }
 

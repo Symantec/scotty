@@ -7,7 +7,6 @@ import (
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/Dominator/lib/mdb/mdbd"
-	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/apps/scotty/splash"
 	"github.com/Symantec/scotty/consul"
@@ -222,19 +221,23 @@ func (b *blockingCoordinatorType) Lease(float64, float64) (
 	select {}
 }
 
+func (b *blockingCoordinatorType) WatchPStoreConfig(
+	done <-chan struct{}) <-chan string {
+	result := make(chan string)
+	if done != nil {
+		go func() {
+			defer close(result)
+			<-done
+		}()
+	}
+	return result
+}
+
 func (b *blockingCoordinatorType) WithStateListener(
 	listener func(blocked bool)) store.Coordinator {
 	result := *b
 	result.listener = listener
 	return &result
-}
-
-type totalCountCollectionType []*totalCountType
-
-func (t totalCountCollectionType) Update(store *store.Store, e *collector.Endpoint) {
-	for _, count := range t {
-		count.Update(store, e)
-	}
 }
 
 type maybeNilMemoryManagerWrapperType struct {
@@ -255,11 +258,6 @@ func main() {
 	handleSignals(logger)
 	// Read configs early so that we will fail fast.
 	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
-	consumerBuilders, err := newPStoreConsumers(maybeNilMemoryManager)
-	if err != nil {
-		log.Println("Pstore config file error:", err)
-		logger.Println("Pstore config file error:", err)
-	}
 	metricNameEngine := suggest.NewEngine()
 	metricNameAdder := newTsdbAdder(metricNameEngine)
 	tagkEngine := suggest.NewSuggester("appname", "HostName")
@@ -278,35 +276,26 @@ func main() {
 	)
 	rpc.HandleHTTP()
 	connectionErrors := newConnectionErrorsType()
-	if consumerBuilders == nil {
-		startCollector(
-			applicationStats,
-			connectionErrors,
-			totalCountCollectionType(nil),
-			metricNameAdder,
-			&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager})
-	} else {
-		var coord coordinatorBuilderType
-		if *fCoord != "" {
-			var err error
-			coord, err = consul.GetCoordinator(logger)
-			if err != nil {
-				logger.Println(err)
-				coord = &blockingCoordinatorType{}
-			}
+	var coord coordinatorBuilderType
+	if *fCoord != "" {
+		var err error
+		coord, err = consul.GetCoordinator(logger)
+		if err != nil {
+			logger.Println(err)
+			coord = &blockingCoordinatorType{}
 		}
-		totalCounts := startPStoreLoops(
-			applicationStats,
-			consumerBuilders,
-			logger,
-			coord)
-		startCollector(
-			applicationStats,
-			connectionErrors,
-			totalCountCollectionType(totalCounts),
-			metricNameAdder,
-			&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager})
 	}
+	totalCounts := startPStoreLoops(
+		applicationStats,
+		maybeNilMemoryManager,
+		logger,
+		coord)
+	startCollector(
+		applicationStats,
+		connectionErrors,
+		totalCounts,
+		metricNameAdder,
+		&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager})
 
 	http.Handle(
 		"/",

@@ -90,7 +90,7 @@ func (e *connectionErrorsType) GetErrors() (result messages.ErrorList) {
 type nameSetType map[string]bool
 
 type totalCountUpdaterType interface {
-	Update(*store.Store, *collector.Endpoint)
+	Update(s *store.Store, endpointId interface{})
 }
 
 // logger implements the scotty.Logger interface

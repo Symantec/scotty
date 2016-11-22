@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/scotty/pstore/config/mock"
 	"github.com/Symantec/scotty/pstore/config/tsdb"
 	"github.com/Symantec/scotty/pstore/config/utils"
+	"io"
 	"time"
 )
 
@@ -18,6 +19,16 @@ func ConsumerBuildersFromFile(filename string) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	var c ConfigList
 	if err = utils.ReadFromFile(filename, &c); err != nil {
+		return
+	}
+	return c.CreateConsumerBuilders()
+}
+
+// NewConsumerBuilders creates consumer builders from a reader.
+func NewConsumerBuilders(reader io.Reader) (
+	result []*pstore.ConsumerWithMetricsBuilder, err error) {
+	var c ConfigList
+	if err = utils.Read(reader, &c); err != nil {
 		return
 	}
 	return c.CreateConsumerBuilders()
@@ -53,6 +64,8 @@ type ConsumerConfig struct {
 	// The full path of the debug file. Optional.
 	// If empty, debug goes to stdout.
 	DebugFilePath string `yaml:"debugFilePath"`
+	// If true, this consumer is paused
+	Paused bool `yaml:"paused"`
 }
 
 func (c *ConsumerConfig) UnmarshalYAML(

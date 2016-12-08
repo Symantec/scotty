@@ -2,7 +2,7 @@ package influx
 
 import (
 	"bytes"
-	"github.com/Symantec/scotty/pstore/config/utils"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"reflect"
 	"testing"
 )
@@ -19,7 +19,7 @@ retentionPolicy: myPolicy
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err != nil {
+	if err := yamlutil.Read(buffer, &aconfig); err != nil {
 		t.Fatal(err)
 	}
 	expected := Config{
@@ -48,7 +48,7 @@ retentionPolicy: myPolicy
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err == nil {
+	if err := yamlutil.Read(buffer, &aconfig); err == nil {
 		t.Error("Expected error: misspelled writeConsistencys")
 	}
 }

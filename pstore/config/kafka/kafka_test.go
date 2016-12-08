@@ -3,8 +3,8 @@ package kafka
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/config/utils"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"reflect"
@@ -26,7 +26,7 @@ clientId: someClientId
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err != nil {
+	if err := yamlutil.Read(buffer, &aconfig); err != nil {
 		t.Fatal(err)
 	}
 	expected := Config{
@@ -56,7 +56,7 @@ clientId: someClientId
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err == nil {
+	if err := yamlutil.Read(buffer, &aconfig); err == nil {
 		t.Error("Expected error: misspelled endpoint")
 	}
 }

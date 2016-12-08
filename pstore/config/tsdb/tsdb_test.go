@@ -2,7 +2,7 @@ package tsdb
 
 import (
 	"bytes"
-	"github.com/Symantec/scotty/pstore/config/utils"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"reflect"
 	"testing"
 	"time"
@@ -15,7 +15,7 @@ timeout: 35s
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err != nil {
+	if err := yamlutil.Read(buffer, &aconfig); err != nil {
 		t.Fatal(err)
 	}
 	expected := Config{
@@ -34,7 +34,7 @@ timeouts: 35s
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var aconfig Config
-	if err := utils.Read(buffer, &aconfig); err == nil {
+	if err := yamlutil.Read(buffer, &aconfig); err == nil {
 		t.Error("Expected error: misspelled fields timeouts")
 	}
 }

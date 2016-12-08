@@ -5,7 +5,6 @@ import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
-	"github.com/Symantec/scotty/pstore/config/utils"
 	"testing"
 	"time"
 )
@@ -291,7 +290,7 @@ boo: 3
 `
 	buffer := bytes.NewBuffer(([]byte)(configFile))
 	var m mixedType
-	if err := utils.Read(buffer, &m); err == nil {
+	if err := yamlutil.Read(buffer, &m); err == nil {
 		t.Error("Expected error here.")
 	}
 
@@ -300,7 +299,7 @@ public: 1
 boo: 3
 `
 	buffer = bytes.NewBuffer(([]byte)(configFile))
-	if err := utils.Read(buffer, &m); err != nil {
+	if err := yamlutil.Read(buffer, &m); err != nil {
 		t.Error("Expected this to unmarshal.")
 	}
 	assertValueEquals(
@@ -319,7 +318,7 @@ func consumerBuildersFromString(s string) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	buffer := bytes.NewBuffer(([]byte)(s))
 	var c config.ConfigList
-	if err = utils.Read(buffer, &c); err != nil {
+	if err = yamlutil.Read(buffer, &c); err != nil {
 		return
 	}
 	return c.CreateConsumerBuilders()

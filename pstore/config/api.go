@@ -9,26 +9,15 @@ import (
 	"github.com/Symantec/scotty/pstore/config/kafka"
 	"github.com/Symantec/scotty/pstore/config/mock"
 	"github.com/Symantec/scotty/pstore/config/tsdb"
-	"github.com/Symantec/scotty/pstore/config/utils"
 	"io"
 	"time"
 )
-
-// ConsumerBuildersFromFile creates consumer builders from a configuration file.
-func ConsumerBuildersFromFile(filename string) (
-	result []*pstore.ConsumerWithMetricsBuilder, err error) {
-	var c ConfigList
-	if err = utils.ReadFromFile(filename, &c); err != nil {
-		return
-	}
-	return c.CreateConsumerBuilders()
-}
 
 // NewConsumerBuilders creates consumer builders from a reader.
 func NewConsumerBuilders(reader io.Reader) (
 	result []*pstore.ConsumerWithMetricsBuilder, err error) {
 	var c ConfigList
-	if err = utils.Read(reader, &c); err != nil {
+	if err = yamlutil.Read(reader, &c); err != nil {
 		return
 	}
 	return c.CreateConsumerBuilders()

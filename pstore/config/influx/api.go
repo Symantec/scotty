@@ -4,20 +4,19 @@ package influx
 import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/config/utils"
 )
 
 // FromFile creates a new writer from a configuration file.
 func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
 	var c Config
-	if err = utils.ReadFromFile(filename, &c); err != nil {
+	if err = yamlutil.ReadFromFile(filename, &c); err != nil {
 		return
 	}
 	return c.NewWriter()
 }
 
 // Config represents the configuration of influx db.
-// Config implements utils.Config
+// Config implements yamlutil.Config
 type Config struct {
 	// The influxdb endpoint. Required.
 	HostAndPort string `yaml:"hostAndPort"`

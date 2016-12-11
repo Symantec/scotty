@@ -1,5 +1,6 @@
 /*
-Package yamlutil provides strict unmarshaling of YAML into go structs.
+Package yamlutil provides utilities for reading and unmarshaling YAML
+including strict unmarshaling of YAML into go structs.
 
 Requirements
 

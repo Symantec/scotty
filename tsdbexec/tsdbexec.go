@@ -1,10 +1,10 @@
 package tsdbexec
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/lib/apiutil"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbimpl"
@@ -12,14 +12,16 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strconv"
 	"time"
 )
 
 var (
-	kErrorType     = reflect.TypeOf((*error)(nil)).Elem()
-	kUrlValuesType = reflect.TypeOf(url.Values(nil))
+	kOptions = &apiutil.Options{
+		ErrorGenerator: func(status int, err error) interface{} {
+			return newHTTPError(status, err)
+		},
+	}
 )
 
 func newTagFilter(spec *tsdbjson.FilterSpec) (
@@ -127,75 +129,30 @@ func query(
 	return allSeries, nil
 }
 
-type tsdbHandlerType struct {
-	inType       reflect.Type
-	handlerValue reflect.Value
+func newHandler(handler interface{}) http.Handler {
+	return apiutil.NewHandler(handler, kOptions)
 }
 
-func newHandler(
-	handler interface{}) http.Handler {
-	handlerValue := reflect.ValueOf(handler)
-	handlerType := handlerValue.Type()
-	if handlerType.Kind() != reflect.Func {
-		panic("NewHandler argument must be a func.")
-	}
-	if handlerType.NumIn() != 1 {
-		panic("NewHandler argument must be a func of one arg")
-	}
-	if handlerType.NumOut() != 2 || handlerType.Out(1) != kErrorType {
-		panic("NewHandler argument must be a func returning 1 value and 1 error")
-	}
-	inType := handlerType.In(0)
-	return &tsdbHandlerType{inType: inType, handlerValue: handlerValue}
+func newHTTPError(status int, err error) apiutil.HTTPError {
+	var anError httpErrorType
+	anError.E.Code = status
+	anError.E.Message = err.Error()
+	return &anError
 }
 
-func (h *tsdbHandlerType) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	var inValue reflect.Value
-	if h.inType == kUrlValuesType {
-		if err := r.ParseForm(); err != nil {
-			showError(w, 400, err.Error())
-			return
-		}
-		inValue = reflect.ValueOf(r.Form)
-	} else {
-		ptrValue := reflect.New(h.inType)
-		decoder := json.NewDecoder(r.Body)
-		if err := decoder.Decode(ptrValue.Interface()); err != nil {
-			showError(w, 400, err.Error())
-			return
-		}
-		inValue = ptrValue.Elem()
-	}
-	// Set up response headers
-	headers := w.Header()
-	headers.Add("Content-Type", "application/json; charset=UTF-8")
-	// Call the handler
-	results := h.handlerValue.Call([]reflect.Value{inValue})
-	if errInterface := results[1].Interface(); errInterface != nil {
-		showError(w, 400, errInterface.(error).Error())
-		return
-	}
-	encoder := json.NewEncoder(w)
-	encoder.Encode(results[0].Interface())
+type errorCodeType struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
 }
 
-func notFoundHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	showError(w, 404, "Endpoint not found")
+type httpErrorType struct {
+	E errorCodeType `json:"error"`
 }
 
-func showError(w http.ResponseWriter, statusCode int, message string) {
-	type errorCodeType struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
+func (h *httpErrorType) Error() string {
+	return h.E.Message
+}
 
-	type errorResponseType struct {
-		Error errorCodeType `json:"error"`
-	}
-	var anError errorResponseType
-	anError.Error.Code = statusCode
-	anError.Error.Message = message
-	w.WriteHeader(statusCode)
-	encoder := json.NewEncoder(w)
-	encoder.Encode(&anError)
+func (h *httpErrorType) Status() int {
+	return h.E.Code
 }

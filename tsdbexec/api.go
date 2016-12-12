@@ -5,7 +5,9 @@
 package tsdbexec
 
 import (
+	"errors"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/lib/apiutil"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdbjson"
 	"net/http"
@@ -16,7 +18,12 @@ import (
 var (
 	// NotFoundHandler is a net/http handler that reports a 404 error
 	// the TSDB API way.
-	NotFoundHandler = http.HandlerFunc(notFoundHandlerFunc)
+	NotFoundHandler = apiutil.NewHandler(
+		func(params url.Values) (interface{}, error) {
+			return nil, newHTTPError(
+				404, errors.New("Endpoint not found"))
+		},
+		kOptions)
 )
 
 // Suggest corresponds to /api/suggest TSDB API call.

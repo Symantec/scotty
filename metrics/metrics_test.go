@@ -81,15 +81,15 @@ func TestSomeTimeStampsMissing(t *testing.T) {
 func TestDifferentTimeStampsSameGroup(t *testing.T) {
 	list := metrics.SimpleList{
 		{
-			Path:      "One timestamp",
-			Value:     int64(35),
-			TimeStamp: kNow,
-			GroupId:   0,
-		},
-		{
 			Path:      "Another timestamp",
 			Value:     int64(36),
 			TimeStamp: kNow.Add(time.Minute),
+			GroupId:   0,
+		},
+		{
+			Path:      "One timestamp",
+			Value:     int64(35),
+			TimeStamp: kNow,
 			GroupId:   0,
 		},
 	}
@@ -98,7 +98,7 @@ func TestDifferentTimeStampsSameGroup(t *testing.T) {
 	}
 }
 
-func TestSameTimeStampSameGroupOk(t *testing.T) {
+func TestPathNamesSorted(t *testing.T) {
 	list := metrics.SimpleList{
 		{
 			Path:      "One timestamp",
@@ -109,6 +109,26 @@ func TestSameTimeStampSameGroupOk(t *testing.T) {
 		{
 			Path:      "Another timestamp",
 			Value:     int64(36),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+	}
+	if err := metrics.VerifyList(list); err == nil {
+		t.Error("Expected error: paths not sorted.")
+	}
+}
+
+func TestSameTimeStampSameGroupOk(t *testing.T) {
+	list := metrics.SimpleList{
+		{
+			Path:      "Another timestamp",
+			Value:     int64(36),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+		{
+			Path:      "One timestamp",
+			Value:     int64(35),
 			TimeStamp: kNow,
 			GroupId:   0,
 		},
@@ -121,16 +141,16 @@ func TestSameTimeStampSameGroupOk(t *testing.T) {
 func TestSameTimeStampDiffGroupOk(t *testing.T) {
 	list := metrics.SimpleList{
 		{
-			Path:      "One timestamp",
-			Value:     int64(35),
-			TimeStamp: kNow,
-			GroupId:   0,
-		},
-		{
 			Path:      "Another timestamp",
 			Value:     int64(36),
 			TimeStamp: kNow,
 			GroupId:   3,
+		},
+		{
+			Path:      "One timestamp",
+			Value:     int64(35),
+			TimeStamp: kNow,
+			GroupId:   0,
 		},
 	}
 	if err := metrics.VerifyList(list); err != nil {
@@ -141,16 +161,16 @@ func TestSameTimeStampDiffGroupOk(t *testing.T) {
 func TestDiffTimeStampDiffGroupOk(t *testing.T) {
 	list := metrics.SimpleList{
 		{
-			Path:      "One timestamp",
-			Value:     int64(35),
-			TimeStamp: kNow,
-			GroupId:   0,
-		},
-		{
 			Path:      "Another timestamp",
 			Value:     int64(36),
 			TimeStamp: kNow.Add(time.Minute),
 			GroupId:   1,
+		},
+		{
+			Path:      "One timestamp",
+			Value:     int64(35),
+			TimeStamp: kNow,
+			GroupId:   0,
 		},
 	}
 	if err := metrics.VerifyList(list); err != nil {

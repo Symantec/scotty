@@ -156,7 +156,7 @@ func activateEndpoints(endpoints []*scotty.Endpoint, s *store.Store) {
 		aMetric[i].Value = int64(i)
 	}
 	for i := range endpoints {
-		s.AddBatch(endpoints[i], 1.0, aMetric[:])
+		s.AddBatch(endpoints[i], 1.0, aMetric[:].Sorted())
 	}
 }
 
@@ -305,7 +305,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	var noMetrics metrics.SimpleList
 
 	// Trying to add to active endpoint should succeed
-	if _, err := aStore.AddBatch(endpointId, 9999.0, noMetrics); err != nil {
+	if _, err := aStore.AddBatch(endpointId, 9999.0, noMetrics.Sorted()); err != nil {
 		t.Error("Adding to active endpoint should succeed.")
 	}
 
@@ -440,39 +440,39 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
-	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+	aStore.AddBatch(endpointId, 100.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnApp")
-	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+	aStore.AddBatch(endpointId, 100.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
-	aStore.AddBatch(endpointId, 100.0, aMetric[:])
+	aStore.AddBatch(endpointId, 100.0, aMetric[:].Sorted())
 
 	aMetric[0].Value = int64(55)
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
-	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+	aStore.AddBatch(endpointId, 110.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnApp")
-	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+	aStore.AddBatch(endpointId, 110.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
-	aStore.AddBatch(endpointId, 110.0, aMetric[:])
+	aStore.AddBatch(endpointId, 110.0, aMetric[:].Sorted())
 
 	aMetric[0].Value = int64(60)
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
-	aStore.AddBatch(endpointId, 120.0, aMetric[:])
+	aStore.AddBatch(endpointId, 120.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnApp")
-	aStore.AddBatch(endpointId, 120.0, aMetric[:])
+	aStore.AddBatch(endpointId, 120.0, aMetric[:].Sorted())
 
 	appStatus.MarkHostsActiveExclusively(
 		120.0,
@@ -482,11 +482,11 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
-	aStore.AddBatch(endpointId, 130.0, aMetric[:])
+	aStore.AddBatch(endpointId, 130.0, aMetric[:].Sorted())
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnApp")
-	aStore.AddBatch(endpointId, 130.0, aMetric[:])
+	aStore.AddBatch(endpointId, 130.0, aMetric[:].Sorted())
 }
 
 func assertDeepEqual(

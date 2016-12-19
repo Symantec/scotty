@@ -105,7 +105,7 @@ func (p *playbackType) Play(aStore *store.Store, endpointId interface{}) error {
 				cmetrics = append(cmetrics, aValue)
 			}
 		}
-		if _, err := aStore.AddBatch(endpointId, 1000.0, cmetrics); err != nil {
+		if _, err := aStore.AddBatch(endpointId, 1000.0, cmetrics.Sorted()); err != nil {
 			return err
 		}
 	}
@@ -240,22 +240,22 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	}
 
 	aMetric[0].Value = int64(1)
-	aStore.AddBatch(kEndpoint0, 100.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 100.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(2)
-	aStore.AddBatch(kEndpoint0, 107.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 107.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(3)
-	aStore.AddBatch(kEndpoint0, 114.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 114.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(4)
-	aStore.AddBatch(kEndpoint0, 121.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 121.0, aMetric[:].Sorted())
 
 	aMetric[0].Value = int64(11)
-	aStore.AddBatch(kEndpoint1, 100.0, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 100.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(12)
-	aStore.AddBatch(kEndpoint1, 107.0, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 107.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(13)
-	aStore.AddBatch(kEndpoint1, 114.0, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 114.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(14)
-	aStore.AddBatch(kEndpoint1, 121.0, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 121.0, aMetric[:].Sorted())
 
 	var total sumMetricsType
 
@@ -275,7 +275,7 @@ func TestAggregateAppenderAndVisitor(t *testing.T) {
 	assertValueEquals(t, 14, int(total))
 
 	aMetric[0].Value = int32(17)
-	aStore.AddBatch(kEndpoint1, 128.0, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 128.0, aMetric[:].Sorted())
 
 	var result []store.Record
 	aStore.LatestByEndpoint(kEndpoint1, store.AppendTo(&result))
@@ -661,7 +661,7 @@ func TestIteratorPageEviction(t *testing.T) {
 	for ts := 100; ts < 200; ts += 10 {
 		aMetric[0].Value = int64(2 * (ts / 20))
 		aMetric[1].Value = int64(2*(ts/20) + 1)
-		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:].Sorted())
 	}
 	iterator, _ := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
@@ -678,7 +678,7 @@ func TestIteratorPageEviction(t *testing.T) {
 	for ts := 200; ts < 300; ts += 10 {
 		aMetric[0].Value = int64(2 * (ts / 20))
 		aMetric[1].Value = int64(2*(ts/20) + 1)
-		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:].Sorted())
 	}
 
 	iterator, _ = aStore.NamedIteratorForEndpoint(
@@ -695,7 +695,7 @@ func TestIteratorPageEviction(t *testing.T) {
 	for ts := 300; ts < 500; ts += 10 {
 		aMetric[0].Value = int64(2 * (ts / 20))
 		aMetric[1].Value = int64(2*(ts/20) + 1)
-		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:])
+		aStore.AddBatch(kEndpoint0, float64(ts), aMetric[:].Sorted())
 	}
 	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
@@ -729,7 +729,7 @@ func TestIteratorPageEviction(t *testing.T) {
 	// If we add new values, we should at least get those back
 	aMetric[0].Value = int64(1234)
 	aMetric[1].Value = int64(1235)
-	aStore.AddBatch(kEndpoint0, 600.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 600.0, aMetric[:].Sorted())
 
 	var result []store.Record
 	aStore.ByEndpoint(
@@ -1574,7 +1574,7 @@ func TestMissingValue(t *testing.T) {
 		},
 	}
 	if _, err := aStore.AddBatch(
-		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		kEndpoint0, 1000.0, aMetric[:].Sorted()); err == nil {
 		t.Error("Expected error, missing value")
 	}
 }
@@ -1596,7 +1596,7 @@ func TestDuplicateValue(t *testing.T) {
 		},
 	}
 	if _, err := aStore.AddBatch(
-		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		kEndpoint0, 1000.0, aMetric[:].Sorted()); err == nil {
 		t.Error("Expected error, duplicate value")
 	}
 }
@@ -1613,7 +1613,7 @@ func TestBadValue(t *testing.T) {
 		},
 	}
 	if _, err := aStore.AddBatch(
-		kEndpoint0, 1000.0, aMetric[:]); err == nil {
+		kEndpoint0, 1000.0, aMetric[:].Sorted()); err == nil {
 		t.Error("Expected error, bad value")
 	}
 }
@@ -1694,23 +1694,23 @@ func TestIndivMetricGoneInactive(t *testing.T) {
 	}
 	aMetric[0].Value = int64(3)
 	aMetric[1].Value = int64(8)
-	aStore.AddBatch(kEndpoint0, 1000, aMetric[0:2])
+	aStore.AddBatch(kEndpoint0, 1000, aMetric[0:2].Sorted())
 	aMetric[0].Value = int64(13)
 	aMetric[1].Value = int64(18)
-	aStore.AddBatch(kEndpoint0, 1010, aMetric[0:2])
+	aStore.AddBatch(kEndpoint0, 1010, aMetric[0:2].Sorted())
 	aMetric[0].Value = int64(23)
 	aMetric[1].Value = int64(28)
-	aStore.AddBatch(kEndpoint0, 1020, aMetric[0:2])
+	aStore.AddBatch(kEndpoint0, 1020, aMetric[0:2].Sorted())
 
 	// foo/bar metric inactive now
 	aMetric[1].Value = int64(38)
 	aMetric[2].Value = int32(39)
-	aStore.AddBatch(kEndpoint0, 1030, aMetric[1:3])
+	aStore.AddBatch(kEndpoint0, 1030, aMetric[1:3].Sorted())
 
 	// foo/32bit inactive now
 	aMetric[0].Value = int64(43)
 	aMetric[1].Value = int64(48)
-	aStore.AddBatch(kEndpoint0, 1040, aMetric[0:2])
+	aStore.AddBatch(kEndpoint0, 1040, aMetric[0:2].Sorted())
 
 	var result []store.Record
 	aStore.ByNameAndEndpoint(
@@ -1756,20 +1756,20 @@ func TestMachineGoneInactive(t *testing.T) {
 	}
 	aMetric[0].Value = int64(6)
 	aMetric[1].Value = int64(8)
-	aStore.AddBatch(kEndpoint0, 900, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 900, aMetric[:].Sorted())
 	aMetric[0].Value = int64(16)
 	aMetric[1].Value = int64(18)
-	aStore.AddBatch(kEndpoint0, 910, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 910, aMetric[:].Sorted())
 
 	aMetric[0].Value = int64(1)
 	aMetric[1].Value = int64(2)
-	aStore.AddBatch(kEndpoint1, 1900, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 1900, aMetric[:].Sorted())
 	aMetric[0].Value = int64(11)
 	aMetric[1].Value = int64(12)
-	aStore.AddBatch(kEndpoint1, 1910, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 1910, aMetric[:].Sorted())
 	aMetric[0].Value = int64(11)
 	aMetric[1].Value = int64(22)
-	aStore.AddBatch(kEndpoint1, 1920, aMetric[:])
+	aStore.AddBatch(kEndpoint1, 1920, aMetric[:].Sorted())
 
 	// The timestamp here doesn't matter.
 	// To be consistent with individual metrics going inactive we just
@@ -1840,11 +1840,11 @@ func TestMachineGoneInactive(t *testing.T) {
 
 	var noMetrics metrics.SimpleList
 
-	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); err != store.ErrInactive {
+	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics.Sorted()); err != store.ErrInactive {
 		t.Error("Expected AddBatch to fail")
 	}
 	aStore.MarkEndpointActive(kEndpoint1)
-	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics); err != nil {
+	if _, err := aStore.AddBatch(kEndpoint1, 2000.0, noMetrics.Sorted()); err != nil {
 		t.Error("Expected AddBatch to succeed")
 	}
 }
@@ -1894,7 +1894,7 @@ func TestSomeMissingSomePresentTimeStamps(t *testing.T) {
 		},
 	}
 
-	aStore.AddBatch(kEndpoint0, 1300.0, aMetric)
+	aStore.AddBatch(kEndpoint0, 1300.0, aMetric.Sorted())
 	expectedTsValues := newExpectedTsValues()
 	expectedTsValues.Add(
 		"/zero/noTimeStamp",
@@ -1947,17 +1947,17 @@ func TestLMMDropOffEarlyTimestamps(t *testing.T) {
 		},
 	}
 	aMetric[0].Value = int64(12)
-	aStore.AddBatch(kEndpoint0, 1200.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1200.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(13)
-	aStore.AddBatch(kEndpoint0, 1300.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1300.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(14)
-	aStore.AddBatch(kEndpoint0, 1400.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1400.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(15)
-	aStore.AddBatch(kEndpoint0, 1500.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1500.0, aMetric[:].Sorted())
 	aMetric[0].Value = int64(16)
-	aStore.AddBatch(kEndpoint0, 1600.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1600.0, aMetric[:].Sorted())
 	// Re-add 5th value. Oldest value now 14, not 12.
-	aStore.AddBatch(kEndpoint0, 1700.0, aMetric[:])
+	aStore.AddBatch(kEndpoint0, 1700.0, aMetric[:].Sorted())
 
 	expectedTsValues := newExpectedTsValues()
 
@@ -2848,24 +2848,24 @@ func TestByNameAndEndpointStrategy(t *testing.T) {
 
 	firstMetric[0].Value = int64(0)
 	firstMetric[0].TimeStamp = duration.FloatToTime(1000.0)
-	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric.Sorted())
 	firstMetric[0].Value = int64(10)
 	firstMetric[0].TimeStamp = duration.FloatToTime(1010.0)
-	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric.Sorted())
 
 	secondMetric[0].Value = int64(20)
 	secondMetric[0].TimeStamp = duration.FloatToTime(1020.0)
-	astore.AddBatch(kEndpoint0, 100.0, secondMetric)
+	astore.AddBatch(kEndpoint0, 100.0, secondMetric.Sorted())
 	secondMetric[0].Value = int64(30)
 	secondMetric[0].TimeStamp = duration.FloatToTime(1030.0)
-	astore.AddBatch(kEndpoint0, 100.0, secondMetric)
+	astore.AddBatch(kEndpoint0, 100.0, secondMetric.Sorted())
 
 	firstMetric[0].Value = int64(40)
 	firstMetric[0].TimeStamp = duration.FloatToTime(1040.0)
-	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric.Sorted())
 	firstMetric[0].Value = int64(50)
 	firstMetric[0].TimeStamp = duration.FloatToTime(1050.0)
-	astore.AddBatch(kEndpoint0, 100.0, firstMetric)
+	astore.AddBatch(kEndpoint0, 100.0, firstMetric.Sorted())
 
 	expected := newExpectedTsValuesWithMetaDataAndStrategy(
 		kNoMetaData, store.GroupMetricByKey)
@@ -2992,31 +2992,31 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	// Need 12 / 2 = 6 pages for values and 8 / 2 = 4 pages for timestamps
 	aMetric[0].Value = int64(0)
 	aMetric[1].Value = int64(1)
-	addBatch(t, aStore, kEndpoint0, 100.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint0, 100.0, aMetric[:2].Sorted(), 2)
 	aMetric[1].Value = int64(11)
-	addBatch(t, aStore, kEndpoint0, 110.0, aMetric[:2], 1)
+	addBatch(t, aStore, kEndpoint0, 110.0, aMetric[:2].Sorted(), 1)
 	aMetric[0].Value = int64(20)
 	aMetric[1].Value = int64(21)
-	addBatch(t, aStore, kEndpoint0, 120.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint0, 120.0, aMetric[:2].Sorted(), 2)
 	aMetric[1].Value = int64(31)
-	addBatch(t, aStore, kEndpoint0, 130.0, aMetric[:2], 1)
+	addBatch(t, aStore, kEndpoint0, 130.0, aMetric[:2].Sorted(), 1)
 	aMetric[0].Value = int64(40)
 	aMetric[1].Value = int64(41)
-	addBatch(t, aStore, kEndpoint0, 140.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint0, 140.0, aMetric[:2].Sorted(), 2)
 
 	aMetric[0].Value = int64(5)
 	aMetric[1].Value = int64(6)
-	addBatch(t, aStore, kEndpoint1, 105.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint1, 105.0, aMetric[:2].Sorted(), 2)
 	aMetric[1].Value = int64(16)
-	addBatch(t, aStore, kEndpoint1, 115.0, aMetric[:2], 1)
+	addBatch(t, aStore, kEndpoint1, 115.0, aMetric[:2].Sorted(), 1)
 	aMetric[0].Value = int64(25)
 	aMetric[1].Value = int64(26)
-	addBatch(t, aStore, kEndpoint1, 125.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint1, 125.0, aMetric[:2].Sorted(), 2)
 	aMetric[1].Value = int64(36)
-	addBatch(t, aStore, kEndpoint1, 135.0, aMetric[:2], 1)
+	addBatch(t, aStore, kEndpoint1, 135.0, aMetric[:2].Sorted(), 1)
 	aMetric[0].Value = int64(45)
 	aMetric[1].Value = int64(46)
-	addBatch(t, aStore, kEndpoint1, 145.0, aMetric[:2], 2)
+	addBatch(t, aStore, kEndpoint1, 145.0, aMetric[:2].Sorted(), 2)
 
 	result = nil
 	aStore.ByNameAndEndpoint(
@@ -3237,7 +3237,7 @@ func TestByNameAndEndpointAndEndpoint(t *testing.T) {
 	aMetric[2].Value = int32(57)
 	tempMetrics := metrics.SimpleList{aMetric[0], aMetric[2]}
 	// Includes inactive marker for 64 bit /foo/baz
-	addBatch(t, aStore, kEndpoint1, 155.0, tempMetrics[:], 3)
+	addBatch(t, aStore, kEndpoint1, 155.0, tempMetrics[:].Sorted(), 3)
 
 	result = nil
 	aStore.ByEndpoint(
@@ -3406,15 +3406,15 @@ func addDataForHighPriorityEvictionTest(s *store.Store) {
 	aMetric[0].Value = int64(2)
 	aMetric[1].Value = int64(4)
 	aMetric[2].Value = int64(5)
-	s.AddBatch(kEndpoint0, 100, aMetric[:])
+	s.AddBatch(kEndpoint0, 100, aMetric[:].Sorted())
 	aMetric[0].Value = int64(12)
 	aMetric[1].Value = int64(14)
 	aMetric[2].Value = int64(15)
-	s.AddBatch(kEndpoint0, 110, aMetric[:])
+	s.AddBatch(kEndpoint0, 110, aMetric[:].Sorted())
 	aMetric[0].Value = int64(22)
 	aMetric[1].Value = int64(24)
-	s.AddBatch(kEndpoint0, 120, aMetric[:2])
+	s.AddBatch(kEndpoint0, 120, aMetric[:2].Sorted())
 	aMetric[0].Value = int64(32)
 	aMetric[1].Value = int64(34)
-	s.AddBatch(kEndpoint0, 130, aMetric[:2])
+	s.AddBatch(kEndpoint0, 130, aMetric[:2].Sorted())
 }

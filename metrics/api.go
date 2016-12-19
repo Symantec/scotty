@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"sort"
 	"time"
 )
 
@@ -32,7 +33,8 @@ type Value struct {
 	GroupId int
 }
 
-// List represents a list of metrics from an endpoint.
+// List represents a list of metrics sorted in ascending order by path from an
+// endpoint.
 type List interface {
 	// Len returns the number of metrics.
 	Len() int
@@ -54,4 +56,21 @@ func (s SimpleList) Len() int {
 
 func (s SimpleList) Index(i int, value *Value) {
 	*value = s[i]
+}
+
+func (s SimpleList) Less(i, j int) bool {
+	return s[i].Path < s[j].Path
+}
+
+func (s SimpleList) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+// Returns a brand new SimpleList like this one but with values sorted by
+// path.
+func (s SimpleList) Sorted() SimpleList {
+	result := make(SimpleList, len(s))
+	copy(result, s)
+	sort.Sort(result)
+	return result
 }

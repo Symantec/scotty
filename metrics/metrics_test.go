@@ -118,6 +118,26 @@ func TestPathNamesSorted(t *testing.T) {
 	}
 }
 
+func TestPathNamesSortedCorrectly(t *testing.T) {
+	list := metrics.SimpleList{
+		{
+			Path:      "/netstat/foo",
+			Value:     int64(35),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+		{
+			Path:      "/netstat.0/foo",
+			Value:     int64(36),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+	}
+	if err := metrics.VerifyList(list); err != nil {
+		t.Error("No error expected. Already sorted correctly.")
+	}
+}
+
 func TestSameTimeStampSameGroupOk(t *testing.T) {
 	list := metrics.SimpleList{
 		{

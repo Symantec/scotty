@@ -59,7 +59,7 @@ func (s SimpleList) Index(i int, value *Value) {
 }
 
 func (s SimpleList) Less(i, j int) bool {
-	return s[i].Path < s[j].Path
+	return comparePaths(s[i].Path, s[j].Path) < 0
 }
 
 func (s SimpleList) Swap(i, j int) {

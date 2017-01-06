@@ -34,7 +34,10 @@ type Value struct {
 }
 
 // List represents a list of metrics sorted in ascending order by path from an
-// endpoint.
+// endpoint. To compare two paths, first split the paths by '/' then compare
+// the first parts. On tie, compare the second parts. If still a tie, compare
+// the third parts and so forth. By this method "/foo/bar" precedes "/foo.bar"
+// even though "/foo.bar" precedes "/foo/bar" lexicoographically
 type List interface {
 	// Len returns the number of metrics.
 	Len() int

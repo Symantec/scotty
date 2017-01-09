@@ -842,13 +842,15 @@ func startPStoreLoops(
 			if err := f.Close(); err != nil {
 				logger.Println(err)
 			}
+			changeCh = fsutil.WatchFile(configFile, logger)
 		}
-		changeCh = fsutil.WatchFile(configFile, logger)
 	} else {
 		// pstore config file in consul
 		changeCh = stringToReadCloserStream(
 			maybeNilCoordBuilder.WatchPStoreConfig(nil))
 	}
-	go configFileLoop(context, changeCh, pstoreRunners, result)
+	if changeCh != nil {
+		go configFileLoop(context, changeCh, pstoreRunners, result)
+	}
 	return result
 }

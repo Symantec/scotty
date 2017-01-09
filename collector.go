@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -150,12 +151,20 @@ type connectorType struct {
 	resource sources.Resource
 }
 
+func ignorePastStar(hostName string) string {
+	idx := strings.Index(hostName, "*")
+	if idx == -1 {
+		return hostName
+	}
+	return hostName[:idx]
+}
+
 func newConnector(
 	connector sources.Connector,
 	host string,
 	port uint) *connectorType {
 	conn := asResourceConnector(connector)
-	resource := conn.NewResource(host, port)
+	resource := conn.NewResource(ignorePastStar(host), port)
 	return &connectorType{conn: conn, resource: resource}
 }
 

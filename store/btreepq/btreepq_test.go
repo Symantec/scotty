@@ -8,6 +8,7 @@ import (
 
 type pageForTesting struct {
 	seq uint64
+	ts  float64
 }
 
 func (p *pageForTesting) SetSeqNo(i uint64) {
@@ -18,9 +19,17 @@ func (p *pageForTesting) SeqNo() uint64 {
 	return p.seq
 }
 
+func (p *pageForTesting) SetTS(f float64) {
+	p.ts = f
+}
+
+func (p *pageForTesting) TS() float64 {
+	return p.ts
+}
+
 func (p *pageForTesting) Less(than btree.Item) bool {
 	pthan := than.(btreepq.Page)
-	return p.seq < pthan.SeqNo()
+	return btreepq.IsPageLessThanThat(p, pthan)
 }
 
 func TestZeroThreshhold(t *testing.T) {
@@ -36,6 +45,39 @@ func TestZeroThreshhold(t *testing.T) {
 		pages[i] = queue.NextPage()
 	}
 	assertNextValues(t, queue, pages[:], 0)
+}
+
+func TestPrioritise(t *testing.T) {
+	var pages [8]btreepq.Page
+	queue := btreepq.New(
+		uint(len(pages)),
+		1,
+		10,
+		func() btreepq.Page {
+			return &pageForTesting{}
+		})
+	// Get all pages in queue. We will always revisit these pages in the same
+	// order unless page priority changes.
+	for i := range pages {
+		pages[i] = queue.NextPage()
+	}
+	verifyPagesAreUnique(t, pages[:])
+
+	// The next pages off the queue
+	assertNextValues(t, queue, pages[:], 0, 1, 2, 3, 4, 5, 6, 7)
+	queue.ReclaimHigh(pages[6])
+	queue.ReclaimHigh(pages[7])
+	queue.Prioritise(pages[7], 123456.0)
+	queue.Prioritise(pages[0], 3.0)
+	queue.Prioritise(pages[1], 2.0)
+	queue.Prioritise(pages[2], 2.0)
+	queue.Prioritise(pages[5], 1.0)
+
+	assertNextValues(t, queue, pages[:], 7, 6, 5, 1, 2, 0, 3, 4)
+	assertNextValues(t, queue, pages[:], 7, 6, 5, 1, 2, 0, 3, 4)
+	queue.Prioritise(pages[5], 987654.0)
+	assertNextValues(t, queue, pages[:], 5, 7, 6, 1, 2, 0, 3, 4)
+	assertNextValues(t, queue, pages[:], 5, 7, 6, 1, 2, 0, 3, 4)
 }
 
 func TestRemovePages(t *testing.T) {

@@ -834,6 +834,8 @@ func startPStoreLoops(
 		// pstore config file on unix file system
 		// read and process it then add a watch to it for future changes
 		configFile := path.Join(*fConfigDir, "pstore.yaml")
+		// TODO: Revisit all this logic when fsutil.WatchFile is improved
+		// for better error handling.
 		if f, err := os.Open(configFile); err != nil {
 			logger.Println("No pstore config file found.")
 		} else {

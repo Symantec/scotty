@@ -195,9 +195,13 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 // GivePageTo bestows a new page on t.
 // This call may lock another pageOwnerType instance. To avoid deadlock,
 // caller must not hold a lock on any pageOwnerType instance.
-func (s *pageQueueType) GivePageTo(t pageOwnerType) {
+func (s *pageQueueType) GivePageTo(t pageOwnerType, ts float64) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	fullPage := t.LatestPage()
+	if fullPage != nil {
+		s.pq.Prioritise(fullPage, ts)
+	}
 	var result *pageWithMetaDataType
 	if s.expanding {
 		result = s.pq.NewPage().(*pageWithMetaDataType)

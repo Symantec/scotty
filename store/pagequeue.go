@@ -3,6 +3,7 @@ package store
 import (
 	"github.com/Symantec/scotty/store/btreepq"
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"sync"
 	"time"
@@ -132,35 +133,31 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 		return
 	}
 	if err = d.RegisterMetricInGroup(
-		"/nextLowPrioritySeqNo",
-		&queueStats.NextLowPrioritySeqNo,
-		queueGroup,
-		units.None,
-		"Next seq no in low priority queue, 0 if empty"); err != nil {
-		return
-	}
-	if err = d.RegisterMetricInGroup(
-		"/nextHighPrioritySeqNo",
-		&queueStats.NextHighPrioritySeqNo,
-		queueGroup,
-		units.None,
-		"Next seq no in high priority queue, 0 if empty"); err != nil {
-		return
-	}
-	if err = d.RegisterMetricInGroup(
-		"/endSeqNo",
-		&queueStats.EndSeqNo,
-		queueGroup,
-		units.None,
-		"All seq no smaller than this. Marks end of both queues."); err != nil {
-		return
-	}
-	if err = d.RegisterMetricInGroup(
 		"/highPriorityRatio",
 		queueStats.HighPriorityRatio,
 		queueGroup,
 		units.None,
 		"High priority page ratio"); err != nil {
+		return
+	}
+	if err = d.RegisterMetricInGroup(
+		"/firstLowPriorityTS",
+		func() time.Time {
+			return duration.FloatToTime(queueStats.FirstLowPriorityTS)
+		},
+		queueGroup,
+		units.None,
+		"Earliest timestamp in low priority queue"); err != nil {
+		return
+	}
+	if err = d.RegisterMetricInGroup(
+		"/firstHighPriorityTS",
+		func() time.Time {
+			return duration.FloatToTime(queueStats.FirstHighPriorityTS)
+		},
+		queueGroup,
+		units.None,
+		"Earliest timestamp in high priority queue"); err != nil {
 		return
 	}
 

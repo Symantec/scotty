@@ -134,6 +134,7 @@ func (p pageType) FindGreater(ts float64) int {
 // Meta data for page
 type pageMetaDataType struct {
 	seqNo uint64
+	ts    float64
 	owner pageOwnerType
 }
 
@@ -143,6 +144,14 @@ func (m *pageMetaDataType) SetSeqNo(i uint64) {
 
 func (m *pageMetaDataType) SeqNo() uint64 {
 	return m.seqNo
+}
+
+func (m *pageMetaDataType) SetTS(ts float64) {
+	m.ts = ts
+}
+
+func (m *pageMetaDataType) TS() float64 {
+	return m.ts
 }
 
 // Represents an actual page in scotty. These pages can either hold timestmps
@@ -183,7 +192,7 @@ func (p *pageWithMetaDataType) TimePage() basicPageType {
 // github.com/google/btree.Item
 func (p *pageWithMetaDataType) Less(than btree.Item) bool {
 	pthan := than.(btreepq.Page)
-	return p.seqNo < pthan.SeqNo()
+	return btreepq.IsPageLessThanThat(p, pthan)
 }
 
 // Fetch iterates over page data p from time start to time end.

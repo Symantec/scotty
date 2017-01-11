@@ -5,33 +5,48 @@ import (
 	"github.com/google/btree"
 )
 
+// IsPageLessThanThat returns true if page should be evicted / reused before
+// that.
+func IsPageLessThanThat(page, that Page) bool {
+	if page.TS() < that.TS() {
+		return true
+	}
+	if page.TS() > that.TS() {
+		return false
+	}
+	return page.SeqNo() < that.SeqNo()
+}
+
 // Page represents a single page in scotty
 // Each page has a sequence number which indicates when the page was last
 // used. Pages with higher sequence numbers were used more recently than pages
 // with lower sequence numbers.
 type Page interface {
-	// btree.Item Less method must return true if this instance's
-	// sequence number is less than the other one. Implementations of Less
-	// must downcast their argument to this type, Page, and then call SeqNo()
-	// to get the sequence number of the argument. Implementations must never
-	// downcast the argument directly to the implementation's type as there
-	// is no guarantee that the argument's type will match the
-	// implementation's type.
+	// btree.Item Less method must return true if and only if
+	// IsPageLessThanThat(instance, argument) returns true.
+	// Implementations of Less must downcast their argument to this type, Page.
+	// Implementations must never downcast the argument directly to the
+	// implementation's type as there is no guarantee that the argument's
+	// type will match the implementation's type.
 	btree.Item
 	// Sets the sequence number of this page. Only PageQueue uses this.
 	// Clients must not call this directly.
 	SetSeqNo(i uint64)
 	// Returns the sequence number of this page.
 	SeqNo() uint64
+	// Sets the timestamp. Only PageQueue uses this.
+	// Clients must not call this directly.
+	SetTS(ts float64)
+	// Returns the timestamp.
+	TS() float64
 }
 
 // PageQueueStats represents statistics for a PageQueue
 type PageQueueStats struct {
-	LowPriorityCount      uint
-	HighPriorityCount     uint
-	NextLowPrioritySeqNo  uint64
-	NextHighPrioritySeqNo uint64
-	EndSeqNo              uint64
+	LowPriorityCount    uint
+	HighPriorityCount   uint
+	FirstLowPriorityTS  float64
+	FirstHighPriorityTS float64
 }
 
 func (s *PageQueueStats) TotalCount() uint {
@@ -105,13 +120,19 @@ func (p *PageQueue) RemovePage() (removed Page, ok bool) {
 // ReclaimHigh moves pg from the low priority queue to the high priority queue
 // If pg is already in the high priority queue, ReclaimHigh is a no-op.
 func (p *PageQueue) ReclaimHigh(pg Page) {
-	p.moveFromTo(pg, p.low, p.high)
+	moveFromTo(pg, p.low, p.high)
 }
 
 // ReclaimLow moves pg from the high priority queue to the low priority queue
 // If pg is already in the low priority queue, ReclaimLow is a no-op.
 func (p *PageQueue) ReclaimLow(pg Page) {
-	p.moveFromTo(pg, p.high, p.low)
+	moveFromTo(pg, p.high, p.low)
+}
+
+// Prioritise prioritises pg according to ts. Pages with lower ts values come
+// off the queue first. By default, the ts for a page is +Inf.
+func (p *PageQueue) Prioritise(pg Page, ts float64) {
+	p.prioritise(pg, ts)
 }
 
 // Stats gets the statistics for this instance

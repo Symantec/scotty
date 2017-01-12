@@ -3,7 +3,9 @@ package main
 import (
 	"flag"
 	collector "github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/cis"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/lib/keyedqueue"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
@@ -13,6 +15,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"log"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -27,6 +30,14 @@ var (
 		"connectionCount",
 		collector.ConcurrentConnects(),
 		"Maximum number of concurrent connections")
+	fCisEndpoint = flag.String(
+		"cisEndpoint",
+		"",
+		"The optional CIS endpoint")
+	fCisRegex = flag.String(
+		"cisRegex",
+		"",
+		"If provided, host must match regex for scotty to send its data to CIS")
 )
 
 type byHostName messages.ErrorList
@@ -106,6 +117,7 @@ type loggerType struct {
 	NamesSentToSuggest  nameSetType
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
+	CisQueue            *keyedqueue.Queue
 }
 
 func (l *loggerType) LogStateChange(
@@ -147,6 +159,12 @@ func (l *loggerType) LogResponse(
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
 		l.TotalCounts.Update(l.Store, e)
+		if l.CisQueue != nil && e.Port() == 6910 {
+			stats := cis.GetStats(list)
+			if stats != nil {
+				l.CisQueue.Add(stats)
+			}
+		}
 	}
 	// This error just means that the endpoint was marked inactive
 	// during polling.
@@ -251,6 +269,27 @@ func startCollector(
 		"json":      jsonCollectionTimesDist,
 	}
 
+	var cisClient *cis.Client
+	var cisRegex *regexp.Regexp
+	var cisQueue *keyedqueue.Queue
+
+	if *fCisEndpoint != "" {
+		var err error
+		// TODO: move to config file when ready
+		cisClient, err = cis.NewClient(&cis.Config{Endpoint: *fCisEndpoint})
+		if err != nil {
+			log.Fatal(err)
+		}
+		cisQueue = keyedqueue.New()
+		if *fCisRegex != "" {
+			var err error
+			cisRegex, err = regexp.Compile(*fCisRegex)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
 		// We assign each endpoint its very own nameSetType instance
@@ -271,6 +310,12 @@ func startCollector(
 					namesSentToSuggest = make(nameSetType)
 					endpointToNamesSentToSuggest[endpoint] = namesSentToSuggest
 				}
+				maybeCisQueue := cisQueue
+				// If there is a regex filter and our machine doesn't match
+				// nil out the cisQueue so that we don't send to CIS.
+				if cisRegex != nil && !cisRegex.MatchString(endpoint.HostName()) {
+					maybeCisQueue = nil
+				}
 				logger := &loggerType{
 					Store:               metricStore,
 					AppStats:            appStats,
@@ -281,6 +326,7 @@ func startCollector(
 					NamesSentToSuggest:  namesSentToSuggest,
 					MetricNameAdder:     metricNameAdder,
 					TotalCounts:         totalCounts,
+					CisQueue:            maybeCisQueue,
 				}
 
 				endpoint.Poll(sweepTime, logger)
@@ -293,4 +339,79 @@ func startCollector(
 			}
 		}
 	}()
+
+	if cisQueue != nil && cisClient != nil {
+		if err := tricorder.RegisterMetric(
+			"cis/queueSize",
+			cisQueue.Len,
+			units.None,
+			"Length of queue"); err != nil {
+			log.Fatal(err)
+		}
+		timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+		if err := tricorder.RegisterMetric(
+			"cis/timeBetweenWrites",
+			timeBetweenWritesDist,
+			units.Second,
+			"elapsed time between CIS updates"); err != nil {
+			log.Fatal(err)
+		}
+		writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+		if err := tricorder.RegisterMetric(
+			"cis/writeTimes",
+			writeTimesDist,
+			units.Millisecond,
+			"elapsed time between CIS updates"); err != nil {
+			log.Fatal(err)
+		}
+		var lastWriteError string
+		if err := tricorder.RegisterMetric(
+			"cis/lastWriteError",
+			&lastWriteError,
+			units.None,
+			"Last CIS write error"); err != nil {
+			log.Fatal(err)
+		}
+		var successfulWrites uint64
+		if err := tricorder.RegisterMetric(
+			"cis/successfulWrites",
+			&successfulWrites,
+			units.None,
+			"Successful write count"); err != nil {
+			log.Fatal(err)
+		}
+		var totalWrites uint64
+		if err := tricorder.RegisterMetric(
+			"cis/totalWrites",
+			&totalWrites,
+			units.None,
+			"total write count"); err != nil {
+			log.Fatal(err)
+		}
+
+		// CIS loop
+		go func() {
+			lastTimeStampByKey := make(map[interface{}]time.Time)
+			for {
+				stat := cisQueue.Remove().(*cis.Stats)
+				key := stat.Key()
+				if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
+					timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
+				} else {
+					// On first write, just use time elapsed since start of
+					// scotty
+					timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
+				}
+				lastTimeStampByKey[key] = stat.TimeStamp
+				writeStartTime := time.Now()
+				if err := cisClient.Write(stat); err != nil {
+					lastWriteError = err.Error()
+				} else {
+					successfulWrites++
+				}
+				totalWrites++
+				writeTimesDist.Add(time.Since(writeStartTime))
+			}
+		}()
+	}
 }

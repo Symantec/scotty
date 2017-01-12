@@ -197,3 +197,41 @@ func TestDiffTimeStampDiffGroupOk(t *testing.T) {
 		t.Error("Expected no error for different timestamps and groups.")
 	}
 }
+
+func TestFind(t *testing.T) {
+	list := metrics.SimpleList{
+		{
+			Path:      "bar",
+			Value:     int64(0),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+		{
+			Path:      "baz",
+			Value:     int64(0),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+		{
+			Path:      "foo",
+			Value:     int64(0),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+		{
+			Path:      "yyyy",
+			Value:     int64(0),
+			TimeStamp: kNow,
+			GroupId:   0,
+		},
+	}
+	if out := metrics.Find(list, "a"); out != 0 {
+		t.Errorf("Expected 0, got %d", out)
+	}
+	if out := metrics.Find(list, "foo"); out != 2 {
+		t.Errorf("Expected 2, got %d", out)
+	}
+	if out := metrics.Find(list, "zzz"); out != 4 {
+		t.Errorf("Expected 4, got %d", out)
+	}
+}

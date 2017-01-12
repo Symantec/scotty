@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/tricorder/go/tricorder/types"
+	"sort"
 	"strings"
 	"time"
 )
@@ -32,6 +33,14 @@ func comparePaths(first, second string) int {
 		return 1
 	}
 	return 0
+}
+
+func find(list List, path string) int {
+	return sort.Search(list.Len(), func(index int) bool {
+		var value Value
+		list.Index(index, &value)
+		return comparePaths(value.Path, path) >= 0
+	})
 }
 
 func verifyList(list List) error {

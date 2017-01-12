@@ -45,6 +45,13 @@ type List interface {
 	Index(i int, value *Value)
 }
 
+// Find returns the index in list having the path equal to or just greater
+// than path. If path is greater than the last value in list, Find returns
+// the size of the list.
+func Find(list List, path string) int {
+	return find(list, path)
+}
+
 // VerifyList verifies that the given list adheres to the specification.
 func VerifyList(list List) error {
 	return verifyList(list)

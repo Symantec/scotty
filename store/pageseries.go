@@ -33,6 +33,8 @@ type pageOwnerType interface {
 	GiveUpPage(page *pageWithMetaDataType)
 	// AcceptPage instructs this instance to accept given page
 	AcceptPage(page *pageWithMetaDataType)
+	// LatestPage returns the latest page or nil if no pages.
+	LatestPage() *pageWithMetaDataType
 }
 
 // pageListType Represents a list of pages owned by the same page series.
@@ -250,6 +252,12 @@ func (t *timestampSeriesType) Earliest() float64 {
 		return firstTimes[0]
 	}
 	return t.Latest()
+}
+
+func (t *timestampSeriesType) LatestPage() *pageWithMetaDataType {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.pages.lastPage()
 }
 
 // PageList returns the pages this series owns.
@@ -479,6 +487,12 @@ func (t *timeSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 	}
 }
 
+func (t *timeSeriesType) LatestPage() *pageWithMetaDataType {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.pages.lastPage()
+}
+
 // PageList returns the pages this series owns.
 func (t *timeSeriesType) PageList() pageListType {
 	t.lock.Lock()
@@ -652,7 +666,7 @@ func addToTimeSeries(
 	// If add fails because of no free space, keep trying Add
 	// in a loop until it succeeds.
 	for neededToAdd && !addSuccessful {
-		supplier.GivePageTo(timeSeries)
+		supplier.GivePageTo(timeSeries, timestamp)
 		neededToAdd, addSuccessful, justActivated = timeSeries.Add(
 			timestamp, value)
 	}
@@ -669,7 +683,7 @@ func addToTimeStampSeries(
 	neededToAdd, justActivated bool) {
 	neededToAdd, addSuccessful, justActivated := timestampSeries.Add(timestamp)
 	for neededToAdd && !addSuccessful {
-		supplier.GivePageTo(timestampSeries)
+		supplier.GivePageTo(timestampSeries, timestamp)
 		neededToAdd, addSuccessful, justActivated = timestampSeries.Add(timestamp)
 	}
 	return
@@ -694,7 +708,7 @@ func inactivateTimeStampSeries(
 	supplier *pageQueueType) (justInactivated bool, actualTs float64) {
 	neededToAdd, addSuccessful, actualTs := timestampSeries.Inactivate()
 	for neededToAdd && !addSuccessful {
-		supplier.GivePageTo(timestampSeries)
+		supplier.GivePageTo(timestampSeries, actualTs)
 		neededToAdd, addSuccessful, actualTs = timestampSeries.Inactivate()
 	}
 	return

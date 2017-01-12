@@ -4,6 +4,7 @@ package suggest
 import (
 	"github.com/google/btree"
 	"strings"
+	"time"
 )
 
 type constEngineType []string
@@ -72,7 +73,8 @@ func (e *Engine) loop() {
 			select {
 			case toBeAdded := <-e.incomingCh:
 				e._add(toBeAdded)
-			default:
+				// Wait a little to declare adds done to avoid a tight loop
+			case <-time.After(100 * time.Millisecond):
 				// No more pending adds
 				pendingAdds = false
 			}

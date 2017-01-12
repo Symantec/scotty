@@ -81,6 +81,10 @@ if [ -n "$LOGBUF_LINES" ]; then
     PROG_ARGS="$PROG_ARGS -logbufLines=$LOGBUF_LINES"
 fi
 
+if [ -n "$CIS_ENDPOINT" ]; then
+    PROG_ARGS="$PROG_ARGS -cisEndpoint=$CIS_ENDPOINT"
+fi
+
 if [ $(ls -A "$CONSUL_CONFIG") ]; then
 	PROG_ARGS="$PROG_ARGS -coordinator=consul"
 fi

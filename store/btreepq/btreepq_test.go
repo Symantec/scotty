@@ -78,6 +78,7 @@ func TestPrioritise(t *testing.T) {
 	queue.Prioritise(pages[5], 987654.0)
 	assertNextValues(t, queue, pages[:], 5, 7, 6, 1, 2, 0, 3, 4)
 	assertNextValues(t, queue, pages[:], 5, 7, 6, 1, 2, 0, 3, 4)
+	assertValueEquals(t, uint(8), queue.Len())
 }
 
 func TestRemovePages(t *testing.T) {

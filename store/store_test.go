@@ -3328,7 +3328,7 @@ func TestHighPriorityEviction(t *testing.T) {
 		0.0,
 		math.Inf(0),
 		store.AppendTo(&result))
-	// Since the high priority threshhold is 100%, we don't expect all the
+	// Since the high priority threshold is 100%, we don't expect all the
 	// pages of /baz to get reclaimed.
 	if len(result) <= 1 {
 		t.Error("Expected /baz to have at least 2 values")
@@ -3350,7 +3350,7 @@ func TestHighPriorityEviction(t *testing.T) {
 		math.Inf(0),
 		store.AppendTo(&result))
 
-	// Since the high priority threshhold is only 0%, we expect the
+	// Since the high priority threshold is only 0%, we expect the
 	// two pages in /baz to get reclaimed for the 4th value in
 	// /foo and /bar
 	if len(result) > 1 {

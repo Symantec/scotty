@@ -146,17 +146,17 @@ func TestAPI(t *testing.T) {
 	queue.ReclaimHigh(pages[4])
 
 	// Next page off the queue should be page 0 as we haven't reached the
-	// threshhold for pulling high priority pages
+	// threshold for pulling high priority pages
 	assertValueEquals(t, pages[0], queue.NextPage())
 
 	// Mark page 5 high priority. Now high priority queue is {4, 5}
 	queue.ReclaimHigh(pages[5])
 
 	// Next page will be page 4, not page 1 as the high priority queue has
-	// reached its threshhold of 2.
+	// reached its threshold of 2.
 	assertValueEquals(t, pages[4], queue.NextPage())
 
-	// Once again high priority queue has fallen below its threshhold so
+	// Once again high priority queue has fallen below its threshold so
 	// next page is page 1, not page 5
 	assertValueEquals(t, pages[1], queue.NextPage())
 

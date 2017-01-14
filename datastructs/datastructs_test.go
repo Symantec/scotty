@@ -390,7 +390,7 @@ func TestHighPriorityEviction(t *testing.T) {
 		math.Inf(0),
 		store.AppendTo(&result))
 
-	// Since the high priority threshhold is 100%,
+	// Since the high priority threshold is 100%,
 	// we don't expect all the
 	// pages of host3:AnApp:/foo to get reclaimed.
 	if len(result) <= 1 {
@@ -418,7 +418,7 @@ func TestHighPriorityEviction(t *testing.T) {
 		math.Inf(0),
 		store.AppendTo(&result))
 
-	// Since the high priority threshhold is 0%,
+	// Since the high priority threshold is 0%,
 	// we do expect all the pages for host3:Anpp:/foo to get reclaimed
 	if len(result) > 1 {
 		t.Error("Expected host3:AnApp:/foo to have only 1 value")

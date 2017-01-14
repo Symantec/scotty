@@ -61,7 +61,7 @@ func (s *PageQueueStats) HighPriorityRatio() float64 {
 // Instances have two internal queues: A low priority and a high priority queue.
 // Generally, the high priority queue contain the pages that are less valuable
 // to scotty such as pages belonging to inactive metrics.
-// If the size of the high priority queue equals or exceeds a given threshhold,
+// If the size of the high priority queue equals or exceeds a given threshold,
 // the NextPage method always pulls from the high priority queue. Otherwise,
 // NextPage pulls from whatever queue has the least recently used page.
 // Initially, all pages are on the high priority queue as new pages have no
@@ -74,7 +74,7 @@ type PageQueue struct {
 
 	// Number of pages that must be in high before the page queue ignores low
 	// when finding the next page.
-	threshhold uint
+	threshold uint
 
 	// The next available sequence number. This value increases monotonically.
 	nextSeqNo uint64
@@ -83,19 +83,19 @@ type PageQueue struct {
 
 // New returns a new PageQueue.
 // pageCount is the total number of pages which must be at least 1.
-// threshhold is the size that the high priority queue must be to always pull
+// threshold is the size that the high priority queue must be to always pull
 // from it.
 // degree is the degree of the Btrees. See github.com/Symantec/btree
 // creater creates each page and is called exactly pageCount times.
 func New(
 	pageCount,
-	threshhold,
+	threshold,
 	degree uint,
 	creater func() Page) *PageQueue {
 	if pageCount < 1 {
 		panic("pageCount must be at least 1")
 	}
-	return _new(pageCount, threshhold, degree, creater)
+	return _new(pageCount, threshold, degree, creater)
 }
 
 // NextPage returns the next page for scotty to use leaving it in the queue

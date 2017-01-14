@@ -12,7 +12,7 @@ var (
 
 func _new(
 	pageCount,
-	threshhold,
+	threshold,
 	degree uint,
 	creater func() Page) *PageQueue {
 	fl := btree.NewFreeList(btree.DefaultFreeListSize)
@@ -25,21 +25,21 @@ func _new(
 		page.SetTS(kNegInf)
 		insert(high, page)
 	}
-	// A threshhold < 1 may result in pulling from an empty high priority
+	// A threshold < 1 may result in pulling from an empty high priority
 	// queue.
-	if threshhold < 1 {
-		threshhold = 1
+	if threshold < 1 {
+		threshold = 1
 	}
 	return &PageQueue{
-		high:       high,
-		low:        low,
-		threshhold: threshhold,
-		nextSeqNo:  uint64(pageCount),
-		creater:    creater}
+		high:      high,
+		low:       low,
+		threshold: threshold,
+		nextSeqNo: uint64(pageCount),
+		creater:   creater}
 }
 
 func (p *PageQueue) popPage() Page {
-	if uint(p.high.Len()) >= p.threshhold {
+	if uint(p.high.Len()) >= p.threshold {
 		return p.high.DeleteMin().(Page)
 	}
 	lowNext := first(p.low)

@@ -45,6 +45,7 @@ type Page interface {
 type PageQueueStats struct {
 	LowPriorityCount    uint
 	HighPriorityCount   uint
+	Threshold           uint
 	FirstLowPriorityTS  float64
 	FirstHighPriorityTS float64
 }
@@ -96,6 +97,20 @@ func New(
 		panic("pageCount must be at least 1")
 	}
 	return _new(pageCount, threshold, degree, creater)
+}
+
+// Len returns the total number of pages in this instance.
+func (p *PageQueue) Len() uint {
+	return uint(p.high.Len()) + uint(p.low.Len())
+}
+
+// SetThreshold sets the size that the high priority queue must be in order
+// to always pull from it. If threshold < 1, its effective value is 1.
+func (p *PageQueue) SetThreshold(threshold uint) {
+	if threshold < 1 {
+		threshold = 1
+	}
+	p.threshold = threshold
 }
 
 // NextPage returns the next page for scotty to use leaving it in the queue

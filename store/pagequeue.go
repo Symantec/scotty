@@ -48,6 +48,11 @@ func (s *pageQueueType) MaxValuesPerPage() uint {
 	return s.valueCountPerPage
 }
 
+func (s *pageQueueType) updateThreshold() {
+	newThreshold := uint(float64(s.pq.Len()) * s.inactiveThreshhold)
+	s.pq.SetThreshold(newThreshold)
+}
+
 func (s *pageQueueType) maybeRemoveOnePage() {
 	result, ok := s.pq.RemovePage()
 	if ok {
@@ -58,6 +63,7 @@ func (s *pageQueueType) maybeRemoveOnePage() {
 		}
 		// Removed page no longer has an owner
 		removedPage.owner = nil
+		s.updateThreshold()
 	}
 }
 
@@ -160,6 +166,14 @@ func (s *pageQueueType) RegisterMetrics(d *tricorder.DirectorySpec) (
 		"Earliest timestamp in high priority queue"); err != nil {
 		return
 	}
+	if err = d.RegisterMetricInGroup(
+		"/absoluteInactiveThreshhold",
+		&queueStats.Threshold,
+		queueGroup,
+		units.None,
+		"total count of inactive pages needed before they are reclaimed first"); err != nil {
+		return
+	}
 
 	if err = d.RegisterMetric(
 		"/expanding",
@@ -206,6 +220,7 @@ func (s *pageQueueType) GivePageTo(t pageOwnerType, ts float64) {
 	var result *pageWithMetaDataType
 	if s.expanding {
 		result = s.pq.NewPage().(*pageWithMetaDataType)
+		s.updateThreshold()
 	} else {
 		result = s.pq.NextPage().(*pageWithMetaDataType)
 	}

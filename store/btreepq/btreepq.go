@@ -136,6 +136,7 @@ func (p *PageQueue) _stats(stats *PageQueueStats) {
 	stats.LowPriorityCount = uint(p.low.Len())
 	stats.FirstLowPriorityTS = extractTS(first(p.low))
 	stats.FirstHighPriorityTS = extractTS(first(p.high))
+	stats.Threshold = p.threshold
 }
 
 func insert(target *btree.BTree, item btree.Item) {

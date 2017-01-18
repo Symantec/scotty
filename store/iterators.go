@@ -300,8 +300,8 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 			if !n.strategy.Equal(record.Info, n.aggregator.FirstInfo()) || frameId != getFrameId(n.aggregator.FirstTs(), n.interval) {
 				n.aggregator.Result(result)
 				n.aggregator.Clear()
-				// Use exclusive latest timestamp instead of inclusive earliest
-				result.TimeStamp += n.interval
+				// Use half way in between earliest and latest
+				result.TimeStamp += n.interval / 2
 				return true
 			}
 		}
@@ -315,8 +315,8 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 	}
 	n.aggregator.Result(result)
 	n.aggregator.Clear()
-	// Use exclusive latest timestamp instead of inclusive earliest
-	result.TimeStamp += n.interval
+	// Use half way in between earliest and latest
+	result.TimeStamp += n.interval / 2
 	return true
 }
 

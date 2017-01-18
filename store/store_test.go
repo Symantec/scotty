@@ -822,22 +822,22 @@ func TestRollUpIterator(t *testing.T) {
 	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	expected := newExpectedTsValues()
-	expected.Add("Int", 120120.0, int64(26667))
-	expected.Add("Float", 96120.0, 5.75)
-	expected.Add("String", 96120.0, "hello")
-	expected.Add("Inactive", 120120.0, 24.0)
+	expected.Add("Int", 120060.0, int64(26667))
+	expected.Add("Float", 96060.0, 5.75)
+	expected.Add("String", 96060.0, "hello")
+	expected.Add("Inactive", 120060.0, 24.0)
 
-	expected.Add("Int", 120360.0, int64(31500))
-	expected.Add("Float", 96360.0, 9.125)
-	expected.Add("String", 96360.0, "bee")
+	expected.Add("Int", 120300.0, int64(31500))
+	expected.Add("Float", 96300.0, 9.125)
+	expected.Add("String", 96300.0, "bee")
 
-	expected.Add("Int", 120480.0, int64(23250))
-	expected.Add("Float", 96480.0, 1.875)
-	expected.Add("String", 96480.0, "long")
-	expected.Add("Inactive", 120480.0, 11.0)
+	expected.Add("Int", 120420.0, int64(23250))
+	expected.Add("Float", 96420.0, 1.875)
+	expected.Add("String", 96420.0, "long")
+	expected.Add("Inactive", 120420.0, 11.0)
 
-	expected.Add("Float", 96600.0, 3.1875)
-	expected.Add("String", 96600.0, "near")
+	expected.Add("Float", 96540.0, 3.1875)
+	expected.Add("String", 96540.0, "near")
 
 	beginning := expected.Checkpoint()
 
@@ -976,10 +976,10 @@ func TestRollUpIterator(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected = newExpectedTsValues()
-	expected.Add("Int", 120600.0, int64(28000))
-	expected.Add("Float", 96720.0, 12.0)
-	expected.Add("String", 96720.0, "far")
-	expected.Add("Inactive", 120600.0, 8.3)
+	expected.Add("Int", 120540.0, int64(28000))
+	expected.Add("Float", 96660.0, 12.0)
+	expected.Add("String", 96660.0, "far")
+	expected.Add("Inactive", 120540.0, 8.3)
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1019,9 +1019,9 @@ func TestRollUpIteratorBool(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30300.0, true)
-	expected.Add("path", 30600.0, false)
-	expected.Add("path", 31200.0, true)
+	expected.Add("path", 30150.0, true)
+	expected.Add("path", 30450.0, false)
+	expected.Add("path", 31050.0, true)
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1060,9 +1060,9 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30300.0, int8(1))
-	expected.Add("path", 30600.0, int8(-128))
-	expected.Add("path", 31200.0, int8(127))
+	expected.Add("path", 30150.0, int8(1))
+	expected.Add("path", 30450.0, int8(-128))
+	expected.Add("path", 31050.0, int8(127))
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1105,9 +1105,9 @@ func TestIteratorSamePathDifferentTypeRollUp(t *testing.T) {
 
 	expected := newExpectedTsValues()
 
-	expected.Add("foo", 1260.0, int64(1525))
-	expected.Add("foo", 1320.0, float64(1830.0))
-	expected.Add("foo", 1380.0, "hello")
+	expected.Add("foo", 1230.0, int64(1525))
+	expected.Add("foo", 1290.0, float64(1830.0))
+	expected.Add("foo", 1350.0, "hello")
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -2666,7 +2666,7 @@ func TestWithDistributions(t *testing.T) {
 	expectedTsValues = newExpectedTsValues()
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3500.0,
+		3250.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{9, 15, 10, 3},
 			Sum:           200.0,
@@ -2674,7 +2674,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3500.0,
+		3250.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{6, 4},
 			Sum:           500.0,
@@ -2682,7 +2682,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"mint",
-		3500.0,
+		3250.0,
 		int64(74))
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
@@ -2809,13 +2809,13 @@ func TestWithLists(t *testing.T) {
 
 	// Remember, iterator never emits rolled up value from last time
 	// period as more values could come in.
-	expectedTsValues.Add("/list/uint32", 1800.0, nilUint32List)
-	expectedTsValues.Add("/list/uint32", 1900.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1750.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1850.0, []uint32{2, 3, 5, 7})
 
 	expectedTsValues.Add(
-		"/list/string", 2800.0, []string{"hello", "goodbye"})
+		"/list/string", 2750.0, []string{"hello", "goodbye"})
 	expectedTsValues.Add(
-		"/list/string", 2900.0, []string{"foo", "bar", "baz"})
+		"/list/string", 2850.0, []string{"foo", "bar", "baz"})
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"aRollUpIterator",

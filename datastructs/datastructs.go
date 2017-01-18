@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/sources"
@@ -65,13 +66,16 @@ type hostAndPort struct {
 }
 
 func (a *ApplicationStatuses) newApplicationStatus(
-	e *scotty.Endpoint) *ApplicationStatus {
+	e *scotty.Endpoint, instanceId string) *ApplicationStatus {
 	app := a.appList.ByPort(e.Port())
 	if app == nil {
 		panic("Oops, unknown port in endpoint.")
 	}
 	return &ApplicationStatus{
-		EndpointId: e, Name: app.Name(), Active: true}
+		EndpointId: e,
+		Name:       app.Name(),
+		Active:     true,
+		InstanceId: instanceId}
 }
 
 func (a *ApplicationStatuses) store() *store.Store {
@@ -112,16 +116,16 @@ func (a *ApplicationStatuses) reportError(
 	}
 }
 
-func newStringSet(activeHosts []string) (result map[string]bool) {
+func newStringSet(activeHosts []mdb.Machine) (result map[string]bool) {
 	result = make(map[string]bool)
 	for i := range activeHosts {
-		result[activeHosts[i]] = true
+		result[activeHosts[i].Hostname] = true
 	}
 	return
 }
 
 func (a *ApplicationStatuses) _markHostsActiveExclusively(
-	activeHosts []string) (
+	activeHosts []mdb.Machine) (
 	toBecomeActive []*scotty.Endpoint,
 	toBecomeInactive []*scotty.Endpoint,
 	astore *store.Store) {
@@ -145,7 +149,7 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 	for i := range activeHosts {
 		for j := range apps {
 			hp := hostAndPort{
-				Host: activeHosts[i],
+				Host: activeHosts[i].Hostname,
 				Port: apps[j].Port(),
 			}
 			activeEndpoint := a.byHostPort[hp]
@@ -155,7 +159,12 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 				activeEndpoint = scotty.NewEndpointWithConnector(
 					hp.Host, hp.Port, apps[j].Connectors())
 				a.byHostPort[hp] = activeEndpoint
-				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(activeEndpoint)
+				var instanceId string
+				if activeHosts[i].AwsMetadata != nil {
+					instanceId = activeHosts[i].AwsMetadata.InstanceId
+				}
+				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(
+					activeEndpoint, instanceId)
 				if storeCopy == a.currentStore {
 					storeCopy = a.currentStore.ShallowCopy()
 				}
@@ -176,7 +185,7 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 }
 
 func (a *ApplicationStatuses) markHostsActiveExclusively(
-	timestamp float64, activeHosts []string) {
+	timestamp float64, activeHosts []mdb.Machine) {
 	a.statusChangeLock.Lock()
 	defer a.statusChangeLock.Unlock()
 	toBecomeActive, toBecomeInactive, astore := a._markHostsActiveExclusively(activeHosts)
@@ -243,6 +252,18 @@ func (a *ApplicationStatuses) endpointIdByHostAndName(host, name string) (
 		Port: app.Port(),
 	}
 	return a.byHostPort[hp], a.currentStore
+}
+
+func (a *ApplicationStatuses) byEndpointId(
+	e *scotty.Endpoint) (copyOfStatus *ApplicationStatus) {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	status := a.byEndpoint[e]
+	if status == nil {
+		return
+	}
+	acopy := *status
+	return &acopy
 }
 
 func (a *ApplicationStatuses) activeEndpointIds() (

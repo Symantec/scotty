@@ -40,8 +40,10 @@ func (s *Stats) Key() interface{} {
 }
 
 // GetStats extracts the CIS data from the metrics pulled for a machine
-func GetStats(list metrics.List) *Stats {
-	return getStats(list)
+// GetStats uses the optInstanceId if supplied. Otherwise, it tries to
+// extract instanceId from the health agent.
+func GetStats(list metrics.List, optInstanceId string) *Stats {
+	return getStats(list, optInstanceId)
 
 }
 

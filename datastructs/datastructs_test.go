@@ -3,6 +3,7 @@ package datastructs
 import (
 	"bytes"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
@@ -10,6 +11,7 @@ import (
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
+	. "github.com/smartystreets/goconvey/convey"
 	"math"
 	"reflect"
 	"testing"
@@ -177,6 +179,67 @@ func newStore(
 	return result
 }
 
+func toMachines(names []string) []mdb.Machine {
+	result := make([]mdb.Machine, len(names))
+	for i := range result {
+		result[i].Hostname = names[i]
+	}
+	return result
+}
+
+func TestInstanceId(t *testing.T) {
+	alBuilder := NewApplicationListBuilder()
+	alBuilder.Add(
+		37, "First", sources.ConnectorList{trisource.GetConnector()})
+	alBuilder.Add(
+		81,
+		"Second",
+		sources.ConnectorList{trisource.GetConnector()})
+	appList := alBuilder.Build()
+	appStatus := NewApplicationStatuses(
+		appList,
+		newStore(t, "TestInstanceId", 1, 100, 1.0, 10))
+	appStatus.MarkHostsActiveExclusively(
+		104.25,
+		[]mdb.Machine{
+			{
+				Hostname:    "host101",
+				AwsMetadata: &mdb.AwsMetadata{InstanceId: "i-42793"},
+			},
+			{
+				Hostname: "host102",
+			},
+		})
+	endpoints, _ := appStatus.ActiveEndpointIds()
+	eps := make(map[string]*scotty.Endpoint)
+	for _, ep := range endpoints {
+		eps[fmt.Sprintf("%s_%d", ep.HostName(), ep.Port())] = ep
+	}
+	Convey("instance IDs should be populated", t, func() {
+		So(
+			appStatus.ByEndpointId(eps["host101_37"]).InstanceId,
+			ShouldEqual,
+			"i-42793",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host101_81"]).InstanceId,
+			ShouldEqual,
+			"i-42793",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_37"]).InstanceId,
+			ShouldEqual,
+			"",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_81"]).InstanceId,
+			ShouldEqual,
+			"",
+		)
+	})
+
+}
+
 func TestMarkHostsActiveExclusively(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
 	alBuilder.Add(
@@ -191,7 +254,7 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 		newStore(t, "TestMarkHostsActiveExclusively", 1, 100, 1.0, 10))
 	appStatus.MarkHostsActiveExclusively(
 		92.5,
-		[]string{"host1", "host2", "host3"})
+		toMachines([]string{"host1", "host2", "host3"}))
 	activateEndpoints(appStatus.ActiveEndpointIds())
 	astore := appStatus.Store()
 	visitor := newActiveInactiveLists()
@@ -211,7 +274,8 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 		t,
 		make(map[string]bool),
 		visitor.Inactive)
-	appStatus.MarkHostsActiveExclusively(61.7, []string{"host2", "host4"})
+	appStatus.MarkHostsActiveExclusively(
+		61.7, toMachines([]string{"host2", "host4"}))
 	activeEndpointIds, astore := appStatus.ActiveEndpointIds()
 	assertValueEquals(t, 4, len(activeEndpointIds))
 	activateEndpoints(activeEndpointIds, astore)
@@ -297,7 +361,8 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	assertValueEquals(t, "AnotherApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
 
-	appStatus.MarkHostsActiveExclusively(61.7, []string{"host2", "host3", "host4"})
+	appStatus.MarkHostsActiveExclusively(
+		61.7, toMachines([]string{"host2", "host3", "host4"}))
 
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
@@ -434,7 +499,7 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 	}
 	appStatus.MarkHostsActiveExclusively(
 		10.0,
-		[]string{"host1", "host2", "host3"})
+		toMachines([]string{"host1", "host2", "host3"}))
 
 	aMetric[0].Value = int64(50)
 
@@ -476,7 +541,7 @@ func addDataForHighPriorityEvictionTest(appStatus *ApplicationStatuses) {
 
 	appStatus.MarkHostsActiveExclusively(
 		120.0,
-		[]string{"host1", "host2"})
+		toMachines([]string{"host1", "host2"}))
 
 	aMetric[0].Value = int64(65)
 

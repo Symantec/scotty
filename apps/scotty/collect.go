@@ -160,7 +160,11 @@ func (l *loggerType) LogResponse(
 		l.ChangedMetricsDist.Add(float64(added))
 		l.TotalCounts.Update(l.Store, e)
 		if l.CisQueue != nil && e.Port() == 6910 {
-			stats := cis.GetStats(list)
+			var instanceId string
+			if app := l.AppStats.ByEndpointId(e); app != nil {
+				instanceId = app.InstanceId
+			}
+			stats := cis.GetStats(list, instanceId)
 			if stats != nil {
 				l.CisQueue.Add(stats)
 			}

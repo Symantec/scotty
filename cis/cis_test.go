@@ -13,11 +13,19 @@ var (
 )
 
 func checkNoInstanceId(list metrics.SimpleList) {
+	list = list.Sorted()
+	index := metrics.Find(list, "/sys/cloud/aws/instance-id")
+	list[index].Path = "/sys/cloud/aws/instance-id_"
+	list = list.Sorted()
 	Convey("No instance ID gives nil", func() {
-		list = list.Sorted()
-		index := metrics.Find(list, "/sys/cloud/aws/instance-id")
-		list[index].Path = "/sys/cloud/aws/instance-id_"
-		So(cis.GetStats(list.Sorted()), ShouldBeNil)
+		So(cis.GetStats(list, ""), ShouldBeNil)
+	})
+	Convey("Passed instance Id gets used", func() {
+		So(
+			cis.GetStats(list, "someInstanceId").InstanceId,
+			ShouldEqual,
+			"someInstanceId",
+		)
 	})
 }
 
@@ -27,7 +35,7 @@ func checkExtraManagementType(
 		// defensive copy
 		list = list.Sorted()
 		newPackage("/sys/packages/ubuntu/xyz", 199, "0.1", &list)
-		So(cis.GetStats(list.Sorted()), ShouldResemble, lastResult)
+		So(cis.GetStats(list.Sorted(), ""), ShouldResemble, lastResult)
 	})
 }
 
@@ -42,7 +50,7 @@ func checkExtraStuffAtEnd(
 				Path:  "/sys/xyz",
 				Value: "abcd",
 			})
-		So(cis.GetStats(list.Sorted()), ShouldResemble, lastResult)
+		So(cis.GetStats(list.Sorted(), ""), ShouldResemble, lastResult)
 	})
 }
 
@@ -50,13 +58,13 @@ func TestGetStats(t *testing.T) {
 
 	Convey("No metrics gives nil", t, func() {
 		var list metrics.SimpleList
-		So(cis.GetStats(list), ShouldBeNil)
+		So(cis.GetStats(list, ""), ShouldBeNil)
 	})
 
 	Convey("InstanceId with no packages gives nil", t, func() {
 		var list metrics.SimpleList
 		list = append(list, newInstanceId("i-487"))
-		So(cis.GetStats(list.Sorted()), ShouldBeNil)
+		So(cis.GetStats(list.Sorted(), ""), ShouldBeNil)
 	})
 
 	Convey("With packages", t, func() {
@@ -66,7 +74,7 @@ func TestGetStats(t *testing.T) {
 
 		Convey("With one package", func() {
 			newPackage("/sys/packages/debs/apt", 623, "1.0", &list)
-			lastResult = cis.GetStats(list.Sorted())
+			lastResult = cis.GetStats(list.Sorted(), "")
 			So(
 				lastResult,
 				ShouldResemble,
@@ -93,7 +101,7 @@ func TestGetStats(t *testing.T) {
 			newPackage("/sys/packages/debs/apt", 623, "1.0", &list)
 			newPackage("/sys/packages/debs/bash", 924, "2.0", &list)
 			newPackage("/sys/packages/debs/collectd", 187, "0.5", &list)
-			lastResult = cis.GetStats(list.Sorted())
+			lastResult = cis.GetStats(list.Sorted(), "")
 			So(
 				lastResult,
 				ShouldResemble,
@@ -150,7 +158,7 @@ func TestGetStats(t *testing.T) {
 					TimeStamp: someTime,
 				},
 			)
-			lastResult = cis.GetStats(list.Sorted())
+			lastResult = cis.GetStats(list.Sorted(), "")
 			So(
 				lastResult,
 				ShouldResemble,

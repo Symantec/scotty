@@ -2,6 +2,7 @@
 package datastructs
 
 import (
+	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/store"
@@ -37,6 +38,9 @@ type ApplicationStatus struct {
 
 	// Whether or not it is currently down.
 	Down bool
+
+	// If non-empty the AWS instance-id of the machine of the application
+	InstanceId string
 
 	changedMetrics_Sum   uint64
 	changedMetrics_Count uint64
@@ -132,14 +136,14 @@ func (a *ApplicationStatuses) ReportError(
 	a.reportError(e, err, ts)
 }
 
-// MarkHostsActiveExclusively marks all applications / endpoints each host
+// MarkHostsActiveExclusively marks all applications / endpoints of each host
 // within activeHosts as active while marking the rest inactive.
 // MarkHostsActiveExclusively marks all time series of any machines that just
 // became inactive as inactive by adding an inactive flag to each one with
 // given time stamp.
 // timestamp is seconds since Jan 1, 1970 GMT.
 func (a *ApplicationStatuses) MarkHostsActiveExclusively(
-	timestamp float64, activeHosts []string) {
+	timestamp float64, activeHosts []mdb.Machine) {
 	a.markHostsActiveExclusively(timestamp, activeHosts)
 }
 
@@ -170,6 +174,11 @@ func (a *ApplicationStatuses) AllActiveWithStore() (
 	[]*ApplicationStatus, *store.Store) {
 	return a.allWithStore(
 		func(s *ApplicationStatus) bool { return s.Active })
+}
+
+func (a *ApplicationStatuses) ByEndpointId(
+	e *scotty.Endpoint) *ApplicationStatus {
+	return a.byEndpointId(e)
 }
 
 // EndpointIdByHostAndName Returns the endpoint Id for given host and

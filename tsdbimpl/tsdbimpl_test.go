@@ -1,6 +1,7 @@
 package tsdbimpl_test
 
 import (
+	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
@@ -41,6 +42,14 @@ func addValues(
 	}
 }
 
+func toMachines(hostNames []string) []mdb.Machine {
+	result := make([]mdb.Machine, len(hostNames))
+	for i := range result {
+		result[i].Hostname = hostNames[i]
+	}
+	return result
+}
+
 func TestAPI(t *testing.T) {
 	alBuilder := datastructs.NewApplicationListBuilder()
 	alBuilder.Add(
@@ -54,7 +63,7 @@ func TestAPI(t *testing.T) {
 			t, "TestAPI", 2, 100, 1.0, 10))
 	appStatus.MarkHostsActiveExclusively(
 		100.0,
-		[]string{"host1", "host2", "host3", "host4", "host5"})
+		toMachines([]string{"host1", "host2", "host3", "host4", "host5"}))
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
 	addValues(t, aStore, endpointId, "/foo",

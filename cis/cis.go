@@ -75,13 +75,18 @@ func getInstanceId(list metrics.List) (result string, ok bool) {
 	return
 }
 
-func getStats(list metrics.List) *Stats {
+func getStats(list metrics.List, optInstanceId string) *Stats {
 	var result Stats
-	var ok bool
-	result.InstanceId, ok = getInstanceId(list)
-	if !ok {
-		return nil
+	if optInstanceId != "" {
+		result.InstanceId = optInstanceId
+	} else {
+		var ok bool
+		result.InstanceId, ok = getInstanceId(list)
+		if !ok {
+			return nil
+		}
 	}
+	var ok bool
 	result.Packages, result.TimeStamp, ok = getPackageInfo(list)
 	if !ok {
 		return nil

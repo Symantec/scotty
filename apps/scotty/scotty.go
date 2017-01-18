@@ -147,12 +147,11 @@ func createApplicationStats(
 	stats := datastructs.NewApplicationStatuses(appList, astore)
 	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
 	machines := <-mdbChannel
-	theHostNames := hostNames(machines.Machines)
-	for _, aName := range theHostNames {
+	for _, aName := range hostNames(machines.Machines) {
 		tagvAdder.Add(aName)
 	}
 	stats.MarkHostsActiveExclusively(
-		duration.TimeToFloat(time.Now()), theHostNames)
+		duration.TimeToFloat(time.Now()), machines.Machines)
 	fmt.Println("Initialization complete.")
 	// Endpoint refresher goroutine
 	go func() {
@@ -160,7 +159,7 @@ func createApplicationStats(
 			machines := <-mdbChannel
 			stats.MarkHostsActiveExclusively(
 				duration.TimeToFloat(time.Now()),
-				hostNames(machines.Machines))
+				machines.Machines)
 		}
 	}()
 	return stats

@@ -82,42 +82,9 @@ func query(
 	}
 	var allSeries []tsdbjson.TimeSeries
 	for i := range parsedQueries {
-		var options tsdbimpl.QueryOptions
-		options.HostNameFilter, err = newTagFilter(
-			parsedQueries[i].Options.HostNameFilter)
-		if err != nil {
-			return
-		}
-		options.AppNameFilter, err = newTagFilter(
-			parsedQueries[i].Options.AppNameFilter)
-		if err != nil {
-			return
-		}
-		options.GroupByAppName = parsedQueries[i].Options.GroupByAppName
-		options.GroupByHostName = parsedQueries[i].Options.GroupByHostName
-		if parsedQueries[i].Aggregator.DownSample == nil {
-			return nil, tsdbjson.ErrUnsupportedAggregator
-		}
-		ensureDurationAtLeast(
-			duration.ToFloat(minDownSampleTime),
-			&parsedQueries[i].Aggregator.DownSample)
-		var aggregatorGen tsdb.AggregatorGenerator
-		aggregatorGen, err = tsdbjson.NewAggregatorGenerator(
-			parsedQueries[i].Aggregator.Type,
-			parsedQueries[i].Aggregator.DownSample,
-			parsedQueries[i].Aggregator.RateOptions,
-		)
-		if err != nil {
-			return
-		}
 		var series *tsdb.TaggedTimeSeriesSet
-		series, err = tsdbimpl.Query(
-			endpoints,
-			parsedQueries[i].Metric,
-			aggregatorGen,
-			parsedQueries[i].Start,
-			parsedQueries[i].End,
-			&options)
+		series, err = runSingleParsedQuery(
+			parsedQueries[i], endpoints, minDownSampleTime)
 		if err != nil {
 			return
 		}
@@ -127,6 +94,69 @@ func query(
 		return make([]tsdbjson.TimeSeries, 0), nil
 	}
 	return allSeries, nil
+}
+
+func runParsedQueries(
+	requests []tsdbjson.ParsedQuery,
+	endpoints *datastructs.ApplicationStatuses,
+	minDownSampleTime time.Duration) (
+	[]*tsdb.TaggedTimeSeriesSet, error) {
+	results := make([]*tsdb.TaggedTimeSeriesSet, len(requests))
+	for i, request := range requests {
+		result, err := runSingleParsedQuery(
+			request, endpoints, minDownSampleTime)
+		if err == tsdbimpl.ErrNoSuchMetric {
+			results[i] = nil
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		results[i] = result
+	}
+	return results, nil
+}
+
+func runSingleParsedQuery(
+	request tsdbjson.ParsedQuery,
+	endpoints *datastructs.ApplicationStatuses,
+	minDownSampleTime time.Duration) (
+	result *tsdb.TaggedTimeSeriesSet, err error) {
+	var options tsdbimpl.QueryOptions
+	options.HostNameFilter, err = newTagFilter(
+		request.Options.HostNameFilter)
+	if err != nil {
+		return
+	}
+	options.AppNameFilter, err = newTagFilter(
+		request.Options.AppNameFilter)
+	if err != nil {
+		return
+	}
+	options.GroupByAppName = request.Options.GroupByAppName
+	options.GroupByHostName = request.Options.GroupByHostName
+	if request.Aggregator.DownSample == nil {
+		return nil, tsdbjson.ErrUnsupportedAggregator
+	}
+	ensureDurationAtLeast(
+		duration.ToFloat(minDownSampleTime),
+		&request.Aggregator.DownSample)
+	var aggregatorGen tsdb.AggregatorGenerator
+	aggregatorGen, err = tsdbjson.NewAggregatorGenerator(
+		request.Aggregator.Type,
+		request.Aggregator.DownSample,
+		request.Aggregator.RateOptions,
+	)
+	if err != nil {
+		return
+	}
+	return tsdbimpl.Query(
+		endpoints,
+		request.Metric,
+		aggregatorGen,
+		request.Start,
+		request.End,
+		&options)
 }
 
 func newHandler(handler interface{}) http.Handler {

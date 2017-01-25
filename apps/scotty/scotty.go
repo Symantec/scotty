@@ -11,6 +11,9 @@ import (
 	"github.com/Symantec/scotty/apps/scotty/splash"
 	"github.com/Symantec/scotty/consul"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/influx/qlutils"
+	"github.com/Symantec/scotty/influx/responses"
+	"github.com/Symantec/scotty/lib/apiutil"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb/aggregators"
@@ -18,6 +21,8 @@ import (
 	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
+	"github.com/influxdata/influxdb/client/v2"
+	"github.com/influxdata/influxdb/uuid"
 	"io"
 	"log"
 	"net/http"
@@ -32,10 +37,25 @@ import (
 )
 
 var (
+	kInfluxEpochConversions = map[string]func(int64) int64{
+		"h":  func(ts int64) int64 { return ts / 3600.0 },
+		"m":  func(ts int64) int64 { return ts / 60.0 },
+		"s":  func(ts int64) int64 { return ts },
+		"ms": func(ts int64) int64 { return ts * 1000.0 },
+		"u":  func(ts int64) int64 { return ts * 1000.0 * 1000.0 },
+		"ns": func(ts int64) int64 { return ts * 1000.0 * 1000.0 * 1000.0 },
+	}
+)
+
+var (
 	fPort = flag.Int(
 		"portNum",
 		6980,
 		"Port number for scotty.")
+	fInfluxPort = flag.Int(
+		"influxPortNum",
+		8086,
+		"Influx Port number for scotty.")
 	fTsdbPort = flag.Int(
 		"tsdbPortNum",
 		4242,
@@ -249,6 +269,47 @@ func (m *maybeNilMemoryManagerWrapperType) Check() {
 	}
 }
 
+func performInfluxQuery(
+	queryStr string,
+	epoch string,
+	endpoints *datastructs.ApplicationStatuses,
+	freq time.Duration) (*client.Response, error) {
+	now := time.Now()
+	query, err := qlutils.NewQuery(queryStr, now)
+	if err != nil {
+		return nil, err
+	}
+	pqs, colNamesForEachStatement, err := qlutils.ParseQuery(query, now)
+	if err != nil {
+		return nil, err
+	}
+	seriesSets, err := tsdbexec.RunParsedQueries(pqs, endpoints, freq)
+	if err != nil {
+		return nil, err
+	}
+	epochConversion := kInfluxEpochConversions[epoch]
+	if epochConversion == nil {
+		epochConversion = kInfluxEpochConversions["ns"]
+	}
+
+	return responses.FromTaggedTimeSeriesSets(
+		seriesSets, colNamesForEachStatement, pqs, epochConversion), nil
+}
+
+func setHeader(w http.ResponseWriter, r *http.Request, key, value string) {
+	r.Header.Set(key, value)
+	w.Header().Set(key, value)
+}
+
+func uuidHandler(inner http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uid := uuid.TimeUUID()
+		setHeader(w, r, "Request-Id", uid.String())
+		setHeader(w, r, "X-Influxdb-Version", "0.13.0")
+		inner.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
@@ -330,6 +391,24 @@ func main() {
 		}},
 	)
 
+	influxServeMux := http.NewServeMux()
+
+	influxServeMux.Handle(
+		"/query",
+		uuidHandler(
+			apiutil.NewHandler(
+				func(req url.Values) (interface{}, error) {
+					return performInfluxQuery(
+						req.Get("q"),
+						req.Get("epoch"),
+						applicationStats,
+						*fCollectionFrequency)
+				},
+				nil,
+			),
+		),
+	)
+
 	tsdbServeMux := http.NewServeMux()
 
 	tsdbServeMux.Handle(
@@ -403,6 +482,12 @@ func main() {
 
 	go func() {
 		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fTsdbPort), tsdbServeMux); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fInfluxPort), influxServeMux); err != nil {
 			log.Fatal(err)
 		}
 	}()

@@ -310,6 +310,14 @@ func uuidHandler(inner http.Handler) http.Handler {
 	})
 }
 
+func dateHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setHeader(w, r, "Date", time.Now().UTC().Format("Mon, 2 Jan 2006 15:04:05 MST"))
+		w.WriteHeader(204)
+	})
+
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
@@ -407,6 +415,11 @@ func main() {
 				nil,
 			),
 		),
+	)
+
+	influxServeMux.Handle(
+		"/ping",
+		uuidHandler(dateHandler()),
 	)
 
 	tsdbServeMux := http.NewServeMux()

@@ -9,6 +9,7 @@ import (
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/apiutil"
 	"github.com/Symantec/scotty/suggest"
+	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbjson"
 	"net/http"
 	"net/url"
@@ -41,6 +42,21 @@ func Query(
 	minDownSampleTime time.Duration) (
 	result []tsdbjson.TimeSeries, err error) {
 	return query(request, endpoints, minDownSampleTime)
+}
+
+// RunParsedQueries works like Query except that it accepts a slice of
+// tsdbjson.ParseQuery instances and returns a slice of
+// tsdb.TaggedTimeSeriesSet instances.
+// This metod can be used to support other protocols such as influx db.
+// The indexes in the returned slice match the indexes of the requests slice.
+// In particular an element of the returned slice will be nil if the
+// corresponding element in the requests slice yields no results.
+func RunParsedQueries(
+	requests []tsdbjson.ParsedQuery,
+	endpoints *datastructs.ApplicationStatuses,
+	minDownSampleTime time.Duration) (
+	[]*tsdb.TaggedTimeSeriesSet, error) {
+	return runParsedQueries(requests, endpoints, minDownSampleTime)
 }
 
 // NewHandler creates a handler to service a particular TSDB API endpoint.

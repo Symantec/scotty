@@ -22,6 +22,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/influxdata/influxdb/client/v2"
+	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/uuid"
 	"io"
 	"log"
@@ -274,6 +275,27 @@ func performInfluxQuery(
 	epoch string,
 	endpoints *datastructs.ApplicationStatuses,
 	freq time.Duration) (*client.Response, error) {
+	// Special case for show databases. Influx client issues this
+	// when user types "use scotty"
+	if strings.ToLower(queryStr) == "show databases" {
+		return &client.Response{
+			Results: []client.Result{
+				{
+					Series: []models.Row{
+						{
+							Name:    "databases",
+							Columns: []string{"name"},
+							Values: [][]interface{}{
+								{"_internal"},
+								{"scotty"},
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	}
+
 	now := time.Now()
 	query, err := qlutils.NewQuery(queryStr, now)
 	if err != nil {

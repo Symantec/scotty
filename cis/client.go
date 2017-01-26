@@ -13,7 +13,7 @@ var (
 	replacer = strings.NewReplacer(".", "_")
 )
 
-func (c *Client) write(stats *Stats) error {
+func (c *Client) write(stats *Stats) (info WriteInfo, err error) {
 
 	type versionSizeType struct {
 		Version string `json:"version"`
@@ -39,22 +39,24 @@ func (c *Client) write(stats *Stats) error {
 
 	buffer := &bytes.Buffer{}
 	encoder := json.NewEncoder(buffer)
-	if err := encoder.Encode(jsonToEncode); err != nil {
-		return err
+	if err = encoder.Encode(jsonToEncode); err != nil {
+		return
 	}
+	payload := buffer.Len()
 	// TODO: Maybe get rid of all the diagnostics in the error messages
 	bufferStr := buffer.String()
 	url := fmt.Sprintf("%s/aws/instances/%s", c.endpoint, stats.InstanceId)
 	resp, err := http.Post(url, "application/json", buffer)
 	if err != nil {
-		return errors.New(err.Error() + ": " + url + ": " + bufferStr)
-		//		return err
+		err = errors.New(err.Error() + ": " + url + ": " + bufferStr)
+		return
 	}
 	defer resp.Body.Close()
 	// Do this way in case we get 201
 	if resp.StatusCode/100 != 2 {
-		return errors.New(resp.Status + ": " + url + ": " + bufferStr)
-		// return errors.New(resp.Status)
+		err = errors.New(resp.Status + ": " + url + ": " + bufferStr)
+		// err = errors.New(resp.Status)
 	}
-	return nil
+	info.PayloadSize = uint64(payload)
+	return
 }

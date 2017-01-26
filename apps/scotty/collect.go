@@ -345,77 +345,8 @@ func startCollector(
 	}()
 
 	if cisQueue != nil && cisClient != nil {
-		if err := tricorder.RegisterMetric(
-			"cis/queueSize",
-			cisQueue.Len,
-			units.None,
-			"Length of queue"); err != nil {
+		if err := createCISWriters(cisQueue, cisClient); err != nil {
 			log.Fatal(err)
 		}
-		timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-		if err := tricorder.RegisterMetric(
-			"cis/timeBetweenWrites",
-			timeBetweenWritesDist,
-			units.Second,
-			"elapsed time between CIS updates"); err != nil {
-			log.Fatal(err)
-		}
-		writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-		if err := tricorder.RegisterMetric(
-			"cis/writeTimes",
-			writeTimesDist,
-			units.Millisecond,
-			"elapsed time between CIS updates"); err != nil {
-			log.Fatal(err)
-		}
-		var lastWriteError string
-		if err := tricorder.RegisterMetric(
-			"cis/lastWriteError",
-			&lastWriteError,
-			units.None,
-			"Last CIS write error"); err != nil {
-			log.Fatal(err)
-		}
-		var successfulWrites uint64
-		if err := tricorder.RegisterMetric(
-			"cis/successfulWrites",
-			&successfulWrites,
-			units.None,
-			"Successful write count"); err != nil {
-			log.Fatal(err)
-		}
-		var totalWrites uint64
-		if err := tricorder.RegisterMetric(
-			"cis/totalWrites",
-			&totalWrites,
-			units.None,
-			"total write count"); err != nil {
-			log.Fatal(err)
-		}
-
-		// CIS loop
-		go func() {
-			lastTimeStampByKey := make(map[interface{}]time.Time)
-			for {
-				stat := cisQueue.Remove().(*cis.Stats)
-				key := stat.Key()
-				if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
-					timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
-				} else {
-					// On first write, just use time elapsed since start of
-					// scotty
-					timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
-				}
-				lastTimeStampByKey[key] = stat.TimeStamp
-				writeStartTime := time.Now()
-				if err := cisClient.Write(stat); err != nil {
-					lastWriteError = err.Error()
-				} else {
-					successfulWrites++
-				}
-				totalWrites++
-				writeTimesDist.Add(time.Since(writeStartTime))
-			}
-		}()
 	}
 }

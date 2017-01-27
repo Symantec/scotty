@@ -130,6 +130,7 @@ func fromTaggedTimeSeriesSets(
 	var results []client.Result
 	for i, series := range seriesList {
 		if series == nil {
+			results = append(results, client.Result{})
 			continue
 		}
 		results = append(

@@ -199,6 +199,10 @@ func TestFromTaggedTimeSeriesSets(t *testing.T) {
 			})
 
 			Convey("correct response with a nil", func() {
+				expected3 := &client.Response{
+					Results: []client.Result{
+						result, client.Result{}, result2},
+				}
 				response := responses.FromTaggedTimeSeriesSets(
 					[]*tsdb.TaggedTimeSeriesSet{
 						taggedTimeSeriesSet,
@@ -212,7 +216,7 @@ func TestFromTaggedTimeSeriesSets(t *testing.T) {
 					},
 					[]tsdbjson.ParsedQuery{pq, pq, pq2},
 					epochConverter)
-				So(response, ShouldResemble, expected)
+				So(response, ShouldResemble, expected3)
 			})
 		})
 		Convey("Given two group by series set", func() {

@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+const (
+	kCisPath = "aws/packages"
+)
+
 var (
 	replacer = strings.NewReplacer(".", "_")
 )
@@ -44,7 +48,7 @@ func (c *Client) write(stats *Stats) error {
 	}
 	// TODO: Maybe get rid of all the diagnostics in the error messages
 	bufferStr := buffer.String()
-	url := fmt.Sprintf("%s/aws/instances/%s", c.endpoint, stats.InstanceId)
+	url := fmt.Sprintf("%s/%s/%s", c.endpoint, kCisPath, stats.InstanceId)
 	resp, err := http.Post(url, "application/json", buffer)
 	if err != nil {
 		return errors.New(err.Error() + ": " + url + ": " + bufferStr)

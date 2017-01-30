@@ -81,7 +81,7 @@ func (a *aggregatorTesterType) Verify(t *testing.T) {
 		if !a.expected[i].Valid {
 			continue
 		}
-		if aggIdx >= len(aggregatedTimeSeries) || aggregatedTimeSeries[aggIdx].Ts != float64(i)*kMaxSampleSize {
+		if aggIdx >= len(aggregatedTimeSeries) || aggregatedTimeSeries[aggIdx].Ts != float64(i)*kMaxSampleSize+kMaxSampleSize/2 {
 			t.Error(
 				"Timestamps don't match. No value was emitted when one was expected or the other way around. Or maybe the Len() function is wrong.")
 			return

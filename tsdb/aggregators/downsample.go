@@ -36,7 +36,7 @@ func (p *downSamplePolicyType) IndexOf(ts float64) int {
 
 // TSOf converts given index to a timestamp
 func (p *downSamplePolicyType) TSOf(index int) float64 {
-	return float64(p.start + int64(index)*p.downSampleSize)
+	return float64(p.start + int64(index)*p.downSampleSize + p.downSampleSize/2)
 }
 
 // DownSampleSize returns the down sample size in seconds.

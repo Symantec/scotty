@@ -116,7 +116,7 @@ func TestAPI(t *testing.T) {
 		Data: []tsdb.TaggedTimeSeries{
 			{
 				Values: tsdb.TimeSeries{
-					{500.0, 55.5}, {520.0, 57.5}, {540.0, 59.0},
+					{510.0, 55.5}, {530.0, 57.5}, {550.0, 59.0},
 				},
 			},
 		},
@@ -167,7 +167,7 @@ func TestAPI(t *testing.T) {
 		Data: []tsdb.TaggedTimeSeries{
 			{
 				Values: tsdb.TimeSeries{
-					{700.0, 80.0}, {800.0, 100.0},
+					{710.0, 80.0}, {810.0, 100.0},
 				},
 			},
 		},
@@ -232,7 +232,7 @@ func TestAPI(t *testing.T) {
 					HostName: "host1",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 35.5}, {520.0, 37.5}, {540.0, 39.0},
+					{510.0, 35.5}, {530.0, 37.5}, {550.0, 39.0},
 				},
 			},
 			{
@@ -240,7 +240,7 @@ func TestAPI(t *testing.T) {
 					HostName: "host2",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 55.5}, {520.0, 57.5}, {540.0, 59.0},
+					{510.0, 55.5}, {530.0, 57.5}, {550.0, 59.0},
 				},
 			},
 			{
@@ -248,7 +248,7 @@ func TestAPI(t *testing.T) {
 					HostName: "host3",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 75.5}, {520.0, 77.5}, {540.0, 79.0},
+					{510.0, 75.5}, {530.0, 77.5}, {550.0, 79.0},
 				},
 			},
 		},
@@ -318,7 +318,7 @@ func TestAPI(t *testing.T) {
 					AppName: "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
+					{510.0, 50.5}, {530.0, 52.5}, {550.0, 54.0},
 				},
 			},
 			{
@@ -326,7 +326,7 @@ func TestAPI(t *testing.T) {
 					AppName: "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 60.5}, {520.0, 62.5}, {540.0, 64},
+					{510.0, 60.5}, {530.0, 62.5}, {550.0, 64},
 				},
 			},
 		},
@@ -368,7 +368,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 30.5}, {520.0, 32.5}, {540.0, 34.0},
+					{510.0, 30.5}, {530.0, 32.5}, {550.0, 34.0},
 				},
 			},
 			{
@@ -377,7 +377,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 40.5}, {520.0, 42.5}, {540.0, 44.0},
+					{510.0, 40.5}, {530.0, 42.5}, {550.0, 44.0},
 				},
 			},
 			{
@@ -386,7 +386,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
+					{510.0, 50.5}, {530.0, 52.5}, {550.0, 54.0},
 				},
 			},
 			{
@@ -395,7 +395,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 60.5}, {520.0, 62.5}, {540.0, 64.0},
+					{510.0, 60.5}, {530.0, 62.5}, {550.0, 64.0},
 				},
 			},
 			{
@@ -404,7 +404,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 70.5}, {520.0, 72.5}, {540.0, 74.0},
+					{510.0, 70.5}, {530.0, 72.5}, {550.0, 74.0},
 				},
 			},
 			{
@@ -413,7 +413,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 80.5}, {520.0, 82.5}, {540.0, 84.0},
+					{510.0, 80.5}, {530.0, 82.5}, {550.0, 84.0},
 				},
 			},
 		},
@@ -494,7 +494,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
+					{510.0, 50.5}, {530.0, 52.5}, {550.0, 54.0},
 				},
 			},
 			{
@@ -503,7 +503,7 @@ func TestAPI(t *testing.T) {
 					AppName:  "AnApp",
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 70.5}, {520.0, 72.5}, {540.0, 74.0},
+					{510.0, 70.5}, {530.0, 72.5}, {550.0, 74.0},
 				},
 			},
 		},
@@ -546,7 +546,7 @@ func TestAPI(t *testing.T) {
 		Data: []tsdb.TaggedTimeSeries{
 			{
 				Values: tsdb.TimeSeries{
-					{500.0, 60.5}, {520.0, 62.5}, {540.0, 64.0},
+					{510.0, 60.5}, {530.0, 62.5}, {550.0, 64.0},
 				},
 			},
 		},

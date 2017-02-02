@@ -58,7 +58,7 @@ func (a *aggregatorTesterType) expect(
 func (a *aggregatorTesterType) Verify(t *testing.T) {
 	length := len(a.expected)
 	agg := aggregators.New(
-		0, float64(length)*kMaxSampleSize,
+		kMaxSampleSize*-0.5, (float64(length)-0.5)*kMaxSampleSize,
 		aggregators.Sum,
 		kMaxSampleSize,
 		a.aggregator,
@@ -70,7 +70,7 @@ func (a *aggregatorTesterType) Verify(t *testing.T) {
 			timeSeries = append(
 				timeSeries,
 				tsdb.TsValue{
-					float64(i)*kMaxSampleSize + float64(j),
+					(float64(i)-0.5)*kMaxSampleSize + float64(j),
 					val})
 		}
 	}

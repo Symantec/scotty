@@ -63,12 +63,12 @@ type downSampleType struct {
 }
 
 func computeClampStart(start float64, downSample float64) float64 {
-	quotient := start / downSample
+	quotient := start/downSample + 0.5
 	timeSliceId := math.Floor(quotient)
 	if timeSliceId == quotient {
-		return timeSliceId * downSample
+		return (timeSliceId - 0.5) * downSample
 	}
-	return (timeSliceId + 1.0) * downSample
+	return (timeSliceId + 0.5) * downSample
 }
 
 func _new(

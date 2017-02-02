@@ -11,8 +11,6 @@ type downSamplePolicyType struct {
 
 // start is the starting time in seconds after Jan 1, 1970.
 // downSampleSize is the length of each time slice in seconds.
-// newDownSampleSize adjusts start to be a multiple of downSampleSize and makes
-// that adjusted start be index 0.
 func newDownSamplePolicyType(
 	start, downSampleSize float64) downSamplePolicyType {
 	if downSampleSize < 1.0 {
@@ -20,7 +18,9 @@ func newDownSamplePolicyType(
 	}
 	downSampleAsInt := int64(downSampleSize)
 	startAsInt := int64(start)
-	adjustedStartAsInt := startAsInt / downSampleAsInt * downSampleAsInt
+	// adjustedStartAsInt to be half way between time intervals and be just
+	// less than or equal to startAsInt.
+	adjustedStartAsInt := (startAsInt+(downSampleAsInt/2))/downSampleAsInt*downSampleAsInt - (downSampleAsInt / 2)
 	// Safety in case startAsInt is negative
 	if adjustedStartAsInt > startAsInt {
 		adjustedStartAsInt -= downSampleAsInt
@@ -36,7 +36,9 @@ func (p *downSamplePolicyType) IndexOf(ts float64) int {
 
 // TSOf converts given index to a timestamp
 func (p *downSamplePolicyType) TSOf(index int) float64 {
-	return float64(p.start + int64(index)*p.downSampleSize)
+	// Even though start is half way between a time interval make returned
+	// timestamp fall on start of next interval.
+	return float64(p.start + int64(index)*p.downSampleSize + p.downSampleSize/2)
 }
 
 // DownSampleSize returns the down sample size in seconds.

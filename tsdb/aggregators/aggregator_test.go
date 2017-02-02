@@ -9,17 +9,17 @@ import (
 
 func TestLinearInterpolation(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.None,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 31.0}, {1030.0, 31.5}, {1199.999, 31.25},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 75.0}})
+		{900.0, 31.0}, {930.0, 31.5}, {1099.999, 31.25},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 75.0}})
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
@@ -30,8 +30,8 @@ func TestLinearInterpolation(t *testing.T) {
 		{1800.0, 75.0}}
 	assertValueDeepEqual(t, expected, aggregated)
 	aggregator.Add(tsdb.TimeSeries{
-		{1200.0, 40.0},
-		{1600.0, 46.0}})
+		{1100.0, 40.0},
+		{1500.0, 46.0}})
 	aggregated = aggregator.Aggregate()
 	expected = tsdb.TimeSeries{
 		{1000.0, 31.25},
@@ -44,8 +44,8 @@ func TestLinearInterpolation(t *testing.T) {
 
 func TestRate(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
@@ -53,11 +53,11 @@ func TestRate(t *testing.T) {
 		&aggregators.RateSpec{
 			Counter: true, CounterMax: 65500.0, ResetValue: 200.0})
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 10000.0},
-		{1200.0, 49000.0},
-		{1400.0, 3000.0},
-		{1600.0, 53000.0},
-		{1800.0, 52000.0}})
+		{900.0, 10000.0},
+		{1100.0, 49000.0},
+		{1300.0, 3000.0},
+		{1500.0, 53000.0},
+		{1700.0, 52000.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1000.0, 195.0},
@@ -69,19 +69,19 @@ func TestRate(t *testing.T) {
 
 func TestRateNoReset(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		&aggregators.RateSpec{Counter: true, CounterMax: 65500.0})
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 10000.0},
-		{1200.0, 49000.0},
-		{1400.0, 3000.0},
-		{1600.0, 53000.0},
-		{1800.0, 52000.0}})
+		{900.0, 10000.0},
+		{1100.0, 49000.0},
+		{1300.0, 3000.0},
+		{1500.0, 53000.0},
+		{1700.0, 52000.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1000.0, 195.0},
@@ -93,19 +93,19 @@ func TestRateNoReset(t *testing.T) {
 
 func TestRateNoResetOrMax(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		&aggregators.RateSpec{Counter: true})
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 10000.0},
-		{1200.0, 49000.0},
-		{1400.0, 3000.0},
-		{1600.0, 53000.0},
-		{1800.0, 52000.0}})
+		{900.0, 10000.0},
+		{1100.0, 49000.0},
+		{1300.0, 3000.0},
+		{1500.0, 53000.0},
+		{1700.0, 52000.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1000.0, 195.0},
@@ -117,19 +117,19 @@ func TestRateNoResetOrMax(t *testing.T) {
 
 func TestRateNoCounter(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		&aggregators.RateSpec{})
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 10000.0},
-		{1200.0, 49000.0},
-		{1400.0, 3000.0},
-		{1600.0, 53000.0},
-		{1800.0, 52000.0}})
+		{900.0, 10000.0},
+		{1100.0, 49000.0},
+		{1300.0, 3000.0},
+		{1500.0, 53000.0},
+		{1700.0, 52000.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1000.0, 195.0},
@@ -141,17 +141,17 @@ func TestRateNoCounter(t *testing.T) {
 
 func TestRateMissingValues(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		&aggregators.RateSpec{})
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 10000.0},
-		{1600.0, 49000.0},
-		{1800.0, 52000.0}})
+		{900.0, 10000.0},
+		{1500.0, 49000.0},
+		{1700.0, 52000.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1000.0, 65.0},
@@ -161,16 +161,16 @@ func TestRateMissingValues(t *testing.T) {
 	assertValueDeepEqual(t, expected, aggregated)
 
 	aggregator = aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		&aggregators.RateSpec{})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 10000.0},
-		{1600.0, 49000.0}})
+		{1300.0, 10000.0},
+		{1500.0, 49000.0}})
 	aggregated = aggregator.Aggregate()
 	expected = tsdb.TimeSeries{
 		{1400.0, 195.0}}
@@ -179,26 +179,26 @@ func TestRateMissingValues(t *testing.T) {
 
 func TestCount(t *testing.T) {
 	aggregator := aggregators.New(
-		1043.0,
-		2021.0,
+		943.0,
+		1921.0,
 		aggregators.Count,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1043.0, 42.0}, {1044.0, 54.0}, {1199.999, 49.5},
-		{1200.0, 35.0},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0},
-		{2019.0, 1.3}})
+		{943.0, 42.0}, {944.0, 54.0}, {1099.999, 49.5},
+		{1100.0, 35.0},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0},
+		{1919.0, 1.3}})
 	aggregator.Add(nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1043.0, 42.0}, {1044.0, 54.0}, {1199.999, 49.5},
-		{1200.0, 53.0},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0},
-		{2019.0, 1.3}})
+		{943.0, 42.0}, {944.0, 54.0}, {1099.999, 49.5},
+		{1100.0, 53.0},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0},
+		{1919.0, 1.3}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{1200.0, 2.0},
@@ -210,27 +210,27 @@ func TestCount(t *testing.T) {
 
 func TestAverage(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0}})
+		{900.0, 42.0}, {930.0, 54.0}, {1099.999, 49.5},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1500.0, 1025.0},
-		{1600.0, 99.0},
-		{1800.0, 198.0}, {1801.0, 202.0}, {1999.1, 200.0}})
+		{1400.0, 1025.0},
+		{1500.0, 99.0},
+		{1700.0, 198.0}, {1701.0, 202.0}, {1899.1, 200.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 1975.0},
-		{1450.0, 2000.0},
-		{1599.0, 2025.0},
-		{1599.1, 2050.0},
-		{1599.2, 2075.0}})
+		{1300.0, 1975.0},
+		{1350.0, 2000.0},
+		{1499.0, 2025.0},
+		{1499.1, 2050.0},
+		{1499.2, 2075.0}})
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
@@ -243,27 +243,27 @@ func TestAverage(t *testing.T) {
 
 func TestAverageZero(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.Zero,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0}})
+		{900.0, 42.0}, {930.0, 54.0}, {1099.999, 49.5},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1500.0, 1025.0},
-		{1600.0, 99.0},
-		{1800.0, 198.0}, {1801.0, 202.0}, {1999.1, 200.0}})
+		{1400.0, 1025.0},
+		{1500.0, 99.0},
+		{1700.0, 198.0}, {1701.0, 202.0}, {1899.1, 200.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 1975.0},
-		{1450.0, 2000.0},
-		{1599.0, 2025.0},
-		{1599.1, 2050.0},
-		{1599.2, 2075.0}})
+		{1300.0, 1975.0},
+		{1350.0, 2000.0},
+		{1499.0, 2025.0},
+		{1499.1, 2050.0},
+		{1499.2, 2075.0}})
 	// Counts as all zeros
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
@@ -278,27 +278,27 @@ func TestAverageZero(t *testing.T) {
 
 func TestAverageMax(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Max,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
-		{1401.0, 20.0}, {1599.0, 30.5},
-		{1836.0, 98.0}})
+		{900.0, 42.0}, {930.0, 54.0}, {1099.999, 49.5},
+		{1301.0, 20.0}, {1499.0, 30.5},
+		{1736.0, 98.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1500.0, 1025.0},
-		{1600.0, 99.0},
-		{1800.0, 198.0}, {1801.0, 202.0}, {1999.1, 200.0}})
+		{1400.0, 1025.0},
+		{1500.0, 99.0},
+		{1700.0, 198.0}, {1701.0, 202.0}, {1899.1, 200.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 1975.0},
-		{1450.0, 2000.0},
-		{1599.0, 2025.0},
-		{1599.1, 2050.0},
-		{1599.2, 2075.0}})
+		{1300.0, 1975.0},
+		{1350.0, 2000.0},
+		{1499.0, 2025.0},
+		{1499.1, 2050.0},
+		{1499.2, 2075.0}})
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
@@ -311,27 +311,27 @@ func TestAverageMax(t *testing.T) {
 
 func TestMaxAverage(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Max,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0}})
+		{900.0, 42.0}, {930.0, 54.0}, {1099.999, 49.5},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1500.0, 1025.0},
-		{1600.0, 99.0},
-		{1800.0, 198.0}, {1801.0, 202.0}, {1999.1, 200.0}})
+		{1400.0, 1025.0},
+		{1500.0, 99.0},
+		{1700.0, 198.0}, {1701.0, 202.0}, {1899.1, 200.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 1975.0},
-		{1450.0, 2000.0},
-		{1599.0, 2025.0},
-		{1599.1, 2050.0},
-		{1599.2, 2075.0}})
+		{1300.0, 1975.0},
+		{1350.0, 2000.0},
+		{1499.0, 2025.0},
+		{1499.1, 2050.0},
+		{1499.2, 2075.0}})
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
@@ -344,27 +344,27 @@ func TestMaxAverage(t *testing.T) {
 
 func TestSumAverage(t *testing.T) {
 	aggregator := aggregators.New(
-		1000.0,
-		2000.0,
+		900.0,
+		1900.0,
 		aggregators.Sum,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1000.0, 42.0}, {1030.0, 54.0}, {1199.999, 49.5},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0}})
+		{900.0, 42.0}, {930.0, 54.0}, {1099.999, 49.5},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1500.0, 1025.0},
-		{1600.0, 99.0},
-		{1800.0, 198.0}, {1801.0, 202.0}, {1999.1, 200.0}})
+		{1400.0, 1025.0},
+		{1500.0, 99.0},
+		{1700.0, 198.0}, {1701.0, 202.0}, {1899.1, 200.0}})
 	aggregator.Add(tsdb.TimeSeries{
-		{1400.0, 1975.0},
-		{1450.0, 2000.0},
-		{1599.0, 2025.0},
-		{1599.1, 2050.0},
-		{1599.2, 2075.0}})
+		{1300.0, 1975.0},
+		{1350.0, 2000.0},
+		{1499.0, 2025.0},
+		{1499.1, 2050.0},
+		{1499.2, 2075.0}})
 	aggregator.Add(nil)
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
@@ -377,17 +377,17 @@ func TestSumAverage(t *testing.T) {
 
 func TestAverageStrangeStartAndEnd(t *testing.T) {
 	aggregator := aggregators.New(
-		1057.0,
-		1938.0,
+		957.0,
+		1838.0,
 		aggregators.Avg,
 		200.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{1057.0, 30.0}, {1199.0, 40.0},
-		{1401.0, 20.0}, {1599.0, 30.0},
-		{1836.0, 98.0}})
+		{957.0, 30.0}, {1099.0, 40.0},
+		{1301.0, 20.0}, {1499.0, 30.0},
+		{1736.0, 98.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{{1400.0, 25.0}}
 	assertValueDeepEqual(t, expected, aggregated)
@@ -414,17 +414,17 @@ func TestStartEqualsEnd(t *testing.T) {
 
 func TestNegativeStart(t *testing.T) {
 	aggregator := aggregators.New(
-		-29028.0,
-		29028.0,
+		-34028.0,
+		24028.0,
 		aggregators.Avg,
 		10000.0,
 		aggregators.Avg,
 		aggregators.NaN,
 		nil)
 	aggregator.Add(tsdb.TimeSeries{
-		{-29028.0, -60.0}, {-21000.0, -50.0},
-		{-3000.0, -5.0}, {3000.0, 5.0},
-		{29027.0, 43.0}})
+		{-34028.0, -60.0}, {-26000.0, -50.0},
+		{-8000.0, -5.0}, {-2000.0, 5.0},
+		{24027.0, 43.0}})
 	aggregated := aggregator.Aggregate()
 	expected := tsdb.TimeSeries{
 		{-10000.0, -5.0},

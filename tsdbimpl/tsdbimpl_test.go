@@ -67,27 +67,27 @@ func TestAPI(t *testing.T) {
 	endpointId, aStore := appStatus.EndpointIdByHostAndName(
 		"host1", "AnApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 30.0, 510.0, 31.0, 520.0, 32.0, 530.0, 33.0, 540.0, 34.0)
+		490.0, 30.0, 500.0, 31.0, 510.0, 32.0, 520.0, 33.0, 530.0, 34.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host1", "AnotherApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 40.0, 510.0, 41.0, 520.0, 42.0, 530.0, 43.0, 540.0, 44.0)
+		490.0, 40.0, 500.0, 41.0, 510.0, 42.0, 520.0, 43.0, 530.0, 44.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 50.0, 510.0, 51.0, 520.0, 52.0, 530.0, 53.0, 540.0, 54.0)
+		490.0, 50.0, 500.0, 51.0, 510.0, 52.0, 520.0, 53.0, 530.0, 54.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host2", "AnotherApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 60.0, 510.0, 61.0, 520.0, 62.0, 530.0, 63.0, 540.0, 64.0)
+		490.0, 60.0, 500.0, 61.0, 510.0, 62.0, 520.0, 63.0, 530.0, 64.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 70.0, 510.0, 71.0, 520.0, 72.0, 530.0, 73.0, 540.0, 74.0)
+		490.0, 70.0, 500.0, 71.0, 510.0, 72.0, 520.0, 73.0, 530.0, 74.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host3", "AnotherApp")
 	addValues(t, aStore, endpointId, "/foo",
-		500.0, 80.0, 510.0, 81.0, 520.0, 82.0, 530.0, 83.0, 540.0, 84.0)
+		490.0, 80.0, 500.0, 81.0, 510.0, 82.0, 520.0, 83.0, 530.0, 84.0)
 	endpointId, aStore = appStatus.EndpointIdByHostAndName(
 		"host5", "AnApp")
 	addValues(t, aStore, endpointId, "/bar",
@@ -107,7 +107,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		500.0, 600.0,
+		490.0, 590.0,
 		nil); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		500.0, 600.0,
+		490.0, 590.0,
 		nil); err != tsdbimpl.ErrNoSuchMetric {
 		t.Error("Expected ErrNoSuchName")
 	}
@@ -158,7 +158,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		500.0, 1000.0,
+		490.0, 990.0,
 		nil); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		501.0, 539.0,
+		491.0, 529.0,
 		nil); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		700.0, 900.0,
+		690.0, 890.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +306,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +443,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		700.0, 900.0,
+		690.0, 890.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != nil {
 		t.Fatal(err)
 	}
@@ -578,7 +578,7 @@ func TestAPI(t *testing.T) {
 				aggregators.NaN,
 				nil), nil
 		},
-		400.0, 700.0,
+		390.0, 690.0,
 		options); err != tsdbimpl.ErrNoSuchMetric {
 		t.Error("Expected ErrNoSuchMetric")
 	}

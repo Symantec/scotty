@@ -769,10 +769,10 @@ func TestRollUpIterator(t *testing.T) {
 	playback := newPlaybackType(aMetric[:], 10)
 	playback.AddTimes(
 		0,
-		120000.0, 120059.5, 120119.0, // 1st interval
-		120250.0, 120300.0, // 2nd interval
-		120400.0, 120410.0, 120420.0, 120430.0, // 3rd interval
-		120500.0, // 4th interval
+		119940.0, 119999.5, 120059.0, // 1st interval
+		120190.0, 120240.0, // 2nd interval
+		120340.0, 120350.0, 120360.0, 120370.0, // 3rd interval
+		120440.0, // 4th interval
 	)
 	playback.Add(
 		"Int",
@@ -791,11 +791,11 @@ func TestRollUpIterator(t *testing.T) {
 
 	playback.AddTimes(
 		2,
-		96000.0, 96032.0, 96064.0, 96096.0, // 1st interval
-		96240.0,          // 2nd interval
-		96400.0, 96420.0, // 3rd interval
-		96500.0,          // 4th interval
-		96600.0, 96610.0, // 5th interval
+		95940.0, 95972.0, 96004.0, 96036.0, // 1st interval
+		96180.0,          // 2nd interval
+		96340.0, 96360.0, // 3rd interval
+		96440.0,          // 4th interval
+		96540.0, 96550.0, // 5th interval
 	)
 	playback.Add(
 		"Float",
@@ -822,22 +822,22 @@ func TestRollUpIterator(t *testing.T) {
 	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	expected := newExpectedTsValues()
-	expected.Add("Int", 120060.0, int64(26667))
-	expected.Add("Float", 96060.0, 5.75)
-	expected.Add("String", 96060.0, "hello")
-	expected.Add("Inactive", 120060.0, 24.0)
+	expected.Add("Int", 120000.0, int64(26667))
+	expected.Add("Float", 96000.0, 5.75)
+	expected.Add("String", 96000.0, "hello")
+	expected.Add("Inactive", 120000.0, 24.0)
 
-	expected.Add("Int", 120300.0, int64(31500))
-	expected.Add("Float", 96300.0, 9.125)
-	expected.Add("String", 96300.0, "bee")
+	expected.Add("Int", 120240.0, int64(31500))
+	expected.Add("Float", 96240.0, 9.125)
+	expected.Add("String", 96240.0, "bee")
 
-	expected.Add("Int", 120420.0, int64(23250))
-	expected.Add("Float", 96420.0, 1.875)
-	expected.Add("String", 96420.0, "long")
-	expected.Add("Inactive", 120420.0, 11.0)
+	expected.Add("Int", 120360.0, int64(23250))
+	expected.Add("Float", 96360.0, 1.875)
+	expected.Add("String", 96360.0, "long")
+	expected.Add("Inactive", 120360.0, 11.0)
 
-	expected.Add("Float", 96540.0, 3.1875)
-	expected.Add("String", 96540.0, "near")
+	expected.Add("Float", 96480.0, 3.1875)
+	expected.Add("String", 96480.0, "near")
 
 	beginning := expected.Checkpoint()
 
@@ -948,8 +948,8 @@ func TestRollUpIterator(t *testing.T) {
 
 	playback.AddTimes(
 		0,
-		120520.0, // 4th cont
-		120600.0, // 5th
+		120460.0, // 4th cont
+		120540.0, // 5th
 	)
 	playback.Add(
 		"Int",
@@ -959,8 +959,8 @@ func TestRollUpIterator(t *testing.T) {
 
 	playback.AddTimes(
 		2,
-		96623.0, // 5th cont
-		96720.0, // 6th
+		96563.0, // 5th cont
+		96660.0, // 6th
 	)
 	playback.Add(
 		"Float",
@@ -976,10 +976,10 @@ func TestRollUpIterator(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected = newExpectedTsValues()
-	expected.Add("Int", 120540.0, int64(28000))
-	expected.Add("Float", 96660.0, 12.0)
-	expected.Add("String", 96660.0, "far")
-	expected.Add("Inactive", 120540.0, 8.3)
+	expected.Add("Int", 120480.0, int64(28000))
+	expected.Add("Float", 96600.0, 12.0)
+	expected.Add("String", 96600.0, "far")
+	expected.Add("Inactive", 120480.0, 8.3)
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1004,10 +1004,10 @@ func TestRollUpIteratorBool(t *testing.T) {
 	playback := newPlaybackType(aMetric[:], 8)
 	playback.AddTimes(
 		0,
-		30000.0, 30100.0, 30200.0, // 1st interval
-		30300.0, 30400.0, 30500.0, // 2nd interval
-		30900.0, // 3rd interval
-		31200.0, // 4th interval
+		29850.0, 29950.0, 30050.0, // 1st interval
+		30150.0, 30250.0, 30350.0, // 2nd interval
+		30750.0, // 3rd interval
+		31050.0, // 4th interval
 	)
 	playback.Add(
 		"path",
@@ -1019,9 +1019,9 @@ func TestRollUpIteratorBool(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30150.0, true)
-	expected.Add("path", 30450.0, false)
-	expected.Add("path", 31050.0, true)
+	expected.Add("path", 30000.0, true)
+	expected.Add("path", 30300.0, false)
+	expected.Add("path", 30900.0, true)
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1045,10 +1045,10 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	playback := newPlaybackType(aMetric[:], 8)
 	playback.AddTimes(
 		0,
-		30000.0, 30100.0, 30200.0, // 1st interval
-		30300.0, 30400.0, 30500.0, // 2nd interval
-		30900.0, // 3rd interval
-		31200.0, // 4th interval
+		29850.0, 29950.0, 30050.0, // 1st interval
+		30150.0, 30250.0, 30350.0, // 2nd interval
+		30750.0, // 3rd interval
+		31050.0, // 4th interval
 	)
 	playback.Add(
 		"path",
@@ -1060,9 +1060,9 @@ func TestRollUpIteratorInt8(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	expected := newExpectedTsValues()
-	expected.Add("path", 30150.0, int8(1))
-	expected.Add("path", 30450.0, int8(-128))
-	expected.Add("path", 31050.0, int8(127))
+	expected.Add("path", 30000.0, int8(1))
+	expected.Add("path", 30300.0, int8(-128))
+	expected.Add("path", 30900.0, int8(127))
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -1087,11 +1087,11 @@ func TestIteratorSamePathDifferentTypeRollUp(t *testing.T) {
 	playback := newPlaybackType(aMetric, 13)
 	playback.AddTimes(
 		0,
-		1200.0, 1210.0, 1220.0, 1230.0, 1240.0, 1250.0,
-		1260.0, 1270.0, 1280.0, 1290.0,
-		1330.0, 1340.0,
+		1170.0, 1180.0, 1190.0, 1200.0, 1210.0, 1220.0,
+		1230.0, 1240.0, 1250.0, 1260.0,
+		1300.0, 1310.0,
 		// Here to force first two periods to get written out
-		1380.0,
+		1350.0,
 	)
 	playback.Add(
 		"foo",
@@ -1105,9 +1105,9 @@ func TestIteratorSamePathDifferentTypeRollUp(t *testing.T) {
 
 	expected := newExpectedTsValues()
 
-	expected.Add("foo", 1230.0, int64(1525))
-	expected.Add("foo", 1290.0, float64(1830.0))
-	expected.Add("foo", 1350.0, "hello")
+	expected.Add("foo", 1200.0, int64(1525))
+	expected.Add("foo", 1260.0, float64(1830.0))
+	expected.Add("foo", 1320.0, "hello")
 
 	iterator, _ := aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -2301,22 +2301,22 @@ func TestWithDistributions(t *testing.T) {
 	playback := newPlaybackType(aMetric, 10)
 	playback.AddTimes(
 		5,
-		3000.0, 3100.0,
-		3200.0, 3300.0, 3400.0,
-		3500.0, 3600.0, 3700.0,
-		3800.0, 3900.0)
+		2750.0, 2850.0,
+		2950.0, 3050.0, 3150.0,
+		3250.0, 3350.0, 3450.0,
+		3550.0, 3650.0)
 	playback.AddTimes(
 		6,
-		3000.0, 3100.0,
-		3200.0, 3300.0, 3400.0,
-		3500.0, 3600.0, 3700.0,
-		3800.0, 3900.0)
+		2750.0, 2850.0,
+		2950.0, 3050.0, 3150.0,
+		3250.0, 3350.0, 3450.0,
+		3550.0, 3650.0)
 	playback.AddTimes(
 		7,
-		3000.0, 3100.0,
-		3200.0, 3300.0, 3400.0,
-		3500.0, 3600.0, 3700.0,
-		3800.0, 3900.0)
+		2750.0, 2850.0,
+		2950.0, 3050.0, 3150.0,
+		3250.0, 3350.0, 3450.0,
+		3550.0, 3650.0)
 	playback.Add(
 		"/dist/cumulative",
 		cumulativeA[0], cumulativeA[1],
@@ -2359,7 +2359,7 @@ func TestWithDistributions(t *testing.T) {
 		expectedMetaData, store.GroupMetricByPathAndNumeric)
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3000.0,
+		2750.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{9, 15, 10, 3},
 			Sum:           200.0,
@@ -2367,7 +2367,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3100.0,
+		2850.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{13, 21, 15, 5},
 			Sum:           270.0,
@@ -2375,7 +2375,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3200.0,
+		2950.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 3, 0, 0},
 			Sum:           6.0,
@@ -2383,7 +2383,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3300.0,
+		3050.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 5, 0, 1},
 			Sum:           36.0,
@@ -2391,7 +2391,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3500.0,
+		3250.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{6, 4, 2},
 			Sum:           360.0,
@@ -2399,7 +2399,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3600.0,
+		3350.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{18, 4, 22},
 			Sum:           2860.0,
@@ -2407,7 +2407,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3700.0,
+		3450.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{18, 5, 25},
 			Sum:           3080.0,
@@ -2415,7 +2415,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3800.0,
+		3550.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{0, 0, 1, 2},
 			Sum:           35.0,
@@ -2423,7 +2423,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3900.0,
+		3650.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 1, 1, 2},
 			Sum:           38.0,
@@ -2454,28 +2454,28 @@ func TestWithDistributions(t *testing.T) {
 		appender)
 	expectedTsValues.CheckSlice(t, result)
 
-	// We have to chack on the ranges, so extract record at with ts=3900
-	// and ts=3700
-	var ts3700, ts3900 store.Record
+	// We have to chack on the ranges, so extract record at with ts=3450
+	// and ts=3650
+	var ts3450, ts3650 store.Record
 	for i := range result {
-		if result[i].TimeStamp == 3700.0 {
-			ts3700 = result[i]
-		} else if result[i].TimeStamp == 3900.0 {
-			ts3900 = result[i]
+		if result[i].TimeStamp == 3450.0 {
+			ts3450 = result[i]
+		} else if result[i].TimeStamp == 3650.0 {
+			ts3650 = result[i]
 		}
 	}
 	assertValueDeepEquals(
 		t,
 		[]float64{2.0, 5.0, 10.0},
-		ts3900.Info.Ranges().UpperLimits)
+		ts3650.Info.Ranges().UpperLimits)
 	assertValueDeepEquals(
 		t,
 		[]float64{30.0, 60.0},
-		ts3700.Info.Ranges().UpperLimits)
+		ts3450.Info.Ranges().UpperLimits)
 
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3000.0,
+		2750.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{6, 4},
 			Sum:           500.0,
@@ -2483,7 +2483,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3100.0,
+		2850.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{1, 5},
 			Sum:           420.0,
@@ -2491,7 +2491,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3200.0,
+		2950.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2499,7 +2499,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3900.0,
+		3650.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{9, 8},
 			Sum:           1200.0,
@@ -2532,23 +2532,23 @@ func TestWithDistributions(t *testing.T) {
 
 	expectedTsValues.Add(
 		"mint",
-		3000.0,
+		2750.0,
 		int64(50))
 	expectedTsValues.Add(
 		"mint",
-		3200.0,
+		2950.0,
 		int64(70))
 	expectedTsValues.Add(
 		"mint",
-		3300.0,
+		3050.0,
 		int64(90))
 	expectedTsValues.Add(
 		"mint",
-		3400.0,
+		3150.0,
 		int64(110))
 	expectedTsValues.Add(
 		"mint",
-		3500.0,
+		3250.0,
 		int64(130))
 
 	runAppenderClientTest(
@@ -2578,7 +2578,7 @@ func TestWithDistributions(t *testing.T) {
 
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3400.0,
+		3150.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 5, 0, 1},
 			Sum:           36.0,
@@ -2586,7 +2586,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3300.0,
+		3050.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2594,7 +2594,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3400.0,
+		3150.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2602,7 +2602,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3500.0,
+		3250.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2610,7 +2610,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3600.0,
+		3350.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2618,7 +2618,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3700.0,
+		3450.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2626,7 +2626,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3800.0,
+		3550.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{2, 6},
 			Sum:           450.0,
@@ -2635,23 +2635,23 @@ func TestWithDistributions(t *testing.T) {
 
 	expectedTsValues.Add(
 		"mint",
-		3100.0,
+		2850.0,
 		int64(50))
 	expectedTsValues.Add(
 		"mint",
-		3600.0,
+		3350.0,
 		int64(130))
 	expectedTsValues.Add(
 		"mint",
-		3700.0,
+		3450.0,
 		int64(130))
 	expectedTsValues.Add(
 		"mint",
-		3800.0,
+		3550.0,
 		int64(130))
 	expectedTsValues.Add(
 		"mint",
-		3900.0,
+		3650.0,
 		int64(130))
 
 	// Test iterating. Iterators should include
@@ -2666,7 +2666,7 @@ func TestWithDistributions(t *testing.T) {
 	expectedTsValues = newExpectedTsValues()
 	expectedTsValues.Add(
 		"/dist/cumulative",
-		3250.0,
+		3000.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{9, 15, 10, 3},
 			Sum:           200.0,
@@ -2674,7 +2674,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"/dist/noncumulative",
-		3250.0,
+		3000.0,
 		&store.DistributionTotals{
 			Counts:        []uint64{6, 4},
 			Sum:           500.0,
@@ -2682,7 +2682,7 @@ func TestWithDistributions(t *testing.T) {
 		})
 	expectedTsValues.Add(
 		"mint",
-		3250.0,
+		3000.0,
 		int64(74))
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
@@ -2722,8 +2722,8 @@ func TestWithLists(t *testing.T) {
 	playback := newPlaybackType(aMetric[:], 8)
 	playback.AddTimes(
 		5,
-		1700.0, 1750.0, 1800.0, 1850.0, 1900.0,
-		1950.0, 2000.0, 2050.0)
+		1650.0, 1700.0, 1750.0, 1800.0, 1850.0,
+		1900.0, 1950.0, 2000.0)
 	var nilUint32List []uint32
 	playback.Add(
 		"/list/uint32",
@@ -2738,8 +2738,8 @@ func TestWithLists(t *testing.T) {
 	)
 	playback.AddTimes(
 		7,
-		2700.0, 2750.0, 2800.0, 2850.0, 2900.0,
-		2950.0, 3000.0, 3050.0)
+		2650.0, 2700.0, 2750.0, 2800.0, 2850.0,
+		2900.0, 2950.0, 3000.0)
 	playback.Add(
 		"/list/string",
 		[]string{"hello", "goodbye"},
@@ -2754,22 +2754,22 @@ func TestWithLists(t *testing.T) {
 	var nilStringList []string
 	playback.Play(aStore, kEndpoint0)
 	expectedTsValues := newExpectedTsValuesWithMetaData(expectedMetaData)
-	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
-	expectedTsValues.Add("/list/uint32", 1750.0, []uint32{2, 3, 5, 7})
-	expectedTsValues.Add("/list/uint32", 1850.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1650.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1700.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1800.0, nilUint32List)
 	// no time reported for group
 	expectedTsValues.AddInactive(
-		"/list/uint32", 1900.001, nilUint32List)
+		"/list/uint32", 1850.001, nilUint32List)
 
 	expectedTsValues.Add(
-		"/list/string", 2700.0, []string{"hello", "goodbye"})
+		"/list/string", 2650.0, []string{"hello", "goodbye"})
 	expectedTsValues.Add(
-		"/list/string", 2750.0, []string{"foo", "bar", "baz"})
+		"/list/string", 2700.0, []string{"foo", "bar", "baz"})
 	// no time reported for group
 	expectedTsValues.AddInactive(
-		"/list/string", 2850.001, nilStringList)
+		"/list/string", 2800.001, nilStringList)
 	expectedTsValues.Add(
-		"/list/string", 3050.0, []string{"hello", "goodbye"})
+		"/list/string", 3000.0, []string{"hello", "goodbye"})
 
 	var result []store.Record
 	aStore.ByEndpoint(
@@ -2779,25 +2779,25 @@ func TestWithLists(t *testing.T) {
 	// Test iterator
 	expectedTsValues = newExpectedTsValuesWithMetaData(expectedMetaData)
 
-	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1650.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1700.0, []uint32{2, 3, 5, 7})
 	expectedTsValues.Add("/list/uint32", 1750.0, []uint32{2, 3, 5, 7})
-	expectedTsValues.Add("/list/uint32", 1800.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1800.0, nilUint32List)
 	expectedTsValues.Add("/list/uint32", 1850.0, nilUint32List)
-	expectedTsValues.Add("/list/uint32", 1900.0, nilUint32List)
-	expectedTsValues.AddInactive("/list/uint32", 1900.001, nilUint32List)
+	expectedTsValues.AddInactive("/list/uint32", 1850.001, nilUint32List)
 
 	expectedTsValues.Add(
-		"/list/string", 2700.0, []string{"hello", "goodbye"})
+		"/list/string", 2650.0, []string{"hello", "goodbye"})
+	expectedTsValues.Add(
+		"/list/string", 2700.0, []string{"foo", "bar", "baz"})
 	expectedTsValues.Add(
 		"/list/string", 2750.0, []string{"foo", "bar", "baz"})
 	expectedTsValues.Add(
 		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
-	expectedTsValues.Add(
-		"/list/string", 2850.0, []string{"foo", "bar", "baz"})
 	expectedTsValues.AddInactive(
-		"/list/string", 2850.001, nilStringList)
+		"/list/string", 2800.001, nilStringList)
 	expectedTsValues.Add(
-		"/list/string", 3050.0, []string{"hello", "goodbye"})
+		"/list/string", 3000.0, []string{"hello", "goodbye"})
 
 	iterator, _ := aStore.NamedIteratorForEndpoint(
 		"anIterator", kEndpoint0, 0)
@@ -2809,13 +2809,13 @@ func TestWithLists(t *testing.T) {
 
 	// Remember, iterator never emits rolled up value from last time
 	// period as more values could come in.
-	expectedTsValues.Add("/list/uint32", 1750.0, nilUint32List)
-	expectedTsValues.Add("/list/uint32", 1850.0, []uint32{2, 3, 5, 7})
+	expectedTsValues.Add("/list/uint32", 1700.0, nilUint32List)
+	expectedTsValues.Add("/list/uint32", 1800.0, []uint32{2, 3, 5, 7})
 
 	expectedTsValues.Add(
-		"/list/string", 2750.0, []string{"hello", "goodbye"})
+		"/list/string", 2700.0, []string{"hello", "goodbye"})
 	expectedTsValues.Add(
-		"/list/string", 2850.0, []string{"foo", "bar", "baz"})
+		"/list/string", 2800.0, []string{"foo", "bar", "baz"})
 
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"aRollUpIterator",

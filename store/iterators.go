@@ -295,19 +295,17 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 			n.namedIteratorType.Next(&record)
 			continue
 		}
+		frameId := getFrameId(record.TimeStamp, n.interval)
 		if !n.aggregator.IsEmpty() {
-			frameId := getFrameId(record.TimeStamp, n.interval)
 			if !n.strategy.Equal(record.Info, n.aggregator.FirstInfo()) || frameId != getFrameId(n.aggregator.FirstTs(), n.interval) {
 				n.aggregator.Result(result)
 				n.aggregator.Clear()
-				// Use half way in between earliest and latest
-				result.TimeStamp += n.interval / 2
 				return true
 			}
 		}
 		n.namedIteratorType.Next(&record)
 		// Normalise timestamps
-		record.TimeStamp = math.Floor(record.TimeStamp/n.interval) * n.interval
+		record.TimeStamp = frameId
 		n.aggregator.Add(&record)
 	}
 	if n.aggregator.IsEmpty() {
@@ -315,13 +313,11 @@ func (n *rollUpNamedIteratorType) Next(result *Record) bool {
 	}
 	n.aggregator.Result(result)
 	n.aggregator.Clear()
-	// Use half way in between earliest and latest
-	result.TimeStamp += n.interval / 2
 	return true
 }
 
-func getFrameId(t, dur float64) int64 {
-	return int64(t / dur)
+func getFrameId(t, dur float64) float64 {
+	return math.Floor(t/dur+0.5) * dur
 }
 
 // chopForRollUp truncates times so that it contains no partial interval at

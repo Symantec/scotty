@@ -237,7 +237,9 @@ func mergeResults(results []client.Result) (merged client.Result, err error) {
 		mergedMessages = append(mergedMessages, result.Messages...)
 		rowPtrs = append(rowPtrs, toRowPtrList(result.Series)...)
 	}
-	sort.Sort(rowPtrs)
+	// We need to preserve order of rows because we want to prefer values
+	// from rows from the last result
+	sort.Stable(rowPtrs)
 	var mergedRows []models.Row
 
 	// Next we have to reduce multiple row instances for the same time series
@@ -355,7 +357,7 @@ func reduceRows(rows rowPtrListType) (reduced []models.Row, err error) {
 		}
 		timeIdx := indexByName(currentRowCopy.Columns, "time")
 		if timeIdx != -1 {
-			if err := sortByTime(currentRowCopy.Values, timeIdx); err != nil {
+			if err := sortByTimeAndUniquify(&currentRowCopy.Values, timeIdx); err != nil {
 				return nil, err
 			}
 		}
@@ -410,6 +412,34 @@ func (s *sortTimeSeriesType) Swap(i, j int) {
 
 func (s *sortTimeSeriesType) Less(i, j int) bool {
 	return s.times[i] < s.times[j]
+}
+
+func (s *sortTimeSeriesType) uniquify() [][]interface{} {
+	if len(s.times) == 0 {
+		return s.valuesToSort
+	}
+	idx := 0
+	tlen := len(s.times)
+	for i := 1; i < tlen; i++ {
+		if s.times[i] != s.times[idx] {
+			idx++
+		}
+		s.valuesToSort[idx] = s.valuesToSort[i]
+		s.times[idx] = s.times[i]
+	}
+	s.times = s.times[:idx+1]
+	s.valuesToSort = s.valuesToSort[:idx+1]
+	return s.valuesToSort
+}
+
+func sortByTimeAndUniquify(values *[][]interface{}, timeIdx int) error {
+	s, err := newSortTimeSeriesType(*values, timeIdx)
+	if err != nil {
+		return err
+	}
+	sort.Stable(s)
+	*values = s.uniquify()
+	return nil
 }
 
 func sortByTime(values [][]interface{}, timeIdx int) error {

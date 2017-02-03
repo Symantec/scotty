@@ -16,6 +16,13 @@ func newPoint(x int64) []interface{} {
 	return []interface{}{nil, json.Number(strconv.FormatInt(x, 10)), nil}
 }
 
+func newSpecificPoint(x int64, y int64) []interface{} {
+	return []interface{}{
+		json.Number(strconv.FormatInt(y, 10)),
+		json.Number(strconv.FormatInt(x, 10)),
+		nil}
+}
+
 func newPoint1(x int64) []interface{} {
 	return []interface{}{json.Number(strconv.FormatInt(x, 10)), nil}
 }
@@ -351,12 +358,12 @@ func TestMerge(t *testing.T) {
 
 		dpoint5 := newPoint(4005)
 		dpoint10 := newPoint(4010)
+		dpoint10_2 := newSpecificPoint(4010, 2)
 		dpoint15 := newPoint(4015)
-		dpoint20 := newPoint(4020)
+		dpoint15_2 := newSpecificPoint(4015, 2)
+		dpoint15_3 := newSpecificPoint(4015, 3)
 		dpoint25 := newPoint(4025)
-		dpoint27 := newPoint(4027)
-		dpoint30 := newPoint(4030)
-		dpoint37 := newPoint(4037)
+		dpoint25_2 := newSpecificPoint(4025, 2)
 		dpoint47 := newPoint(4047)
 
 		epoint10 := newPoint(5010)
@@ -367,9 +374,9 @@ func TestMerge(t *testing.T) {
 		c1Values := [][]interface{}{cpoint10}
 		d1Values := [][]interface{}{dpoint5, dpoint15, dpoint25}
 		b2Values := [][]interface{}{bpoint5, bpoint15, bpoint25}
-		d2Values := [][]interface{}{dpoint10, dpoint20, dpoint30}
+		d2Values := [][]interface{}{dpoint10, dpoint15_2, dpoint25_2}
 		e2Values := [][]interface{}{epoint10, epoint20}
-		d3Values := [][]interface{}{dpoint27, dpoint37, dpoint47}
+		d3Values := [][]interface{}{dpoint10_2, dpoint15_3, dpoint47}
 		result1_1 := client.Result{
 			Series: []models.Row{
 				{
@@ -490,13 +497,9 @@ func TestMerge(t *testing.T) {
 				bpoint5, bpoint10, bpoint15, bpoint20, bpoint25, bpoint30}
 			d123Values := [][]interface{}{
 				dpoint5,
-				dpoint10,
-				dpoint15,
-				dpoint20,
-				dpoint25,
-				dpoint27,
-				dpoint30,
-				dpoint37,
+				dpoint10_2,
+				dpoint15_3,
+				dpoint25_2,
 				dpoint47}
 
 			expectedResult := client.Result{

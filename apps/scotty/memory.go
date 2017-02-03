@@ -168,66 +168,58 @@ func (m *memoryManagerType) RegisterMetrics() (err error) {
 			m.Metrics(&data)
 			return time.Now()
 		})
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/alloc-bytes-needed-for-gc",
 		&data.AllocBytesNeededForGC,
-		group,
 		units.Byte,
 		"Number of allocated bytes needed to trigger GC"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/largest-alloc-bytes-needed-for-gc",
 		&data.LargestAllocBytesNeededForGC,
-		group,
 		units.Byte,
 		"Number of allocated bytes needed to trigger GC"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/inspected-cycle-count",
 		&data.InspectedCycleCount,
-		group,
 		units.None,
 		"Number of gc cycles inspected"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/total-cycle-count",
 		&data.TotalCycleCount,
-		group,
 		units.None,
 		"Number of total gc cycles"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/stw-gc-count",
 		&data.STWGCCount,
-		group,
 		units.None,
 		"Number of stop the world GCs"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/no-expand-count",
 		&data.NoExpandCount,
-		group,
 		units.None,
 		"Inspected cycle counts where we disabled expanding"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/page-free-bytes",
 		&data.PageFreeInBytes,
-		group,
 		units.Byte,
 		"Total number of pages freed in bytes"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		"/proc/memory-manager/page-free-count",
 		&data.PageFreeCount,
-		group,
 		units.None,
 		"Number of times pages freed"); err != nil {
 		return

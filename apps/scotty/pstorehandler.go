@@ -307,90 +307,79 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		"Time period length for rolled up values. 0 means no roll up."); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/valuesWritten", p.Name()),
 		&data.ValuesWritten,
-		group,
 		units.None,
 		"Number of values written to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/valuesNotWritten", p.Name()),
 		data.ValuesNotWritten,
-		group,
 		units.None,
 		"Number of values not written to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/timeLeft", p.Name()),
 		&visitorData.TimeLeft,
-		group,
 		units.None,
 		"approximate time writer is behind"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/blocked", p.Name()),
 		&visitorData.Blocked,
-		group,
 		units.None,
 		"true if writer is awaiting a lease"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/paused", p.Name()),
 		&data.Paused,
-		group,
 		units.None,
 		"true if writer paused; false otherwise"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/writeAttempts", p.Name()),
 		&data.WriteAttempts,
-		group,
 		units.None,
 		"Number of attempts to write to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/successfulWrites", p.Name()),
 		&data.SuccessfulWrites,
-		group,
 		units.None,
 		"Number of successful writes to persistent storage"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/successfulWriteRatio", p.Name()),
 		data.SuccessfulWriteRatio,
-		group,
 		units.None,
 		"Ratio of successful writes to write attempts"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/lastWriteError", p.Name()),
 		&data.LastWriteError,
-		group,
 		units.None,
 		"Last write error"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/lastWriteErrorTime", p.Name()),
 		&data.LastWriteErrorTS,
-		group,
 		units.None,
 		"Time of last write error"); err != nil {
 		return
 	}
-	if err = tricorder.RegisterMetricInGroup(
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/lastSuccessfulWrite", p.Name()),
 		&data.LastSuccessfulWriteTS,
-		group,
 		units.None,
 		"Time of last successful write"); err != nil {
 		return

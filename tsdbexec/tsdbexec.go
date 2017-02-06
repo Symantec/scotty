@@ -102,6 +102,7 @@ func runParsedQueries(
 	[]*tsdb.TaggedTimeSeriesSet, error) {
 	results := make([]*tsdb.TaggedTimeSeriesSet, len(requests))
 	for i, request := range requests {
+		request.EnsureStartTimeRecentEnough()
 		result, err := runSingleParsedQuery(
 			request, endpoints, minDownSampleTime)
 		if err == tsdbimpl.ErrNoSuchMetric {

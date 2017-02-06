@@ -154,6 +154,12 @@ type ParsedQuery struct {
 	Options ParsedQueryOptions
 }
 
+// EnsureStartTimeRecentEnough moves start time closer to end time if the
+// rollup span is too small for the time range. Otherwise, it is a no-op.
+func (p *ParsedQuery) EnsureStartTimeRecentEnough() {
+	p.ensureStartTimeRecentEnough()
+}
+
 // ParseQueryRequest takes a JSON /api/query request as input and returns
 // zero or more parsed queries.
 func ParseQueryRequest(

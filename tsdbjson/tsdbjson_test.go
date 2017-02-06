@@ -193,6 +193,36 @@ func TestParseQueryBadRequest(t *testing.T) {
 	assertValueEquals(t, tsdbjson.ErrBadValue, err)
 }
 
+func TestEnsureStartTimeRecentEnough(t *testing.T) {
+	pq := tsdbjson.ParsedQuery{
+		Start: 100000.0,
+		End:   900000.0,
+	}
+	// Should be no-op
+	pq.EnsureStartTimeRecentEnough()
+	assertValueEquals(t, 100000.0, pq.Start)
+	assertValueEquals(t, 900000.0, pq.End)
+
+	pq = tsdbjson.ParsedQuery{
+		Start: 100000.0,
+		End:   900000.0,
+		Aggregator: tsdbjson.AggregatorSpec{
+			DownSample: &tsdbjson.DownSampleSpec{
+				DurationInSeconds: 50.0,
+			},
+		},
+	}
+
+	pq.EnsureStartTimeRecentEnough()
+	assertValueEquals(t, 850000.0, pq.Start)
+	assertValueEquals(t, 900000.0, pq.End)
+
+	// Should be no-op already adjusted
+	pq.EnsureStartTimeRecentEnough()
+	assertValueEquals(t, 850000.0, pq.Start)
+	assertValueEquals(t, 900000.0, pq.End)
+}
+
 func TestParseQueryRequest(t *testing.T) {
 	request := &tsdbjson.QueryRequest{
 		StartInMillis: 1456789123125,

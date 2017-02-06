@@ -218,6 +218,15 @@ func parseDownSample(downSampleStr string) (result *DownSampleSpec, err error) {
 	return &spec, nil
 }
 
+func (p *ParsedQuery) ensureStartTimeRecentEnough() {
+	if p.Aggregator.DownSample != nil {
+		downSample := p.Aggregator.DownSample
+		if p.End-p.Start/downSample.DurationInSeconds > kMaxDownSampleBuckets {
+			p.Start = p.End - downSample.DurationInSeconds*kMaxDownSampleBuckets
+		}
+	}
+}
+
 func parseQueryRequest(request *QueryRequest) (
 	result []ParsedQuery, err error) {
 	parsedQueries := make([]ParsedQuery, len(request.Queries))

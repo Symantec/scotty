@@ -61,14 +61,13 @@ func _suggest(
 }
 
 func ensureDurationAtLeast(
-	minDurationInSeconds float64,
-	spec **tsdbjson.DownSampleSpec) {
-	if (*spec).DurationInSeconds >= minDurationInSeconds {
-		return
+	spec *tsdbjson.DownSampleSpec,
+	minDurationInSeconds float64) *tsdbjson.DownSampleSpec {
+	newSpec := *spec
+	if newSpec.DurationInSeconds < minDurationInSeconds {
+		newSpec.DurationInSeconds = minDurationInSeconds
 	}
-	newSpec := **spec
-	newSpec.DurationInSeconds = minDurationInSeconds
-	*spec = &newSpec
+	return &newSpec
 }
 
 func query(
@@ -138,9 +137,9 @@ func runSingleParsedQuery(
 	if request.Aggregator.DownSample == nil {
 		return nil, tsdbjson.ErrUnsupportedAggregator
 	}
-	ensureDurationAtLeast(
-		duration.ToFloat(minDownSampleTime),
-		&request.Aggregator.DownSample)
+	request.Aggregator.DownSample = ensureDurationAtLeast(
+		request.Aggregator.DownSample,
+		duration.ToFloat(minDownSampleTime))
 	var aggregatorGen tsdb.AggregatorGenerator
 	aggregatorGen, err = tsdbjson.NewAggregatorGenerator(
 		request.Aggregator.Type,

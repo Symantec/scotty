@@ -19,6 +19,7 @@ import (
 	"github.com/Symantec/scotty/tsdb/aggregators"
 	"github.com/Symantec/scotty/tsdbexec"
 	"github.com/Symantec/scotty/tsdbjson"
+	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/influxdata/influxdb/client/v2"
@@ -526,6 +527,8 @@ func main() {
 			log.Fatal(err)
 		}
 	}()
+
+	healthserver.SetReady()
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *fPort), nil); err != nil {
 		log.Fatal(err)

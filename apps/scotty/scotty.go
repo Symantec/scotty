@@ -370,7 +370,7 @@ func main() {
 	var coord coordinatorBuilderType
 	if *fCoord != "" {
 		var err error
-		coord, err = consul.GetCoordinator(logger)
+		coord, err = consul.GetCoordinator(*fCoord, logger)
 		if err != nil {
 			logger.Println(err)
 			coord = &blockingCoordinatorType{}

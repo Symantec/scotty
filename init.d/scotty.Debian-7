@@ -85,8 +85,8 @@ if [ -n "$CIS_ENDPOINT" ]; then
     PROG_ARGS="$PROG_ARGS -cisEndpoint=$CIS_ENDPOINT"
 fi
 
-if [ $(ls -A "$CONSUL_CONFIG") ]; then
-	PROG_ARGS="$PROG_ARGS -coordinator=consul"
+if [ -n "$CONSUL_NAMESPACE" ]; then
+	PROG_ARGS="$PROG_ARGS -coordinator=$CONSUL_NAMESPACE"
 fi
 
 do_start ()

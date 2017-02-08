@@ -1,6 +1,7 @@
 package consul
 
 import (
+	"fmt"
 	"github.com/hashicorp/consul/api"
 	"log"
 	"math"
@@ -9,13 +10,20 @@ import (
 	"time"
 )
 
-const (
-	kNextStartKey  = "service/scotty/nextStart"
-	kLockKey       = "service/scotty/leader"
-	kConfigFileKey = "service/scotty/configFile"
-)
+type keyCollectionType struct {
+	NextStartKey  string
+	LockKey       string
+	ConfigFileKey string
+}
+
+func (k *keyCollectionType) Init(namespace string) {
+	k.NextStartKey = fmt.Sprintf("service/scotty/%s/nextStart", namespace)
+	k.LockKey = fmt.Sprintf("service/scotty/%s/leader", namespace)
+	k.ConfigFileKey = fmt.Sprintf("service/scotty/%s/configFile", namespace)
+}
 
 type connectionType struct {
+	keys   keyCollectionType
 	lock   *api.Lock
 	kv     *api.KV
 	logger *log.Logger
@@ -68,7 +76,7 @@ func (c *connectionType) EnsureLeadership() {
 
 func (c *connectionType) getNextStart() (nextStart int64, modifyIndex uint64) {
 	c.mustSucceed(func() error {
-		kvPair, _, err := c.kv.Get(kNextStartKey, nil)
+		kvPair, _, err := c.kv.Get(c.keys.NextStartKey, nil)
 		if err != nil {
 			return err
 		}
@@ -97,7 +105,7 @@ func (c *connectionType) cas(nextStart int64, modifyIndex uint64) (
 	success bool) {
 	c.mustSucceed(func() error {
 		kvPair := &api.KVPair{
-			Key:         kNextStartKey,
+			Key:         c.keys.NextStartKey,
 			ModifyIndex: modifyIndex,
 			Value:       c.encode(nextStart),
 		}
@@ -132,6 +140,10 @@ func (c *connectionType) Put(key string, value string) error {
 	return err
 }
 
+func (c *connectionType) PutConfigFile(value string) error {
+	return c.Put(c.keys.ConfigFileKey, value)
+}
+
 // get returns a the value stored in consul for a particular key. If caller
 // provides a non-zero index, get blocks until the value at key changes.
 // get returns the stored value, whether or not a value is stored, the
@@ -150,6 +162,11 @@ func (c *connectionType) get(key string, index uint64) (
 	}
 	nextIndex = qm.LastIndex
 	return
+}
+
+func (c *connectionType) getConfigFile(index uint64) (
+	value string, ok bool, nextIndex uint64, err error) {
+	return c.get(c.keys.ConfigFileKey, index)
 }
 
 // Get works like get, but retries with exponential back off instead of
@@ -209,6 +226,10 @@ func (c *connectionType) Watch(key string, done <-chan struct{}) <-chan string {
 		}
 	}()
 	return result
+}
+
+func (c *connectionType) WatchConfigFile(done <-chan struct{}) <-chan string {
+	return c.Watch(c.keys.ConfigFileKey, done)
 }
 
 // coordinator encapsulates a connection to consul and maintains the
@@ -320,8 +341,11 @@ func (c *coordinator) Lease(
 	return
 }
 
-func newCoordinator(logger *log.Logger) (result *coordinator, err error) {
+func newCoordinator(namespace string, logger *log.Logger) (
+	result *coordinator, err error) {
 	coord := &coordinator{}
+
+	coord.conn.keys.Init(namespace)
 
 	// Best I can tell, these calls don't do any network RPC's. They seem to
 	// report errors only if programmer misuses.
@@ -329,7 +353,7 @@ func newCoordinator(logger *log.Logger) (result *coordinator, err error) {
 	if err != nil {
 		return
 	}
-	coord.conn.lock, err = client.LockKey(kLockKey)
+	coord.conn.lock, err = client.LockKey(coord.conn.keys.LockKey)
 	if err != nil {
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/lib/retry"
 	"github.com/Symantec/scotty/store"
 	"log"
+	"strings"
 )
 
 // Coordinator represents scotty's connection with consul
@@ -25,18 +26,31 @@ var (
 )
 
 // The first call to GetCoordinator returns a new coordinator for consul
-// that implements store.Coordinator and uses passed logger. Successive
-// calls return the same, already created coordinator and ignore the
-// logger parameter.
+// that implements store.Coordinator and uses passed logger.
+// Scotty processes that create their Coordinator instance using the same
+// namespace see each other's activity and compete for leadership when
+// connected to the same consul cluster.
+// Scotty processes that create their Coordinator instances using different
+// namespaces behave as if they are on different consul clusters even if
+// they connect to the same one. They do not see eachother's
+// activity nor do they compete for leadership. Scotty panics if
+// namespace has a slash (/) in it.
+//
+// Successive calls return the same, already created coordinator ignoring the
+// namespace and logger parameter.
 // Blocking methods of the returned coordinator such as the Lease method
 // write any errors encountered to logger. If logger is nil, blocking
 // methods write errors to stderr. Non blocking methods that return an
 // error do not log error messages.
 // The Consul agent runs on the local machine at port 8500 so no other
 // configuration is needed.
-func GetCoordinator(logger *log.Logger) (*Coordinator, error) {
+func GetCoordinator(
+	namespace string, logger *log.Logger) (*Coordinator, error) {
+	if strings.Contains(namespace, "/") {
+		panic("namespace cannot contain slashes")
+	}
 	err := kRetry.Do(func() error {
-		result, err := newCoordinator(logger)
+		result, err := newCoordinator(namespace, logger)
 		if err != nil {
 			return err
 		}
@@ -67,13 +81,13 @@ func (c *Coordinator) WithStateListener(
 
 // PutPStoreConfig stores a new scotty config file
 func (c *Coordinator) PutPStoreConfig(value string) error {
-	return c.coord.conn.Put(kConfigFileKey, value)
+	return c.coord.conn.PutConfigFile(value)
 }
 
 // GetPStoreConfig gets the current scotty config file. If none exists,
 // returns "", ErrMissing
 func (c *Coordinator) GetPStoreConfig() (result string, err error) {
-	result, ok, _, err := c.coord.conn.get(kConfigFileKey, 0)
+	result, ok, _, err := c.coord.conn.getConfigFile(0)
 	if err != nil {
 		return
 	}
@@ -96,5 +110,5 @@ func (c *Coordinator) GetPStoreConfig() (result string, err error) {
 // channel. Termination may not happen until several minutes after the
 // call closes the done channel.
 func (c *Coordinator) WatchPStoreConfig(done <-chan struct{}) <-chan string {
-	return c.coord.conn.Watch(kConfigFileKey, done)
+	return c.coord.conn.WatchConfigFile(done)
 }

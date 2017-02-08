@@ -23,6 +23,7 @@ sub commands:
 func doUpload(args []string) {
 	fs := flag.NewFlagSet("upload", flag.ExitOnError)
 	fileName := fs.String("file", "", "path of file to upload")
+	namespace := fs.String("namespace", "prod", "namespace")
 	inline := fs.Bool(
 		"stdin", false, "Read file contents from stdin")
 	fs.Parse(args)
@@ -44,7 +45,7 @@ func doUpload(args []string) {
 	if _, err := io.Copy(&buffer, intake); err != nil {
 		log.Fatal(err)
 	}
-	coord, err := consul.GetCoordinator(nil)
+	coord, err := consul.GetCoordinator(*namespace, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -54,7 +55,10 @@ func doUpload(args []string) {
 }
 
 func doList(args []string) {
-	coord, err := consul.GetCoordinator(nil)
+	fs := flag.NewFlagSet("list", flag.ExitOnError)
+	namespace := fs.String("namespace", "prod", "namespace")
+	fs.Parse(args)
+	coord, err := consul.GetCoordinator(*namespace, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

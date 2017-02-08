@@ -17,7 +17,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"os"
 	"path"
 	"sync"
 	"time"
@@ -779,16 +778,27 @@ func (c *pstoreContextType) UpdateFromConfigFile(
 	return result
 }
 
-func configFileLoop(
-	context *pstoreContextType,
+// ConfigFileLoop calls UpdateConfigFile for each ReadCloser in ch.
+// ConfigFileLoop starts with an empty set of pstore runners.
+func (c *pstoreContextType) ConfigFileLoop(
 	ch <-chan io.ReadCloser,
-	pstoreRunners pstoreRunnersByNameType,
 	counts *totalCountCollectionType) {
+	var pstoreRunners pstoreRunnersByNameType
+	select {
+	case <-time.After(time.Second):
+		c.Logger.Println(
+			"No pstore config file contents found at startup.")
+	case rc := <-ch:
+		pstoreRunners = c.UpdateFromConfigFile(rc, pstoreRunners, counts)
+		if err := rc.Close(); err != nil {
+			c.Logger.Println(err)
+		}
+	}
 	for readCloser := range ch {
-		pstoreRunners = context.UpdateFromConfigFile(
+		pstoreRunners = c.UpdateFromConfigFile(
 			readCloser, pstoreRunners, counts)
 		if err := readCloser.Close(); err != nil {
-			context.Logger.Println(err)
+			c.Logger.Println(err)
 		}
 	}
 }
@@ -811,7 +821,6 @@ func startPStoreLoops(
 	logger *log.Logger,
 	maybeNilCoordBuilder coordinatorBuilderType) *totalCountCollectionType {
 	result := newTotalCountCollectionType()
-	var pstoreRunners pstoreRunnersByNameType
 	var changeCh <-chan io.ReadCloser
 	context := &pstoreContextType{
 		Stats: stats,
@@ -823,25 +832,12 @@ func startPStoreLoops(
 		// pstore config file on unix file system
 		// read and process it then add a watch to it for future changes
 		configFile := path.Join(*fConfigDir, "pstore.yaml")
-		// TODO: Revisit all this logic when fsutil.WatchFile is improved
-		// for better error handling.
-		if f, err := os.Open(configFile); err != nil {
-			logger.Println("No pstore config file found.")
-		} else {
-			pstoreRunners = context.UpdateFromConfigFile(
-				f, pstoreRunners, result)
-			if err := f.Close(); err != nil {
-				logger.Println(err)
-			}
-			changeCh = fsutil.WatchFile(configFile, logger)
-		}
+		changeCh = fsutil.WatchFile(configFile, logger)
 	} else {
 		// pstore config file in consul
 		changeCh = stringToReadCloserStream(
 			maybeNilCoordBuilder.WatchPStoreConfig(nil))
 	}
-	if changeCh != nil {
-		go configFileLoop(context, changeCh, pstoreRunners, result)
-	}
+	go context.ConfigFileLoop(changeCh, result)
 	return result
 }

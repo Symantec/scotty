@@ -7,4 +7,8 @@ before_install:
 - rsync -az ${TRAVIS_BUILD_DIR}/ ${SYMANTEC_PROJECT_DIR}/
 - export TRAVIS_BUILD_DIR=${SYMANTEC_PROJECT_DIR}
 - cd ${SYMANTEC_PROJECT_DIR}
-
+install:
+- go get github.com/sparrc/gdm
+- go get -t -d github.com/influxdata/influxdb/...
+- ../../../../bin/gdm restore -f ../../influxdata/influxdb/Godeps
+- go get -t -v ./...

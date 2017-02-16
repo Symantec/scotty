@@ -8,7 +8,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"github.com/prometheus/prometheus/storage/remote/opentsdb"
+	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/opentsdb"
 	"github.com/prometheus/prometheus/util/httputil"
 	"io/ioutil"
 	"math"

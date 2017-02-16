@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	kCisPath = "aws/packages"
+	kCisPath = "packages"
 )
 
 var (

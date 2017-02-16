@@ -7,4 +7,8 @@ before_install:
 - rsync -az ${TRAVIS_BUILD_DIR}/ ${SYMANTEC_PROJECT_DIR}/
 - export TRAVIS_BUILD_DIR=${SYMANTEC_PROJECT_DIR}
 - cd ${SYMANTEC_PROJECT_DIR}
+install:
+  - go get go.uber.org/zap
+  - git --git-dir=../../../go.uber.org/zap/.git --work-tree=../../../go.uber.org/zap checkout 61159f0
+  - go get -t -v ./...
 

@@ -17,6 +17,7 @@ import (
 	"log"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -280,7 +281,13 @@ func startCollector(
 	if *fCisEndpoint != "" {
 		var err error
 		// TODO: move to config file when ready
-		cisClient, err = cis.NewClient(&cis.Config{Endpoint: *fCisEndpoint})
+		if strings.HasPrefix(*fCisEndpoint, "debug:") {
+			cisClient, err = cis.NewClient(
+				&cis.Config{Endpoint: (*fCisEndpoint)[6:]})
+		} else {
+			cisClient, err = cis.NewClient(&cis.Config{
+				Endpoint: *fCisEndpoint, Name: "cis"})
+		}
 		if err != nil {
 			log.Fatal(err)
 		}

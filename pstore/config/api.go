@@ -7,6 +7,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config/influx"
 	"github.com/Symantec/scotty/pstore/config/kafka"
+	"github.com/Symantec/scotty/pstore/config/lmm"
 	"github.com/Symantec/scotty/pstore/config/mock"
 	"github.com/Symantec/scotty/pstore/config/tsdb"
 	"io"
@@ -81,6 +82,7 @@ type ConfigPlus struct {
 	Kafka    *kafka.Config  `yaml:"kafka"`
 	Influx   *influx.Config `yaml:"influx"`
 	OpenTSDB *tsdb.Config   `yaml:"openTSDB"`
+	LMM      *lmm.Config    `yaml:"lmm"`
 	Mock     *mock.Config   `yaml:"mock"`
 	Consumer ConsumerConfig `yaml:"consumer"`
 }
@@ -99,6 +101,8 @@ func (c *ConfigPlus) NewConsumerBuilder() (
 		return c.Consumer.NewConsumerBuilder(c.Influx)
 	case c.OpenTSDB != nil:
 		return c.Consumer.NewConsumerBuilder(c.OpenTSDB)
+	case c.LMM != nil:
+		return c.Consumer.NewConsumerBuilder(c.LMM)
 	case c.Mock != nil:
 		return c.Consumer.NewConsumerBuilder(c.Mock)
 	default:

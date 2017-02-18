@@ -2,9 +2,11 @@
 package kafka
 
 import (
+	"bytes"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/tricorder/go/tricorder/types"
+	"io"
 )
 
 // IsTypeSupported returns true if kafka supports the given metric type
@@ -65,4 +67,45 @@ func (c *Config) NewWriter() (pstore.LimitedRecordWriter, error) {
 
 func (c *Config) Reset() {
 	*c = Config{}
+}
+
+// LMMSerialiseAsBytes serialises r into an LMM json payload.
+// tenantId and apiKey are the LMM tenantId and API key respectively. The
+// returned payload includes these as LMM expects them.
+func LMMSerialiseAsBytes(
+	r *pstore.Record,
+	tenantId,
+	apiKey string,
+	slashesToUnderscores bool) ([]byte, error) {
+	var buffer bytes.Buffer
+	if err := lmmSerialise(
+		r, tenantId, apiKey, slashesToUnderscores, &buffer); err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+// LMMSerialiseAsReader works like LMMSerialiseAsBytes except that it returns
+// the payload as an io.Reader. The payload itself is 100% buffered within
+// the returned reader.
+func LMMSerialiseAsReader(
+	r *pstore.Record,
+	tenantId,
+	apiKey string,
+	slashesToUnderscores bool) (io.Reader, error) {
+	var buffer bytes.Buffer
+	if err := lmmSerialise(
+		r, tenantId, apiKey, slashesToUnderscores, &buffer); err != nil {
+		return nil, err
+	}
+	return &buffer, nil
+}
+
+// LMMJSONPayload returns record as a JSON struct for lmm.
+func LMMJSONPayload(
+	r *pstore.Record,
+	tenantId,
+	apiKey string,
+	slashesToUnderscores bool) interface{} {
+	return lmmJSONPayload(r, tenantId, apiKey, slashesToUnderscores)
 }

@@ -6,6 +6,12 @@ import (
 	"time"
 )
 
+// WriteInfo contains info of a single CIS write
+type WriteInfo struct {
+	// The size of the payload written
+	PayloadSize uint64
+}
+
 // PackageEntry represents a single package on a machine
 type PackageEntry struct {
 	// Package name e.g python3.4
@@ -64,6 +70,6 @@ func NewClient(config *Config) (*Client, error) {
 }
 
 // Write writes data to CIS
-func (c *Client) Write(stats *Stats) error {
+func (c *Client) Write(stats *Stats) (WriteInfo, error) {
 	return c.write(stats)
 }

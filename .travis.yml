@@ -8,6 +8,10 @@ before_install:
 - export TRAVIS_BUILD_DIR=${SYMANTEC_PROJECT_DIR}
 - cd ${SYMANTEC_PROJECT_DIR}
 install:
+- git clone http://github.com/uber-go/atomic ../../uber-go/atomic
+- git --git-dir=../../uber-go/atomic/.git --work-tree=../../uber-go/atomic checkout 74ca5ec
+- git clone http://github.com/uber-go/zap ../../uber-go/zap
+- git --git-dir=../../uber-go/zap/.git --work-tree=../../uber-go/zap checkout fbae028
 - go get github.com/sparrc/gdm
 - go get -t -d github.com/influxdata/influxdb/...
 - ../../../../bin/gdm restore -f ../../influxdata/influxdb/Godeps

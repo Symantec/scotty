@@ -12,36 +12,26 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
+)
+
+const (
+	kNetworkTimeout = 15 * time.Second
 )
 
 var (
 	kErrNoConnection = errors.New("queuesender: No connection")
+	kErrInterrupted  = errors.New("queuesender: interrupted")
 )
 
-// connType represents a single connection.
-type connType struct {
-	refresh func() (net.Conn, error)
-	lock    sync.Mutex
-	conn    net.Conn
-	br      *bufio.Reader
+type connManagerType struct {
+	refresh       func() (net.Conn, error)
+	lock          sync.Mutex
+	active        *connType
+	connRefreshes uint64
 }
 
-func extractEndpoint(urlStr string) (scheme, endpoint string, err error) {
-	u, err := url.Parse(urlStr)
-	if err != nil {
-		return "", "", err
-	}
-	host := u.Host
-	if u.Scheme == "https" && !strings.Contains(u.Host, ":") {
-		host = host + ":443"
-	}
-	if u.Scheme == "http" && !strings.Contains(u.Host, ":") {
-		host = host + ":80"
-	}
-	return u.Scheme, host, nil
-}
-
-func newConn(urlStr string) (*connType, error) {
+func newConnManager(urlStr string) (*connManagerType, error) {
 	scheme, endpoint, err := extractEndpoint(urlStr)
 	if err != nil {
 		return nil, err
@@ -55,51 +45,72 @@ func newConn(urlStr string) (*connType, error) {
 	if refresh == nil {
 		return nil, errors.New("Unsupported scheme")
 	}
-	conn, err := refresh()
+	return &connManagerType{refresh: refresh}, nil
+}
+
+func (c *connManagerType) Get() (*connType, error) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	if c.active != nil && !c.active.isBad() {
+		return c.active.get(), nil
+	}
+	conn, err := c.refresh()
 	if err != nil {
 		return nil, err
 	}
-	return _newConn(conn, refresh), nil
+	c.active = newConn(conn)
+	c.connRefreshes++
+	return c.active.get(), nil
 }
 
-func _newConn(conn net.Conn, refresh func() (net.Conn, error)) *connType {
-	if conn == nil {
-		return &connType{refresh: refresh}
-	}
-	return &connType{
-		conn: conn, br: bufio.NewReader(conn), refresh: refresh}
-
-}
-
-func (c *connType) Close() {
-	c.conn.Close()
+func (c *connManagerType) Refreshes() uint64 {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.conn != nil {
-		c.conn = nil
-		c.br = nil
-	}
+	return c.connRefreshes
 }
 
-func (c *connType) _get() (net.Conn, *bufio.Reader) {
+// connType represents a single connection.
+type connType struct {
+	conn      net.Conn
+	br        *bufio.Reader
+	lock      sync.Mutex
+	userCount int
+	bad       bool
+}
+
+func newConn(conn net.Conn) *connType {
+	return &connType{conn: conn, br: bufio.NewReader(conn)}
+}
+
+func (c *connType) Put() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	return c.conn, c.br
+	c.userCount--
+	if c.userCount < 1 && c.bad {
+		c.conn.Close()
+	}
 }
 
-func (c *connType) Refresh(logger *loggerType) *connType {
-	newConn, err := c.refresh()
-	if err != nil {
-		logger.Log(err)
-	}
-	return _newConn(newConn, c.refresh)
+func (c *connType) MarkBad() {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.bad = true
+}
+
+func (c *connType) isBad() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.bad
+}
+
+func (c *connType) get() *connType {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.userCount++
+	return c
 }
 
 func (c *connType) Send(req requestType) error {
-	conn, _ := c._get()
-	if conn == nil {
-		return kErrNoConnection
-	}
 	buffer, err := encodeJSON(req.Json)
 	if err != nil {
 		return err
@@ -109,15 +120,11 @@ func (c *connType) Send(req requestType) error {
 		return err
 	}
 	httpreq.Header.Set("Content-Type", "application/json")
-	return httpreq.Write(conn)
+	return httpreq.Write(c.conn)
 }
 
 func (c *connType) Read() (bool, error) {
-	_, br := c._get()
-	if br == nil {
-		return false, kErrNoConnection
-	}
-	resp, err := http.ReadResponse(br, nil)
+	resp, err := http.ReadResponse(c.br, nil)
 	if err != nil {
 		return false, err
 	}
@@ -141,4 +148,19 @@ func encodeJSON(payload interface{}) (*bytes.Buffer, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func extractEndpoint(urlStr string) (scheme, endpoint string, err error) {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return "", "", err
+	}
+	host := u.Host
+	if u.Scheme == "https" && !strings.Contains(u.Host, ":") {
+		host = host + ":443"
+	}
+	if u.Scheme == "http" && !strings.Contains(u.Host, ":") {
+		host = host + ":80"
+	}
+	return u.Scheme, host, nil
 }

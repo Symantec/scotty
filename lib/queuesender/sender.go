@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"log"
+	"time"
 )
 
 func _new(endpoint string, size int, name string, logger *log.Logger) (
@@ -12,104 +13,73 @@ func _new(endpoint string, size int, name string, logger *log.Logger) (
 	if size < 1 {
 		panic("Size must be at least 1")
 	}
-	conn, err := newConn(endpoint)
+	connManager, err := newConnManager(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	result := &Sender{
-		queue:        newQueue(size),
-		newConnCh:    make(chan *connType),
-		newConnReqCh: make(chan bool),
+		queue:       newQueue(size),
+		connManager: connManager,
 	}
 	if logger != nil {
 		result.logger = &loggerType{name: name, logger: logger}
 	}
-	go result.sendLoop(conn)
-	go result.receiveLoop(conn)
+	go result.sendLoop()
+	go result.receiveLoop()
 	return result, nil
 }
 
-// This loop sends requests in the queue. To coordinate connection refreshes
-// between the send loop and receive loop goroutines, only this send loop
-// closes stale connections, and only the receiving loop refreshes connections.
-// Whenever this send loop closes a stale connection, the receiving loop has
-// moved on to using a new connection.
-func (s *Sender) sendLoop(conn *connType) {
-	connId := 0
+func (s *Sender) getConn() *connType {
+	conn, err := s.connManager.Get()
+	duration := time.Second
+	for err != nil {
+		s.logger.Log(err)
+		time.Sleep(duration)
+		duration *= 2
+		conn, err = s.connManager.Get()
+	}
+	return conn
+}
+
+// This loop sends requests in the queue.
+func (s *Sender) sendLoop() {
+	var lastConn *connType
 	for {
-		// See if the receiving loop has a new connection for us.
-		// If not, just keep using the same connection
-		select {
-		case newConn := <-s.newConnCh:
-			// We know its safe to close the old connection because
-			// the receiving loop is already using the connection it
-			// just gave us.
-			conn.Close()
-			conn = newConn
-			// For a given connection, both the send and receiving loop
-			// use the same value for connection ID.
-			connId++
-		default:
+		req := s.queue.NextNotSent()
+		conn := s.getConn()
+		if conn != lastConn {
+			lastConn = conn
+			s.queue.ResetNextNotSent()
+			req = s.queue.NextNotSent()
 		}
-		req, ok := s.queue.NextNotSent(connId)
-		if !ok {
-			// If we get here, the receiver loop has already created
-			// a new connection, and the queue is already tracking it.
-			// Go to the beginning to get this new connection.
-			continue
+		if err := conn.Send(req); err != nil {
+			conn.MarkBad()
 		}
-		err := conn.Send(req)
-		// On error we have to refresh the connection
-		if err != nil {
-			// Tell receiving loop to build a new connection
-			s.newConnReqCh <- true
-			// Block waiting for that new connection since the connection we
-			// have is no good.
-			newConn := <-s.newConnCh
-			conn.Close()
-			conn = newConn
-			connId++
-		}
+		conn.Put()
 	}
 }
 
 // This loop receives the responses from the requests.
 // Responses received are expected to come in the same order as requests are
 // sent.
-func (s *Sender) receiveLoop(conn *connType) {
-	connId := 0
+func (s *Sender) receiveLoop() {
 	for {
-		// First see if sending loop wants a new connection
-		select {
-		case <-s.newConnReqCh:
-			// Create the new connection. Note the old connection is still
-			// opened. The sending loop will close it when it gets this new
-			// connection.
-			conn = conn.Refresh(s.logger)
-			connId++
-			// Tell the queue about the new connection ID
-			s.queue.ResetNextNotSent(connId)
-			// Give sending loop this new connection
-			s.newConnCh <- conn
-		default:
-		}
+		conn := s.getConn()
 		ok, err := conn.Read()
 		// Oops we have to refresh the connection
 		if !ok {
-			conn = conn.Refresh(s.logger)
-			connId++
-			s.queue.ResetNextNotSent(connId)
-			s.newConnCh <- conn
-			continue
-		}
-		s.logError(err)
-		// A real error in response
-		if err != nil {
-			s.logger.Log(err)
-			s.queue.MoveToNotSent()
+			conn.MarkBad()
 		} else {
-			s.queue.DiscardNextSent()
+			s.logError(err)
+			// A real error in response
+			if err != nil {
+				s.logger.Log(err)
+				s.queue.MoveToNotSent()
+			} else {
+				s.queue.DiscardNextSent()
+			}
 		}
+		conn.Put()
 	}
 }
 
@@ -184,6 +154,13 @@ func (s *Sender) register(prefix string) error {
 		s.SuccessCount,
 		units.None,
 		"successfulWrites"); err != nil {
+		return err
+	}
+	if err := tricorder.RegisterMetric(
+		fmt.Sprintf("%s/%s", prefix, "refreshes"),
+		s.connManager.Refreshes,
+		units.None,
+		"connection refreshes"); err != nil {
 		return err
 	}
 	return nil

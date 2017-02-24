@@ -1,3 +1,4 @@
+// Package queuesender implements asynchronous http.
 package queuesender
 
 import (
@@ -11,8 +12,7 @@ type Sender struct {
 	logger *loggerType
 	// requests queued here
 	queue              *queueType
-	newConnCh          chan *connType
-	newConnReqCh       chan bool
+	connManager        *connManagerType
 	lock               sync.Mutex
 	lastResponseError  string
 	responseErrorCount uint64

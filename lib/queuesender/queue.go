@@ -27,7 +27,6 @@ type queueType struct {
 	start       int
 	end         int
 	nextNotSent int
-	connId      int
 }
 
 // newQueue returns a new queue capable of holding length requests.
@@ -104,49 +103,26 @@ func (q *queueType) MoveToNotSent() requestType {
 }
 
 // NextNotSent returns the next item in the queue not yet sent and moves
-// the next not sent pointer forward. NextNotSent blocks if nothing remains
-// in the queue that hasn't been sent.
-//
-// NextNotSent depends on the current connection. Whenever the connection is
-// refreshed, NextNotSent moves to the front of the queue. The connId
-// argument helps protect against data races. The passed connId must match
-// the ID of the connection this queue is tracking. A connId that is too big
-// means the caller is asking for the next not sent pointer for a future
-// connection. In this case, NextNotSent blocks until the connection Ids match.
-// A connId that is to small means that the caller is asking for the next not
-// sent pointer of a connection that has been closed. In this case,
-// NextNotSent immediately returns false.
-func (q *queueType) NextNotSent(connId int) (result requestType, ok bool) {
+// the next not sent pointer forward.
+func (q *queueType) NextNotSent() requestType {
 	q.lock.Lock()
 	defer q.lock.Unlock()
-	for connId > q.connId {
+	for q.noNotSent() {
 		q.cond.Wait()
 	}
-	for connId == q.connId && q.noNotSent() {
-		q.cond.Wait()
-	}
-	if connId < q.connId {
-		return
-	}
-	result = q.data[q.nextNotSent]
-	ok = true
+	result := q.data[q.nextNotSent]
 	q.incNextNotSent()
 	q.cond.Broadcast()
-	return
+	return result
 }
 
 // Calling ResetNextNotSent indicates the most current connection has changed.
 // ResetNextNotSent moves the next not sent pointer to the front of the
-// queue and updates the connection id being tracked while unblocking any
-// pending calls for the older connection.
-func (q *queueType) ResetNextNotSent(newConnId int) {
+// queue.
+func (q *queueType) ResetNextNotSent() {
 	q.lock.Lock()
 	defer q.lock.Unlock()
-	if newConnId <= q.connId {
-		panic("Connection Ids must be monotone increasing")
-	}
 	q.nextNotSent = q.start
-	q.connId = newConnId
 	q.cond.Broadcast()
 }
 

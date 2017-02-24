@@ -17,15 +17,16 @@ func _new(endpoint string, size int, name string, logger *log.Logger) (
 		return nil, err
 	}
 	result := &Sender{
-		queue:        newQueue(size),
-		newConnCh:    make(chan *connType),
-		newConnReqCh: make(chan bool),
+		queue:     newQueue(size),
+		newConnCh: make(chan *connType),
 	}
 	if logger != nil {
 		result.logger = &loggerType{name: name, logger: logger}
 	}
-	go result.sendLoop(conn)
-	go result.receiveLoop(conn)
+	forSender := &interruptType{}
+	forReceiver := &interruptType{}
+	go result.sendLoop(conn, forSender, forReceiver)
+	go result.receiveLoop(conn, forReceiver, forSender)
 	return result, nil
 }
 
@@ -34,41 +35,34 @@ func _new(endpoint string, size int, name string, logger *log.Logger) (
 // closes stale connections, and only the receiving loop refreshes connections.
 // Whenever this send loop closes a stale connection, the receiving loop has
 // moved on to using a new connection.
-func (s *Sender) sendLoop(conn *connType) {
-	connId := 0
+func (s *Sender) sendLoop(
+	conn *connType, inter, toReceiver *interruptType) {
 	for {
-		// See if the receiving loop has a new connection for us.
-		// If not, just keep using the same connection
-		select {
-		case newConn := <-s.newConnCh:
-			// We know its safe to close the old connection because
-			// the receiving loop is already using the connection it
-			// just gave us.
-			conn.Close()
-			conn = newConn
-			// For a given connection, both the send and receiving loop
-			// use the same value for connection ID.
-			connId++
-		default:
-		}
-		req, ok := s.queue.NextNotSent(connId)
+		req, ok := s.queue.NextNotSent(inter)
 		if !ok {
-			// If we get here, the receiver loop has already created
-			// a new connection, and the queue is already tracking it.
-			// Go to the beginning to get this new connection.
-			continue
-		}
-		err := conn.Send(req)
-		// On error we have to refresh the connection
-		if err != nil {
-			// Tell receiving loop to build a new connection
-			s.newConnReqCh <- true
-			// Block waiting for that new connection since the connection we
-			// have is no good.
+			// If we get here, the receiver loop has interrupted because
+			// it created a new connection. Get this connection.
 			newConn := <-s.newConnCh
 			conn.Close()
 			conn = newConn
-			connId++
+			s.queue.ResetNextNotSent()
+			continue
+		}
+		err := conn.Send(req, inter)
+		if err == kErrInterrupted {
+			// If we get here, receiver loop has created a new connection.
+			// Get this connection.
+			newConn := <-s.newConnCh
+			conn.Close()
+			conn = newConn
+			s.queue.ResetNextNotSent()
+			continue
+		}
+		// On error ask receiver to refresh connection. We will keep using
+		// the current connection to send stuff until the receiver
+		// interrupts us to get the new connection, but that is ok.
+		if err != nil {
+			toReceiver.Interrupt()
 		}
 	}
 }
@@ -76,29 +70,17 @@ func (s *Sender) sendLoop(conn *connType) {
 // This loop receives the responses from the requests.
 // Responses received are expected to come in the same order as requests are
 // sent.
-func (s *Sender) receiveLoop(conn *connType) {
-	connId := 0
+func (s *Sender) receiveLoop(conn *connType, inter, toSender *interruptType) {
 	for {
-		// First see if sending loop wants a new connection
-		select {
-		case <-s.newConnReqCh:
-			// Create the new connection. Note the old connection is still
-			// opened. The sending loop will close it when it gets this new
-			// connection.
-			conn = conn.Refresh(s.logger)
-			connId++
-			// Tell the queue about the new connection ID
-			s.queue.ResetNextNotSent(connId)
-			// Give sending loop this new connection
-			s.newConnCh <- conn
-		default:
-		}
-		ok, err := conn.Read()
+		ok, err := conn.Read(inter)
 		// Oops we have to refresh the connection
 		if !ok {
 			conn = conn.Refresh(s.logger)
-			connId++
-			s.queue.ResetNextNotSent(connId)
+			// interrupt sender so that it can grab new connection.
+			toSender.Interrupt()
+			// If sender waiting on queue we have to nudge the queue in
+			// addition to interrupting
+			s.queue.Nudge()
 			s.newConnCh <- conn
 			continue
 		}

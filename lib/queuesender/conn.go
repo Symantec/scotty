@@ -12,10 +12,16 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
+)
+
+const (
+	kNetworkTimeout = 15 * time.Second
 )
 
 var (
 	kErrNoConnection = errors.New("queuesender: No connection")
+	kErrInterrupted  = errors.New("queuesender: interrupted")
 )
 
 // connType represents a single connection.
@@ -95,7 +101,7 @@ func (c *connType) Refresh(logger *loggerType) *connType {
 	return _newConn(newConn, c.refresh)
 }
 
-func (c *connType) Send(req requestType) error {
+func (c *connType) Send(req requestType, inter *interruptType) error {
 	conn, _ := c._get()
 	if conn == nil {
 		return kErrNoConnection
@@ -109,29 +115,54 @@ func (c *connType) Send(req requestType) error {
 		return err
 	}
 	httpreq.Header.Set("Content-Type", "application/json")
-	return httpreq.Write(conn)
+	conn.SetWriteDeadline(time.Now().Add(kNetworkTimeout))
+	lastId := inter.Id()
+	for {
+		err := httpreq.Write(conn)
+		// If interrupt requested, return
+		if lastId != inter.Id() {
+			return kErrInterrupted
+		}
+		// If its a timeout error, retry
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			continue
+		}
+		return err
+	}
 }
 
-func (c *connType) Read() (bool, error) {
-	_, br := c._get()
+func (c *connType) Read(inter *interruptType) (bool, error) {
+	conn, br := c._get()
 	if br == nil {
 		return false, kErrNoConnection
 	}
-	resp, err := http.ReadResponse(br, nil)
-	if err != nil {
-		return false, err
+	conn.SetReadDeadline(time.Now().Add(kNetworkTimeout))
+	lastId := inter.Id()
+	for {
+		resp, err := http.ReadResponse(br, nil)
+		// If interrupt requested, return
+		if lastId != inter.Id() {
+			return false, kErrInterrupted
+		}
+		// If its a timeout error, retry
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			var buffer bytes.Buffer
+			io.Copy(&buffer, resp.Body)
+			// 408 is a special error meaning that the connection timed out
+			// because we didn't send any request. 408 errors don't go with
+			// any particular request. When we get one of these, assume the
+			// connection is bad.
+			return resp.StatusCode != 408, errors.New(resp.Status + ": " + buffer.String())
+		}
+		return true, nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		var buffer bytes.Buffer
-		io.Copy(&buffer, resp.Body)
-		// 408 is a special error meaning that the connection timed out
-		// because we didn't send any request. 408 errors don't go with
-		// any particular request. When we get one of these, assume the
-		// connection is bad.
-		return resp.StatusCode != 408, errors.New(resp.Status + ": " + buffer.String())
-	}
-	return true, nil
 }
 
 func encodeJSON(payload interface{}) (*bytes.Buffer, error) {

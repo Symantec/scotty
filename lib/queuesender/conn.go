@@ -12,16 +12,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
-)
-
-const (
-	kNetworkTimeout = 15 * time.Second
-)
-
-var (
-	kErrNoConnection = errors.New("queuesender: No connection")
-	kErrInterrupted  = errors.New("queuesender: interrupted")
 )
 
 type connManagerType struct {
@@ -31,6 +21,8 @@ type connManagerType struct {
 	connRefreshes uint64
 }
 
+// newConnManager returns a connection manager that creates connections to
+// urlStr.
 func newConnManager(urlStr string) (*connManagerType, error) {
 	scheme, endpoint, err := extractEndpoint(urlStr)
 	if err != nil {
@@ -48,6 +40,8 @@ func newConnManager(urlStr string) (*connManagerType, error) {
 	return &connManagerType{refresh: refresh}, nil
 }
 
+// Get returns the current connection. If the current connection is bad,
+// Get replaces it with a new connection.
 func (c *connManagerType) Get() (*connType, error) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -63,6 +57,8 @@ func (c *connManagerType) Get() (*connType, error) {
 	return c.active.get(), nil
 }
 
+// Refreshes returns the number of connection refreshes. That is, the
+// number of times Get() created a new connection to replace a bad connection.
 func (c *connManagerType) Refreshes() uint64 {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -82,6 +78,10 @@ func newConn(conn net.Conn) *connType {
 	return &connType{conn: conn, br: bufio.NewReader(conn)}
 }
 
+// Put marks this connection as unused by the caller. Each time the caller
+// calls Get() on the connection manager to get a connection, it must call
+// Put() on the returned connection when done with it. The caller must not
+// use a connection after calling Put on it.
 func (c *connType) Put() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -91,6 +91,8 @@ func (c *connType) Put() {
 	}
 }
 
+// MarkBad marks this connection as bad. Caller must call MarkBad before
+// calling Put.
 func (c *connType) MarkBad() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -110,6 +112,7 @@ func (c *connType) get() *connType {
 	return c
 }
 
+// Send sends given request on this connection.
 func (c *connType) Send(req requestType) error {
 	buffer, err := encodeJSON(req.Json)
 	if err != nil {
@@ -123,6 +126,10 @@ func (c *connType) Send(req requestType) error {
 	return httpreq.Write(c.conn)
 }
 
+// Read reads response from the connection returning true if the connection
+// is good or false if the connection is bad. If the connection is good,
+// err will be non-nil if response read is something other than a 2XX
+// response.
 func (c *connType) Read() (bool, error) {
 	resp, err := http.ReadResponse(c.br, nil)
 	if err != nil {

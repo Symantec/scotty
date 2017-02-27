@@ -33,6 +33,10 @@ func newConnManager(urlStr string) (*connManagerType, error) {
 		refresh = func() (net.Conn, error) {
 			return tls.Dial("tcp", endpoint, nil)
 		}
+	} else if scheme == "http" {
+		refresh = func() (net.Conn, error) {
+			return net.Dial("tcp", endpoint)
+		}
 	}
 	if refresh == nil {
 		return nil, errors.New("Unsupported scheme")

@@ -86,6 +86,9 @@ func (c *connType) Put() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.userCount--
+	if c.userCount < 0 {
+		panic("userCount cannot be negative")
+	}
 	if c.userCount < 1 && c.bad {
 		c.conn.Close()
 	}

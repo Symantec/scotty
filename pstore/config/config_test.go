@@ -5,9 +5,22 @@ import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
+	"reflect"
+	"regexp"
 	"testing"
 	"time"
 )
+
+func asRegexStrings(regexes []*regexp.Regexp) []string {
+	if len(regexes) == 0 {
+		return nil
+	}
+	result := make([]string, len(regexes))
+	for i := range regexes {
+		result[i] = regexes[i].String()
+	}
+	return result
+}
 
 func TestReadConfig(t *testing.T) {
 	configFile := `
@@ -25,6 +38,10 @@ func TestReadConfig(t *testing.T) {
     concurrency: 7
     batchSize: 730
     rollUpSpan: 2m15s
+    regexesOfMetricsToExclude:
+    - ab
+    - bc
+    - cd
 - influx:
     database: aDatabase
     hostAndPort: "http://10.0.1.1:8086"
@@ -51,7 +68,9 @@ func TestReadConfig(t *testing.T) {
 	assertValueEquals(t, "kafka pstore", consumers[0].Name())
 	var attributes pstore.ConsumerAttributes
 	consumers[0].Attributes(&attributes)
-	assertValueEquals(
+	metricsToExclude := attributes.MetricsToExclude
+	attributes.MetricsToExclude = nil
+	assertValueDeepEquals(
 		t,
 		pstore.ConsumerAttributes{
 			Concurrency:      7,
@@ -60,9 +79,13 @@ func TestReadConfig(t *testing.T) {
 			RollUpSpan:       135 * time.Second,
 		},
 		attributes)
+	assertValueDeepEquals(
+		t,
+		[]string{"ab", "bc", "cd"},
+		asRegexStrings(metricsToExclude))
 	assertValueEquals(t, "influx store", consumers[1].Name())
 	consumers[1].Attributes(&attributes)
-	assertValueEquals(
+	assertValueDeepEquals(
 		t,
 		pstore.ConsumerAttributes{
 			Concurrency: 1,
@@ -71,7 +94,7 @@ func TestReadConfig(t *testing.T) {
 		attributes)
 	assertValueEquals(t, "tsdb store", consumers[2].Name())
 	consumers[2].Attributes(&attributes)
-	assertValueEquals(
+	assertValueDeepEquals(
 		t,
 		pstore.ConsumerAttributes{
 			Concurrency: 1,
@@ -310,6 +333,14 @@ func assertValueEquals(
 	t *testing.T,
 	expected, actual interface{}) {
 	if expected != actual {
+		t.Errorf("Expected %v, got %v", expected, actual)
+	}
+}
+
+func assertValueDeepEquals(
+	t *testing.T,
+	expected, actual interface{}) {
+	if !reflect.DeepEqual(expected, actual) {
 		t.Errorf("Expected %v, got %v", expected, actual)
 	}
 }

@@ -737,13 +737,16 @@ func (c *pstoreContextType) UpdateFromConfigFile(
 			// If we get in here, the pstore runner we are crating existed
 			// before.
 
-			// If roll up span changed, we have to re-count how many
+			// If the new and old versions don't write the same values
+			// (maybe the roll up span changed), we have to re-count how many
 			// records we have left to write by positioning the collector
 			// iterator to the same place as the write iterator. We also
 			// have to zero out the left to write count.
 			// Eventually the collector iterator will re-count records
 			// left to write.
-			if attrs.RollUpSpan != v.RollUpSpan() {
+			var builderAttrs pstore.ConsumerAttributes
+			v.Attributes(&builderAttrs)
+			if !attrs.ConsumerAttributes.WritesSameAs(&builderAttrs) {
 				setIteratorTo(
 					astore,
 					endpointIds,

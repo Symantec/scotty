@@ -511,7 +511,7 @@ func (b *ConsumerWithMetricsBuilder) SetRollUpSpan(dur time.Duration) {
 }
 
 // SetRegexesOfMetricsToExclude sets what metric names to exclude.
-// SetREgexesOfMetricsToExclude returns an error if one of regexes is an
+// SetRegexesOfMetricsToExclude returns an error if one of regexes is an
 // invalid regular expression.
 func (b *ConsumerWithMetricsBuilder) SetRegexesOfMetricsToExclude(
 	regexes []string) error {

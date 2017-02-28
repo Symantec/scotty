@@ -154,6 +154,10 @@ func (c ConsumerConfig) newConsumerBuilder(wf WriterFactory) (
 	builder.SetRollUpSpan(c.RollUpSpan)
 	builder.SetName(c.Name)
 	builder.SetPaused(c.Paused)
+	if err = builder.SetRegexesOfMetricsToExclude(
+		c.RegexesOfMetricsToExclude); err != nil {
+		return
+	}
 	return builder, nil
 }
 

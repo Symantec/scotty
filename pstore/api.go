@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -365,9 +366,28 @@ type ConsumerAttributes struct {
 	// the same time period length. 0 means client should feed this
 	// consumer store.NamedIterator instances that report all metric
 	// values.
-	RollUpSpan          time.Duration
+	RollUpSpan time.Duration
+	// Compiled regex forms of metrics to exclude
+	MetricsToExclude    []*regexp.Regexp
 	BatchSizes          *tricorder.CumulativeDistribution
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
+}
+
+// WritesSameAs returns true if these consumer attributes would cause the
+// same values to be written as other.
+func (c *ConsumerAttributes) WritesSameAs(other *ConsumerAttributes) bool {
+	if c.RollUpSpan != other.RollUpSpan {
+		return false
+	}
+	if len(c.MetricsToExclude) != len(other.MetricsToExclude) {
+		return false
+	}
+	for i := range c.MetricsToExclude {
+		if c.MetricsToExclude[i].String() != other.MetricsToExclude[i].String() {
+			return false
+		}
+	}
+	return true
 }
 
 // TotalRecordsPerSecond returns RecordsPerSecond * Concurrency
@@ -490,9 +510,25 @@ func (b *ConsumerWithMetricsBuilder) SetRollUpSpan(dur time.Duration) {
 	b.c.attributes.RollUpSpan = dur
 }
 
-// RollUpSpan returns the length of time periods for rolled up values
-func (b *ConsumerWithMetricsBuilder) RollUpSpan() time.Duration {
-	return b.c.attributes.RollUpSpan
+// SetRegexesOfMetricsToExclude sets what metric names to exclude.
+// SetRegexesOfMetricsToExclude returns an error if one of regexes is an
+// invalid regular expression.
+func (b *ConsumerWithMetricsBuilder) SetRegexesOfMetricsToExclude(
+	regexes []string) error {
+	if len(regexes) == 0 {
+		b.c.attributes.MetricsToExclude = nil
+		return nil
+	}
+	metricsToExclude := make([]*regexp.Regexp, len(regexes))
+	for i := range regexes {
+		var err error
+		metricsToExclude[i], err = regexp.Compile(regexes[i])
+		if err != nil {
+			return err
+		}
+	}
+	b.c.attributes.MetricsToExclude = metricsToExclude
+	return nil
 }
 
 func (b *ConsumerWithMetricsBuilder) Name() string {
@@ -517,6 +553,11 @@ func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
 func (b *ConsumerWithMetricsBuilder) SetBatchSizeDist(
 	d *tricorder.CumulativeDistribution) {
 	b.c.attributes.BatchSizes = d
+}
+
+// Attributes gets the attributes in this builder object
+func (b *ConsumerWithMetricsBuilder) Attributes(attrs *ConsumerAttributes) {
+	*attrs = b.c.attributes
 }
 
 // Pause causes the built consumer's writer to be paused.

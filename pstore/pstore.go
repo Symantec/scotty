@@ -3,6 +3,7 @@ package pstore
 import (
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
+	"regexp"
 	"time"
 )
 
@@ -379,6 +380,22 @@ func newConsumerWithMetricsBuilder(
 	return &ConsumerWithMetricsBuilder{c: ptr}
 }
 
+func excludeMetrics(
+	filter store.Filterer, metricsToExclude []*regexp.Regexp) store.Filterer {
+	return store.FiltererFunc(func(r *store.Record) bool {
+		if !filter.Filter(r) {
+			return false
+		}
+		path := r.Info.Path()
+		for _, re := range metricsToExclude {
+			if re.MatchString(path) {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	result := b.c
 	// fixup writer
@@ -394,6 +411,8 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 			wrapped: writer,
 			hooks:   b.hooks}
 	}
+	result.metricsStore.filterer = excludeMetrics(
+		result.metricsStore.filterer, result.attributes.MetricsToExclude)
 	result.metricsStore.w.W = writer
 
 	// fix up writer with metrics

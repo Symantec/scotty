@@ -54,7 +54,8 @@ type ConsumerConfig struct {
 	// If empty, debug goes to stdout.
 	DebugFilePath string `yaml:"debugFilePath"`
 	// If true, this consumer is paused
-	Paused bool `yaml:"paused"`
+	Paused                    bool     `yaml:"paused"`
+	RegexesOfMetricsToExclude []string `yaml:"regexesOfMetricsToExclude"`
 }
 
 func (c *ConsumerConfig) UnmarshalYAML(

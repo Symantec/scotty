@@ -2,6 +2,8 @@
 package cis
 
 import (
+	"github.com/Symantec/scotty/lib/queuesender"
+	"github.com/Symantec/scotty/lib/synchttp"
 	"github.com/Symantec/scotty/metrics"
 	"time"
 )
@@ -51,16 +53,39 @@ func GetStats(list metrics.List, optInstanceId string) *Stats {
 type Config struct {
 	// CIS endpoint. Example. "http://a.cis.endpoint.net:8080"
 	Endpoint string
+	// Name for writing tricorder metrics
+	Name string
 }
 
 // Client represents a client connection to CIS
 type Client struct {
 	endpoint string
+	sync     synchttp.JSONWriter
+	async    *queuesender.Sender
 }
 
 // NewClient returns a new CIS client instance.
 func NewClient(config *Config) (*Client, error) {
-	return &Client{endpoint: config.Endpoint}, nil
+	if config.Name != "" {
+		sender, err := queuesender.New(config.Endpoint, 2000, "", nil)
+		if err != nil {
+			return nil, err
+		}
+		sender.Register(config.Name)
+		return &Client{
+			endpoint: config.Endpoint,
+			async:    sender,
+		}, nil
+	} else {
+		writer, err := synchttp.NewSyncJSONWriter()
+		if err != nil {
+			return nil, err
+		}
+		return &Client{
+			endpoint: config.Endpoint,
+			sync:     writer,
+		}, nil
+	}
 }
 
 // Write writes data to CIS

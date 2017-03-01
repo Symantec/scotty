@@ -1,11 +1,7 @@
 package cis
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 )
 
@@ -40,25 +36,11 @@ func (c *Client) write(stats *Stats) error {
 		jsonToEncode.Packages[replacer.Replace(entry.Name)] = versionSizeType{
 			Version: entry.Version, Size: entry.Size}
 	}
-
-	buffer := &bytes.Buffer{}
-	encoder := json.NewEncoder(buffer)
-	if err := encoder.Encode(jsonToEncode); err != nil {
-		return err
-	}
-	// TODO: Maybe get rid of all the diagnostics in the error messages
-	bufferStr := buffer.String()
 	url := fmt.Sprintf("%s/%s/%s", c.endpoint, kCisPath, stats.InstanceId)
-	resp, err := http.Post(url, "application/json", buffer)
-	if err != nil {
-		return errors.New(err.Error() + ": " + url + ": " + bufferStr)
-		//		return err
+	if c.sync != nil {
+		return c.sync.Write(url, jsonToEncode)
+	} else {
+		c.async.Send(url, jsonToEncode)
+		return nil
 	}
-	defer resp.Body.Close()
-	// Do this way in case we get 201
-	if resp.StatusCode/100 != 2 {
-		return errors.New(resp.Status + ": " + url + ": " + bufferStr)
-		// return errors.New(resp.Status)
-	}
-	return nil
 }

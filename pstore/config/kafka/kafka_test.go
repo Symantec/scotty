@@ -146,6 +146,34 @@ func TestSerializeDuration(t *testing.T) {
 		-60120)
 }
 
+func TestSerializeLeaveSlashes(t *testing.T) {
+	bytes, err := LMMSerialiseAsBytes(
+		&pstore.Record{
+			Kind:      types.Bool,
+			Timestamp: time.Date(2014, 5, 14, 9, 53, 20, 125000000, time.UTC),
+			Value:     true,
+			Path:      "/my/path/bool",
+			HostName:  "ash1",
+			Tags:      pstore.TagGroup{pstore.TagAppName: "Heal"}},
+		"myTenant",
+		"myKey",
+		false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifySerialization(
+		t,
+		bytes,
+		"1",
+		"myTenant",
+		"myKey",
+		"2014-05-14T09:53:20.125Z",
+		1,
+		"/my/path/bool",
+		"ash1",
+		"Heal")
+}
+
 func quickVerify(
 	t *testing.T,
 	kind types.Type,

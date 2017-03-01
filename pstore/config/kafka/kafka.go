@@ -12,6 +12,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/optiopay/kafka"
 	"github.com/optiopay/kafka/proto"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -290,16 +291,38 @@ type recordSerializerType struct {
 }
 
 func (s *recordSerializerType) Serialize(r *pstore.Record) ([]byte, error) {
+	return LMMSerialiseAsBytes(r, s.TenantId, s.ApiKey, true)
+}
+
+func lmmJSONPayload(
+	r *pstore.Record,
+	tenantId,
+	apiKey string,
+	slashesToUnderscores bool) interface{} {
 	record := map[string]interface{}{
 		kVersion:   kVersionNum,
-		kTenantId:  s.TenantId,
-		kApiKey:    s.ApiKey,
+		kTenantId:  tenantId,
+		kApiKey:    apiKey,
 		kTimestamp: r.Timestamp.Format(kTimeFormat),
-		kName:      strings.Replace(r.Path, "/", "_", -1),
+		kName:      r.Path,
 		kHost:      r.HostName,
 		kValue:     ToFloat64(r)}
+	if slashesToUnderscores {
+		record[kName] = strings.Replace(r.Path, "/", "_", -1)
+	}
 	for k, v := range r.Tags {
 		record[k] = v
 	}
-	return json.Marshal(record)
+	return record
+}
+
+func lmmSerialise(
+	r *pstore.Record,
+	tenantId,
+	apiKey string,
+	slashesToUnderscores bool,
+	w io.Writer) error {
+	encoder := json.NewEncoder(w)
+	return encoder.Encode(
+		lmmJSONPayload(r, tenantId, apiKey, slashesToUnderscores))
 }

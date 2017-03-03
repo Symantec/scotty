@@ -53,19 +53,23 @@ func GetStats(list metrics.List, optInstanceId string) *Stats {
 type Config struct {
 	// CIS endpoint. Example. "http://a.cis.endpoint.net:8080"
 	Endpoint string
-	// Name for writing tricorder metrics
+	// Required: data center e.g us-east-1.
+	DataCenter string
+	// Optional: Name for writing tricorder metrics for async http.
+	// If ommitted, writing is synchronous.
 	Name string
 }
 
 // Client represents a client connection to CIS
 type Client struct {
-	endpoint string
-	sync     synchttp.JSONWriter
-	async    *queuesender.Sender
+	endpoint   string
+	dataCenter string
+	sync       synchttp.JSONWriter
+	async      *queuesender.Sender
 }
 
 // NewClient returns a new CIS client instance.
-func NewClient(config *Config) (*Client, error) {
+func NewClient(config Config) (*Client, error) {
 	if config.Name != "" {
 		sender, err := queuesender.New(config.Endpoint, 2000, "", nil)
 		if err != nil {
@@ -73,8 +77,9 @@ func NewClient(config *Config) (*Client, error) {
 		}
 		sender.Register(config.Name)
 		return &Client{
-			endpoint: config.Endpoint,
-			async:    sender,
+			endpoint:   config.Endpoint,
+			dataCenter: config.DataCenter,
+			async:      sender,
 		}, nil
 	} else {
 		writer, err := synchttp.NewSyncJSONWriter()
@@ -82,8 +87,9 @@ func NewClient(config *Config) (*Client, error) {
 			return nil, err
 		}
 		return &Client{
-			endpoint: config.Endpoint,
-			sync:     writer,
+			endpoint:   config.Endpoint,
+			dataCenter: config.DataCenter,
+			sync:       writer,
 		}, nil
 	}
 }

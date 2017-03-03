@@ -36,9 +36,13 @@ func (c *Client) write(stats *Stats) error {
 		jsonToEncode.Packages[replacer.Replace(entry.Name)] = versionSizeType{
 			Version: entry.Version, Size: entry.Size}
 	}
-	url := fmt.Sprintf("%s/%s/%s", c.endpoint, kCisPath, stats.InstanceId)
+	url := fmt.Sprintf("%s/%s/%s/%s", c.endpoint, kCisPath, c.dataCenter, stats.InstanceId)
 	if c.sync != nil {
-		return c.sync.Write(url, jsonToEncode)
+		err := c.sync.Write(url, jsonToEncode)
+		if err != nil {
+			return fmt.Errorf("%s: %v", url, err)
+		}
+		return nil
 	} else {
 		c.async.Send(url, jsonToEncode)
 		return nil

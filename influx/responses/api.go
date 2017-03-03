@@ -16,7 +16,7 @@ import (
 // in increasing order even if the responses merged had times in
 // decreasing order.
 //
-// If the returned responses containing multiple series, they will be sorted
+// If the returned responses contain multiple series, they will be sorted
 // first by name and then by the tags. When sorting tags, Merge
 // first places the tag keys of the time series to be sorted in ascending
 // order. To compare two sets of tags, Merge first compares the
@@ -24,6 +24,11 @@ import (
 // those first keys to break the tie. If those match, Merge uses
 // the second pair of tag keys to break the tie. If those match,
 // Merge uses the values of the second keys to brak the tie etc.
+//
+// If multiple responses contain different values for the same timestamp
+// within the same series, then the value from the response listed last
+// shows up in returned response while the other values for that same timestamp
+// within that same series do not show up in returned response.
 //
 // Merge includes all messages from the responses being merged in
 // the merged response.

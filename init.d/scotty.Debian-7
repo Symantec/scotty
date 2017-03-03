@@ -85,6 +85,10 @@ if [ -n "$CIS_ENDPOINT" ]; then
     PROG_ARGS="$PROG_ARGS -cisEndpoint=$CIS_ENDPOINT"
 fi
 
+if [ -n "$DATACENTER" ]; then
+    PROG_ARGS="$PROG_ARGS -dataCenter=$DATACENTER"
+fi
+
 if [ -n "$CONSUL_NAMESPACE" ]; then
 	PROG_ARGS="$PROG_ARGS -coordinator=$CONSUL_NAMESPACE"
 fi

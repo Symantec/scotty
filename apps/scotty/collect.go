@@ -39,6 +39,10 @@ var (
 		"cisRegex",
 		"",
 		"If provided, host must match regex for scotty to send its data to CIS")
+	fDataCenter = flag.String(
+		"dataCenter",
+		"",
+		"Required for CIS writing: The data center name")
 )
 
 type byHostName messages.ErrorList
@@ -278,15 +282,21 @@ func startCollector(
 	var cisRegex *regexp.Regexp
 	var cisQueue *keyedqueue.Queue
 
-	if *fCisEndpoint != "" {
+	if *fCisEndpoint != "" && *fDataCenter != "" {
 		var err error
 		// TODO: move to config file when ready
 		if strings.HasPrefix(*fCisEndpoint, "debug:") {
 			cisClient, err = cis.NewClient(
-				&cis.Config{Endpoint: (*fCisEndpoint)[6:]})
+				cis.Config{
+					Endpoint:   (*fCisEndpoint)[6:],
+					DataCenter: *fDataCenter,
+				})
 		} else {
-			cisClient, err = cis.NewClient(&cis.Config{
-				Endpoint: *fCisEndpoint, Name: "cis"})
+			cisClient, err = cis.NewClient(cis.Config{
+				Endpoint:   *fCisEndpoint,
+				Name:       "cis",
+				DataCenter: *fDataCenter,
+			})
 		}
 		if err != nil {
 			log.Fatal(err)

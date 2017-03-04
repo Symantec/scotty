@@ -275,26 +275,45 @@ func performInfluxQuery(
 	queryStr string,
 	epoch string,
 	endpoints *datastructs.ApplicationStatuses,
-	freq time.Duration) (*client.Response, error) {
+	freq time.Duration) (interface{}, error) {
 	// Special case for show databases. Influx client issues this
 	// when user types "use scotty"
-	if strings.ToLower(queryStr) == "show databases" {
-		return &client.Response{
-			Results: []client.Result{
-				{
-					Series: []models.Row{
-						{
-							Name:    "databases",
-							Columns: []string{"name"},
-							Values: [][]interface{}{
-								{"_internal"},
-								{"scotty"},
+	switch strings.ToLower(queryStr) {
+	case "show databases":
+		return responses.Serialise(
+			&client.Response{
+				Results: []client.Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "databases",
+								Columns: []string{"name"},
+								Values: [][]interface{}{
+									{"_internal"},
+									{"scotty"},
+								},
 							},
 						},
 					},
 				},
-			},
-		}, nil
+			})
+	case "show measurements limit 1":
+		return responses.Serialise(
+			&client.Response{
+				Results: []client.Result{
+					{
+						Series: []models.Row{
+							{
+								Name:    "measurements",
+								Columns: []string{"name"},
+								Values: [][]interface{}{
+									{"aname"},
+								},
+							},
+						},
+					},
+				},
+			})
 	}
 
 	now := time.Now()
@@ -315,8 +334,9 @@ func performInfluxQuery(
 		epochConversion = kInfluxEpochConversions["ns"]
 	}
 
-	return responses.FromTaggedTimeSeriesSets(
-		seriesSets, colNamesForEachStatement, pqs, epochConversion), nil
+	return responses.Serialise(
+		responses.FromTaggedTimeSeriesSets(
+			seriesSets, colNamesForEachStatement, pqs, epochConversion))
 }
 
 func setHeader(w http.ResponseWriter, r *http.Request, key, value string) {

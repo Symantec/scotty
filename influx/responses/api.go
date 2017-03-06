@@ -4,6 +4,7 @@ import (
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/influxdata/influxdb/client/v2"
+	"github.com/influxdata/influxdb/models"
 )
 
 // Merge merges responses from multiple servers into a single
@@ -70,4 +71,35 @@ func FromTaggedTimeSeriesSets(
 		panic("Slices must be of equal length")
 	}
 	return fromTaggedTimeSeriesSets(series, colNames, pqs, epochConversion)
+}
+
+// Serialise converts an influx response into a structure ready for json
+// encoding. If resp contains an error within it, Serialise() returns nil
+// with that error.
+func Serialise(resp *client.Response) (interface{}, error) {
+	type seriesListType struct {
+		Series []models.Row `json:"series"`
+	}
+
+	type resultListType struct {
+		Results []seriesListType `json:"results"`
+	}
+
+	if resp.Error() != nil {
+		return nil, resp.Error()
+	}
+
+	results := &resultListType{
+		Results: make([]seriesListType, len(resp.Results)),
+	}
+	for i := range results.Results {
+		theSeries := resp.Results[i].Series
+		if theSeries == nil {
+			theSeries = []models.Row{}
+		}
+		results.Results[i] = seriesListType{
+			Series: theSeries,
+		}
+	}
+	return results, nil
 }

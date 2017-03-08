@@ -1,0 +1,3 @@
+- port: 6910
+  name: Health Metrics
+  protocol: tricorder

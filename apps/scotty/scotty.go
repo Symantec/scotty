@@ -168,7 +168,13 @@ func createApplicationStats(
 	}
 	stats := datastructs.NewApplicationStatuses(appList, astore)
 	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
-	machines := <-mdbChannel
+	var machines *mdb.Mdb
+	select {
+	case machines = <-mdbChannel:
+	case <-time.After(30 * time.Second):
+		machines = &mdb.Mdb{}
+		logger.Println("No mdb available.")
+	}
 	for _, aName := range hostNames(machines.Machines) {
 		tagvAdder.Add(aName)
 	}

@@ -14,6 +14,6 @@ cd $GOPATH/src/github.com/Symantec/scotty
 tar --owner=0 --group=0 -czf $target \
 		init.d/scotty.* \
 		"$@" \
-		-C $PWD/apps/scotty apps.yaml install.sh \
+		-C $PWD/apps/scotty apps.yaml health-check.yml install.sh \
 		-C $GOPATH bin/scotty
 

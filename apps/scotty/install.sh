@@ -79,8 +79,8 @@ install_all ()
 
     $echo mkdir -p /usr/local/sbin || exit
     $echo cp -p bin/* /usr/local/sbin || exit
-    $echo mkdir -p /etc/scotty
-    $echo cp -p apps.yaml "/etc/scotty" || exit
+    $echo mkdir -p /etc/health-agent/tests.d
+    $echo cp -p health-check.yml "/etc/health-agent/tests.d/$service.yml" || exit
     install_service $service || exit
 }
 

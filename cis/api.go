@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/scotty/lib/queuesender"
 	"github.com/Symantec/scotty/lib/synchttp"
 	"github.com/Symantec/scotty/metrics"
+	"sync"
 	"time"
 )
 
@@ -43,10 +44,10 @@ func (s *Stats) Key() interface{} {
 
 // GetStats extracts the CIS data from the metrics pulled for a machine
 // GetStats uses the optInstanceId if supplied. Otherwise, it tries to
-// extract instanceId from the health agent.
+// extract instanceId from the health agent. GetStats returns nil if it
+// cannot find any CIS data.
 func GetStats(list metrics.List, optInstanceId string) *Stats {
 	return getStats(list, optInstanceId)
-
 }
 
 // Config represents the configuration for connecting to CIS
@@ -60,7 +61,8 @@ type Config struct {
 	Name string
 }
 
-// Client represents a client connection to CIS
+// Client represents a client connection to CIS. Client instances are safe
+// to use with multiple goroutines.
 type Client struct {
 	endpoint   string
 	dataCenter string
@@ -97,4 +99,46 @@ func NewClient(config Config) (*Client, error) {
 // Write writes data to CIS
 func (c *Client) Write(stats *Stats) error {
 	return c.write(stats)
+}
+
+// WriteAll batch writes data to CIS.
+func (c *Client) WriteAll(stats []Stats) error {
+	return c.writeAll(stats)
+}
+
+// BulkWriter is the interface for batch writing data to CIS.
+type BulkWriter interface {
+	WriteAll(stats []Stats) error
+}
+
+// Buffered buffers CIS data for bulk writing.
+type Buffered struct {
+	mu        sync.Mutex
+	statsList []Stats
+	writer    BulkWriter
+}
+
+// NewBuffered creates a new Buffered instance.
+// size is the size of the buffer; writer is the instrument that writes
+// the data to CIS. Buffered instances are safe to use with multiple
+// goroutines.
+func NewBuffered(size int, writer BulkWriter) *Buffered {
+	return &Buffered{
+		statsList: make([]Stats, 0, size),
+		writer:    writer,
+	}
+}
+
+// Write buffers data. When size pieces of data are buffered, Write bulk
+// clears the buffer, and reports number of pieces written and any error.
+// When simply adding to the buffer instead of bulk writing, Write always
+// returns 0, nil.
+func (b *Buffered) Write(stats Stats) (int, error) {
+	return b.write(stats)
+}
+
+// Flush writes out the contents of the buffer, clears the buffer, and
+// returns number of pieces written and any error.
+func (b *Buffered) Flush() (int, error) {
+	return b.flush()
 }

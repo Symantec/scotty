@@ -11,3 +11,11 @@ import (
 func NewUrl(path string, nameValues ...string) *url.URL {
 	return newUrl(path, nameValues)
 }
+
+// AppendParams returns a URL with new parameters appended. No existing
+// parameter is replaced. u is the original URL; nameValues is
+// parameter name, parameter value, parameter name, parameter
+// value, etc. nameValues must have even length.
+func AppendParams(u *url.URL, nameValues ...string) *url.URL {
+	return appendParams(u, nameValues)
+}

@@ -43,6 +43,37 @@ func find(list List, path string) int {
 	})
 }
 
+func get(list List, path string) (interface{}, bool) {
+	index := Find(list, path)
+	if index == list.Len() {
+		return nil, false
+	}
+	var value Value
+	list.Index(index, &value)
+	if value.Path != path {
+		return nil, false
+	}
+	return value.Value, true
+}
+
+func getFloat64(list List, path string) (float64, bool) {
+	val, ok := get(list, path)
+	if !ok {
+		return 0.0, false
+	}
+	v, k := val.(float64)
+	return v, k
+}
+
+func getUint64(list List, path string) (uint64, bool) {
+	val, ok := get(list, path)
+	if !ok {
+		return 0, false
+	}
+	v, k := val.(uint64)
+	return v, k
+}
+
 func verifyList(list List) error {
 	length := list.Len()
 	pathSet := make(map[string]bool, length)

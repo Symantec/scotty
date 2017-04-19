@@ -1,6 +1,7 @@
 package cloudhealth
 
 import (
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"time"
 )
 
@@ -88,10 +89,19 @@ type FsData struct {
 
 // Config configures the writer
 type Config struct {
-	ApiKey        string
-	DataCenter    string // e.g us-east-1
-	AccountNumber string // 8 digit AWS account number
-	DryRun        bool   // If true, runs in dry run mode
+	ApiKey        string `yaml:"apiKey"`
+	DataCenter    string `yaml:"dataCenter"` // e.g us-east-1
+	AccountNumber string `yaml:"accountNumber"`
+	DryRun        bool   `yaml:"dryRun"` // If true, runs in dry run mode
+}
+
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type configFields Config
+	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
+}
+
+func (c *Config) Reset() {
+	*c = Config{}
 }
 
 type Writer struct {

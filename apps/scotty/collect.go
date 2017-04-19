@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/keyedqueue"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
@@ -219,8 +220,11 @@ type memoryCheckerType interface {
 }
 
 func createCloudHealthWriter(path string) *cloudhealth.Writer {
-	// TODO
-	return nil
+	var config cloudhealth.Config
+	if err := yamlutil.ReadFromFile(path, &config); err != nil {
+		log.Fatal(err)
+	}
+	return cloudhealth.NewWriter(config)
 }
 
 func startCollector(

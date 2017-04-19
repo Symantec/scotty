@@ -1,9 +1,14 @@
 package chpipeline
 
 import (
+	"flag"
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/metrics"
 	"time"
+)
+
+var (
+	fChRollup = flag.Duration("chRollup", time.Hour, "cloudhealth rollup span for testing only")
 )
 
 func getStats(list metrics.List) InstanceStats {
@@ -117,5 +122,5 @@ func (r *RollUpStats) clear() CloudHealthCall {
 }
 
 func roundToHour(t time.Time) time.Time {
-	return t.UTC().Round(time.Hour)
+	return t.UTC().Round(*fChRollup)
 }

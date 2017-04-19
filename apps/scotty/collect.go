@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
@@ -25,6 +26,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+)
+
+var (
+	kTestInstances = map[string]bool{
+		"i-0a03b9dcf34e861e7": true, // 100.122.1.251
+		"i-004255ea9cf5f15d9": true, // 100.122.1.30
+		"i-03f4ecba13573f961": true, // 100.122.1.36
+	}
 )
 
 var (
@@ -453,12 +462,24 @@ func startCloudFireLoop(
 	}
 
 	go func() {
+		loopCount := 0
 		for {
+			loopCount++
 			call := <-cloudHealthChannel
 			writeStartTime := time.Now()
-			if _, err := cloudHealthWriter.Write(call.Instances, call.Fss); err != nil {
-				lastWriteError = err.Error()
-			} else {
+			/*
+				if _, err := cloudHealthWriter.Write(call.Instances, call.Fss); err != nil {
+					lastWriteError = err.Error()
+				} else {
+					successfulWrites++
+				}
+			*/
+			// if kTestInstances[call.Instances[0].InstanceId] {
+			if loopCount%10 == 0 {
+				fmt.Println("Instance: ", call.Instances)
+				if len(call.Fss) > 0 {
+					fmt.Println("Fss: ", call.Fss)
+				}
 				successfulWrites++
 			}
 			totalWrites++

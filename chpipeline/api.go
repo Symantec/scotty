@@ -19,8 +19,11 @@ func (f *FsStats) Used() uint64 {
 	return f.Size - f.Free
 }
 
-func (f *FsStats) UsedPercent() float64 {
-	return float64(f.Used()) / float64(f.Size) * 100.0
+func (f *FsStats) UsedPercent() (float64, bool) {
+	if f.Size == 0 {
+		return 0.0, false
+	}
+	return float64(f.Used()) / float64(f.Size) * 100.0, true
 }
 
 type InstanceStats struct {
@@ -32,8 +35,14 @@ type InstanceStats struct {
 }
 
 func (s *InstanceStats) CPUUsedPercent() float64 {
-	// TODO: Make safe: Must return between 0 and 100.0
-	return s.UserTimeFraction * 100.0
+	result := s.UserTimeFraction * 100.0
+	if result < 0.0 {
+		return 0.0
+	}
+	if result > 100.0 {
+		return 100.0
+	}
+	return result
 }
 
 func (s *InstanceStats) MemoryUsedPercent() (float64, bool) {
@@ -48,7 +57,7 @@ func (s *InstanceStats) MemoryUsedPercent() (float64, bool) {
 }
 
 func GetStats(list metrics.List) InstanceStats {
-	return InstanceStats{}
+	return getStats(list)
 }
 
 type CloudHealthCall struct {
@@ -64,22 +73,28 @@ type RollUpStats struct {
 	memoryFreeBytes   cloudhealth.IVariable
 	memorySizeBytes   cloudhealth.IVariable
 	memoryUsedPercent cloudhealth.FVariable
-	// fsSizeBytes, fsUsedBytes, fsUsedPercent
-	// fss map[string]*rollUpFsStatsType
+	fss               map[string]*rollUpFsStatsType
 }
 
 func NewRollUpStats(
 	instanceId string) *RollUpStats {
-	return nil
+	return &RollUpStats{
+		instanceId: instanceId,
+		fss:        make(map[string]*rollUpFsStatsType)}
 }
 
 func (r *RollUpStats) TimeOk(t time.Time) bool {
-	return true
+	return r.timeOk(t)
 }
 
 func (r *RollUpStats) Add(s InstanceStats) {
+	r.add(s)
 }
 
 func (r *RollUpStats) Clear() CloudHealthCall {
-	return CloudHealthCall{}
+	return r.clear()
+}
+
+func (r *RollUpStats) IsEmpty() bool {
+	return !r.notEmpty
 }

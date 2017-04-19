@@ -23,6 +23,10 @@ func (v *FVariable) Add(x float64) {
 	v.add(x)
 }
 
+func (v *FVariable) Clear() {
+	*v = FVariable{}
+}
+
 // Avg returns the average of this variable
 func (v FVariable) Avg() float64 {
 	return v.Sum / float64(v.Count)
@@ -45,6 +49,10 @@ func (v IVariable) IsEmpty() bool {
 // Add adds x to this variable
 func (v *IVariable) Add(x uint64) {
 	v.add(x)
+}
+
+func (v *IVariable) Clear() {
+	*v = IVariable{}
 }
 
 // Avg returns the average of this variable

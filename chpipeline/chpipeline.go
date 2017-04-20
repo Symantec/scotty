@@ -21,12 +21,13 @@ func getStats(list metrics.List) InstanceStats {
 	result.MemoryFree, _ = metrics.GetUint64(list, "/sys/memory/free")
 	result.MemoryTotal, _ = metrics.GetUint64(list, "/sys/memory/total")
 
-	// TODO: This just gets the root file system. We need to report
-	// all filesystems.
-	size, _ := metrics.GetUint64(list, "/sys/fs/METRICS/size")
-	free, _ := metrics.GetUint64(list, "/sys/fs/METRICS/free")
-	if size > 0 {
-		result.Fss = []FsStats{{MountPoint: "/", Size: size, Free: free}}
+	fileSystems := metrics.FileSystems(list)
+	for _, fileSystem := range fileSystems {
+		size, _ := metrics.GetUint64(list, "/sys/fs/METRICS/size")
+		free, _ := metrics.GetUint64(list, "/sys/fs/METRICS/free")
+		result.Fss = append(
+			result.Fss,
+			FsStats{MountPoint: fileSystem, Size: size, Free: free})
 	}
 	return result
 }

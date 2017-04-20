@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"github.com/Symantec/scotty/metrics"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -201,28 +202,16 @@ func TestDiffTimeStampDiffGroupOk(t *testing.T) {
 func TestFind(t *testing.T) {
 	list := metrics.SimpleList{
 		{
-			Path:      "bar",
-			Value:     int64(0),
-			TimeStamp: kNow,
-			GroupId:   0,
+			Path: "bar",
 		},
 		{
-			Path:      "baz",
-			Value:     int64(0),
-			TimeStamp: kNow,
-			GroupId:   0,
+			Path: "baz",
 		},
 		{
-			Path:      "foo",
-			Value:     int64(0),
-			TimeStamp: kNow,
-			GroupId:   0,
+			Path: "foo",
 		},
 		{
-			Path:      "yyyy",
-			Value:     int64(0),
-			TimeStamp: kNow,
-			GroupId:   0,
+			Path: "yyyy",
 		},
 	}
 	if out := metrics.Find(list, "a"); out != 0 {
@@ -233,5 +222,60 @@ func TestFind(t *testing.T) {
 	}
 	if out := metrics.Find(list, "zzz"); out != 4 {
 		t.Errorf("Expected 4, got %d", out)
+	}
+}
+
+func TestChildren(t *testing.T) {
+	list := metrics.SimpleList{
+		{
+			Path: "/proc/fs/x/METRICS/free",
+		},
+		{
+			Path: "/sys/fs/METRICS/free",
+		},
+		{
+			Path: "/sys/fs/METRICS/size",
+		},
+		{
+			Path: "/sys/fs/a",
+		},
+		{
+			Path: "/sys/fs/boot/METRICS/free",
+		},
+		{
+			Path: "/sys/fs/boot/a/METRICS/b",
+		},
+		{
+			Path: "/sys/fs/boot/a/METRICS/free",
+		},
+		{
+			Path: "/sys/fs/boot/a/METRICS/size",
+		},
+		{
+			Path: "/sys/fs/boot/b/METRICS/size",
+		},
+		{
+			Path: "/sys/fs/boot/a/y",
+		},
+		{
+			Path: "/sys/fs/main/METRICS/free",
+		},
+		{
+			Path: "/sys/fs/main/METRICS/size/x",
+		},
+		{
+			Path: "/sys/net/blow/METRICS/size",
+		},
+	}
+	actual := metrics.FileSystems(list)
+	expected := []string{
+		"/",
+		"/boot",
+		"/boot/a",
+		"/boot/b",
+		"/main",
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v; got %v", expected, actual)
 	}
 }

@@ -52,6 +52,13 @@ func Find(list List, path string) int {
 	return find(list, path)
 }
 
+// FileSystems returns all the distinct file systems mount points in the list.
+// A metric for file system with mount point "/some/filesystem" would look
+// like "/sys/fs/some/filesystem/METRICS/some/metric"
+func FileSystems(list List) []string {
+	return fileSystems(list)
+}
+
 // GetFloat64 gets the float64 value at path.
 // GetFloat64 returns false if path doesn't exist or if value is not float64.
 func GetFloat64(list List, path string) (float64, bool) {
@@ -81,7 +88,7 @@ func (s SimpleList) Index(i int, value *Value) {
 }
 
 func (s SimpleList) Less(i, j int) bool {
-	return comparePaths(s[i].Path, s[j].Path) < 0
+	return comparePaths(newPath(s[i].Path), newPath(s[j].Path)) < 0
 }
 
 func (s SimpleList) Swap(i, j int) {

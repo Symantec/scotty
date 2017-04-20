@@ -13,16 +13,52 @@ var (
 	errGroupId = errors.New("metrics: Conflicting Timestamps for group Id.")
 )
 
-func comparePaths(first, second string) int {
-	firstSplits := strings.Split(first, "/")
-	secondSplits := strings.Split(second, "/")
-	flen := len(firstSplits)
-	slen := len(secondSplits)
+var (
+	kSysFs = pathType{"sys", "fs"}
+)
+
+type pathType []string
+
+func newPath(s string) pathType {
+	if strings.HasPrefix(s, "/") {
+		s = s[1:]
+	}
+	return strings.Split(s, "/")
+}
+
+func (p pathType) Truncate(x int) pathType {
+	if len(p) <= x {
+		return p
+	}
+	return p[:x]
+}
+
+func (p pathType) Find(start int, s string) int {
+	l := len(p)
+	for i := start; i < l; i++ {
+		if p[i] == s {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p pathType) Sub(start, end int) pathType {
+	return p[start:end]
+}
+
+func (p pathType) String() string {
+	return "/" + strings.Join(p, "/")
+}
+
+func comparePaths(first, second pathType) int {
+	flen := len(first)
+	slen := len(second)
 	for i := 0; i < flen && i < slen; i++ {
-		if firstSplits[i] < secondSplits[i] {
+		if first[i] < second[i] {
 			return -1
 		}
-		if firstSplits[i] > secondSplits[i] {
+		if first[i] > second[i] {
 			return 1
 		}
 	}
@@ -35,12 +71,49 @@ func comparePaths(first, second string) int {
 	return 0
 }
 
-func find(list List, path string) int {
+func getPathTypeByIndex(list List, index int) pathType {
+	var value Value
+	list.Index(index, &value)
+	return newPath(value.Path)
+}
+
+func fileSystems(list List) (result []string) {
+	sysFsLen := len(kSysFs)
+	beginning := _find(list, kSysFs)
+	ending := _findNext(list, kSysFs)
+	for beginning < ending {
+		current := getPathTypeByIndex(list, beginning)
+		metricsPos := current.Find(sysFsLen, "METRICS")
+		if metricsPos == -1 {
+			beginning++
+			continue
+		}
+		result = append(result, current.Sub(sysFsLen, metricsPos).String())
+		beginning = _findNext(list, current.Truncate(metricsPos+1))
+	}
+	return
+}
+
+func _find(list List, target pathType) int {
+	targetLen := len(target)
 	return sort.Search(list.Len(), func(index int) bool {
 		var value Value
 		list.Index(index, &value)
-		return comparePaths(value.Path, path) >= 0
+		return comparePaths(newPath(value.Path).Truncate(targetLen), target) >= 0
 	})
+}
+
+func _findNext(list List, target pathType) int {
+	targetLen := len(target)
+	return sort.Search(list.Len(), func(index int) bool {
+		var value Value
+		list.Index(index, &value)
+		return comparePaths(newPath(value.Path).Truncate(targetLen), target) > 0
+	})
+}
+
+func find(list List, path string) int {
+	return _find(list, newPath(path))
 }
 
 func get(list List, path string) (interface{}, bool) {
@@ -78,17 +151,20 @@ func verifyList(list List) error {
 	length := list.Len()
 	pathSet := make(map[string]bool, length)
 	groupIdToTimeStamp := make(map[int]time.Time)
+	var lastPath pathType
 	var lastPathName string
 	for i := 0; i < length; i++ {
 		var value Value
 		list.Index(i, &value)
-		if comparePaths(value.Path, lastPathName) < 0 {
+		thisPath := newPath(value.Path)
+		if comparePaths(thisPath, lastPath) < 0 {
 			return errors.New(
 				fmt.Sprintf(
 					"Paths not sorted: '%s' should come before '%s",
 					value.Path,
 					lastPathName))
 		}
+		lastPath = thisPath
 		lastPathName = value.Path
 		if pathSet[value.Path] {
 			return errors.New(

@@ -11,6 +11,11 @@ var (
 	fChRollup = flag.Duration("chRollup", time.Hour, "cloudhealth rollup span for testing only")
 )
 
+const (
+	kMaxFileSystemsWithInstance = (cloudhealth.MaxDataPoints - cloudhealth.InstanceDataPointCount) / cloudhealth.FsDataPointCount
+	kMaxFileSystems             = cloudhealth.MaxDataPoints / cloudhealth.FsDataPointCount
+)
+
 func getStats(list metrics.List) InstanceStats {
 	var result InstanceStats
 	// TODO: Maybe use time from remote host instead?
@@ -79,7 +84,7 @@ func (r *RollUpStats) add(s InstanceStats) {
 	}
 }
 
-func (r *RollUpStats) clear() CloudHealthCall {
+func (r *RollUpStats) clear() CloudHealthInstanceCall {
 	instance := cloudhealth.InstanceData{
 		InstanceId:        r.instanceId,
 		Ts:                r.ts,
@@ -116,12 +121,32 @@ func (r *RollUpStats) clear() CloudHealthCall {
 		rollupFs.fsUsedPercent.Clear()
 		rollupFs.isNotEmpty = false
 	}
-	return CloudHealthCall{
-		Instances: []cloudhealth.InstanceData{instance},
-		Fss:       fss,
+	return CloudHealthInstanceCall{
+		Instance: instance,
+		Fss:      fss,
 	}
 }
 
 func roundToHour(t time.Time) time.Time {
 	return t.UTC().Round(*fChRollup)
+}
+
+func (c CloudHealthInstanceCall) split() (
+	newCall CloudHealthInstanceCall,
+	extraFs [][]cloudhealth.FsData) {
+	if len(c.Fss) <= kMaxFileSystemsWithInstance {
+		return c, nil
+	}
+	fssLeft := c.Fss
+	newCall = CloudHealthInstanceCall{
+		Instance: c.Instance,
+		Fss:      fssLeft[:kMaxFileSystemsWithInstance],
+	}
+	fssLeft = fssLeft[kMaxFileSystemsWithInstance:]
+	for len(fssLeft) > kMaxFileSystems {
+		extraFs = append(extraFs, fssLeft[:kMaxFileSystems])
+		fssLeft = fssLeft[kMaxFileSystems:]
+	}
+	extraFs = append(extraFs, fssLeft)
+	return
 }

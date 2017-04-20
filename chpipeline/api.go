@@ -60,9 +60,14 @@ func GetStats(list metrics.List) InstanceStats {
 	return getStats(list)
 }
 
-type CloudHealthCall struct {
-	Instances []cloudhealth.InstanceData
-	Fss       []cloudhealth.FsData
+type CloudHealthInstanceCall struct {
+	Instance cloudhealth.InstanceData
+	Fss      []cloudhealth.FsData
+}
+
+func (c CloudHealthInstanceCall) Split() (
+	CloudHealthInstanceCall, [][]cloudhealth.FsData) {
+	return c.split()
 }
 
 type RollUpStats struct {
@@ -91,7 +96,7 @@ func (r *RollUpStats) Add(s InstanceStats) {
 	r.add(s)
 }
 
-func (r *RollUpStats) Clear() CloudHealthCall {
+func (r *RollUpStats) Clear() CloudHealthInstanceCall {
 	return r.clear()
 }
 

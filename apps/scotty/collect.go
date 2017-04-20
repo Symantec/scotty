@@ -138,7 +138,7 @@ type loggerType struct {
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
-	CloudHealthChannel  chan chpipeline.CloudHealthCall
+	CloudHealthChannel  chan chpipeline.CloudHealthInstanceCall
 }
 
 func (l *loggerType) LogStateChange(
@@ -313,12 +313,12 @@ func startCollector(
 	}
 
 	var cloudHealthWriter *cloudhealth.Writer
-	var cloudHealthChannel chan chpipeline.CloudHealthCall
+	var cloudHealthChannel chan chpipeline.CloudHealthInstanceCall
 
 	cloudHealthConfig := path.Join(*fConfigDir, "cloudhealth.yaml")
 	if _, err := os.Stat(cloudHealthConfig); err == nil {
 		// TODO: Revisit this.
-		cloudHealthChannel = make(chan chpipeline.CloudHealthCall, 10000)
+		cloudHealthChannel = make(chan chpipeline.CloudHealthInstanceCall, 10000)
 		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
 	}
 
@@ -427,7 +427,7 @@ func startCollector(
 
 func startCloudFireLoop(
 	cloudHealthWriter *cloudhealth.Writer,
-	cloudHealthChannel chan chpipeline.CloudHealthCall) {
+	cloudHealthChannel chan chpipeline.CloudHealthInstanceCall) {
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	var successfulWrites uint64
 	if err := tricorder.RegisterMetric(
@@ -435,6 +435,22 @@ func startCloudFireLoop(
 		&successfulWrites,
 		units.None,
 		"Successful write count"); err != nil {
+		log.Fatal(err)
+	}
+	var overflowWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/overflowWrites",
+		&overflowWrites,
+		units.None,
+		"overflow write count"); err != nil {
+		log.Fatal(err)
+	}
+	var errorWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/errorWrites",
+		&errorWrites,
+		units.None,
+		"error write count"); err != nil {
 		log.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
@@ -466,21 +482,36 @@ func startCloudFireLoop(
 		for {
 			loopCount++
 			call := <-cloudHealthChannel
+			newCall, fsCalls := call.Split()
 			writeStartTime := time.Now()
 			/*
-				if _, err := cloudHealthWriter.Write(call.Instances, call.Fss); err != nil {
+				if _, err := cloudHealthWriter.Write(newCall.Instances, newCall.Fss); err != nil {
 					lastWriteError = err.Error()
+					errorWrites++
 				} else {
 					successfulWrites++
+				}
+				totalWrites++
+				for _, fsCall := range fsCalls {
+						if _, err := cloudHealthWriter.Write(nil, fsCall); err != nil {
+								lastWriteError = err.Error()
+					            errorWrites++
+						} else {
+								overflowWrites++
+						}
+				       totalWrites++
 				}
 			*/
 			// if kTestInstances[call.Instances[0].InstanceId] {
 			if loopCount%10 == 0 {
-				fmt.Println("Instance: ", call.Instances)
-				if len(call.Fss) > 0 {
-					fmt.Println("Fss: ", call.Fss)
-				}
+				fmt.Println("Instance: ", newCall.Instance)
+				fmt.Println("Fss: ", newCall.Fss)
 				successfulWrites++
+				for _, fsCall := range fsCalls {
+					fmt.Println("Overflow: ", fsCall)
+					overflowWrites++
+					totalWrites++
+				}
 			}
 			totalWrites++
 			writeTimesDist.Add(time.Since(writeStartTime))

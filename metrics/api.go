@@ -49,7 +49,26 @@ type List interface {
 // than path. If path is greater than the last value in list, Find returns
 // the size of the list.
 func Find(list List, path string) int {
-	return find(list, path)
+	return find(list, newPath(path))
+}
+
+// FileSystems returns all the distinct file systems mount points in the list.
+// A metric for file system with mount point "/some/filesystem" would look
+// like "/sys/fs/some/filesystem/METRICS/some/metric"
+func FileSystems(list List) []string {
+	return fileSystems(list)
+}
+
+// GetFloat64 gets the float64 value at path.
+// GetFloat64 returns false if path doesn't exist or if value is not float64.
+func GetFloat64(list List, path string) (float64, bool) {
+	return getFloat64(list, path)
+}
+
+// GetUint64 gets the Uint64 value at path.
+// GetUint64 returns false if path doesn't exist or if value is not uint64.
+func GetUint64(list List, path string) (uint64, bool) {
+	return getUint64(list, path)
 }
 
 // VerifyList verifies that the given list adheres to the specification.
@@ -69,7 +88,7 @@ func (s SimpleList) Index(i int, value *Value) {
 }
 
 func (s SimpleList) Less(i, j int) bool {
-	return comparePaths(s[i].Path, s[j].Path) < 0
+	return comparePaths(newPath(s[i].Path), newPath(s[j].Path)) < 0
 }
 
 func (s SimpleList) Swap(i, j int) {

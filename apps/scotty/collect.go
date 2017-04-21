@@ -2,10 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	collector "github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
+	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/keyedqueue"
+	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
@@ -15,11 +19,21 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"log"
+	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+)
+
+var (
+	kTestInstances = map[string]bool{
+		"i-0a03b9dcf34e861e7": true, // 100.122.1.251
+		"i-004255ea9cf5f15d9": true, // 100.122.1.30
+		"i-03f4ecba13573f961": true, // 100.122.1.36
+	}
 )
 
 var (
@@ -120,9 +134,11 @@ type loggerType struct {
 	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
 	NamesSentToSuggest  nameSetType
+	CloudHealthStats    *chpipeline.RollUpStats
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
+	CloudHealthChannel  chan chpipeline.CloudHealthInstanceCall
 }
 
 func (l *loggerType) LogStateChange(
@@ -164,14 +180,24 @@ func (l *loggerType) LogResponse(
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
 		l.TotalCounts.Update(l.Store, e)
-		if l.CisQueue != nil && e.Port() == 6910 {
-			var instanceId string
-			if app := l.AppStats.ByEndpointId(e); app != nil {
-				instanceId = app.InstanceId
+		if e.Port() == 6910 {
+			if l.CisQueue != nil {
+				var instanceId string
+				if app := l.AppStats.ByEndpointId(e); app != nil {
+					instanceId = app.InstanceId
+				}
+				stats := cis.GetStats(list, instanceId)
+				if stats != nil {
+					l.CisQueue.Add(stats)
+				}
 			}
-			stats := cis.GetStats(list, instanceId)
-			if stats != nil {
-				l.CisQueue.Add(stats)
+			if l.CloudHealthChannel != nil {
+				stats := chpipeline.GetStats(list)
+				if l.CloudHealthStats.TimeOk(stats.Ts) {
+					l.CloudHealthStats.Add(stats)
+				} else {
+					l.CloudHealthChannel <- l.CloudHealthStats.Clear()
+				}
 			}
 		}
 	}
@@ -200,6 +226,14 @@ func (l *loggerType) reportNewNamesForSuggest(
 
 type memoryCheckerType interface {
 	Check()
+}
+
+func createCloudHealthWriter(path string) *cloudhealth.Writer {
+	var config cloudhealth.Config
+	if err := yamlutil.ReadFromFile(path, &config); err != nil {
+		log.Fatal(err)
+	}
+	return cloudhealth.NewWriter(config)
 }
 
 func startCollector(
@@ -278,6 +312,16 @@ func startCollector(
 		"json":      jsonCollectionTimesDist,
 	}
 
+	var cloudHealthWriter *cloudhealth.Writer
+	var cloudHealthChannel chan chpipeline.CloudHealthInstanceCall
+
+	cloudHealthConfig := path.Join(*fConfigDir, "cloudhealth.yaml")
+	if _, err := os.Stat(cloudHealthConfig); err == nil {
+		// TODO: Revisit this.
+		cloudHealthChannel = make(chan chpipeline.CloudHealthInstanceCall, 10000)
+		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
+	}
+
 	var cisClient *cis.Client
 	var cisRegex *regexp.Regexp
 	var cisQueue *keyedqueue.Queue
@@ -322,6 +366,8 @@ func startCollector(
 		// contents of any nameSetType instance after creating it.
 		endpointToNamesSentToSuggest := make(
 			map[*collector.Endpoint]nameSetType)
+		endpointToCloudHealthStats := make(
+			map[*collector.Endpoint]*chpipeline.RollUpStats)
 		for {
 			endpoints, metricStore := appStats.ActiveEndpointIds()
 			sweepTime := time.Now()
@@ -330,6 +376,13 @@ func startCollector(
 				if namesSentToSuggest == nil {
 					namesSentToSuggest = make(nameSetType)
 					endpointToNamesSentToSuggest[endpoint] = namesSentToSuggest
+				}
+				cloudHealthStats := endpointToCloudHealthStats[endpoint]
+				if cloudHealthStats == nil {
+					app := appStats.ByEndpointId(endpoint)
+					cloudHealthStats = chpipeline.NewRollUpStats(
+						app.InstanceId)
+					endpointToCloudHealthStats[endpoint] = cloudHealthStats
 				}
 				maybeCisQueue := cisQueue
 				// If there is a regex filter and our machine doesn't match
@@ -345,9 +398,11 @@ func startCollector(
 					ByProtocolDist:      byProtocolDist,
 					ChangedMetricsDist:  changedMetricsPerEndpointDist,
 					NamesSentToSuggest:  namesSentToSuggest,
+					CloudHealthStats:    cloudHealthStats,
 					MetricNameAdder:     metricNameAdder,
 					TotalCounts:         totalCounts,
 					CisQueue:            maybeCisQueue,
+					CloudHealthChannel:  cloudHealthChannel,
 				}
 
 				endpoint.Poll(sweepTime, logger)
@@ -362,77 +417,183 @@ func startCollector(
 	}()
 
 	if cisQueue != nil && cisClient != nil {
-		if err := tricorder.RegisterMetric(
-			"cis/queueSize",
-			cisQueue.Len,
-			units.None,
-			"Length of queue"); err != nil {
-			log.Fatal(err)
-		}
-		timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-		if err := tricorder.RegisterMetric(
-			"cis/timeBetweenWrites",
-			timeBetweenWritesDist,
-			units.Second,
-			"elapsed time between CIS updates"); err != nil {
-			log.Fatal(err)
-		}
-		writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-		if err := tricorder.RegisterMetric(
-			"cis/writeTimes",
-			writeTimesDist,
-			units.Millisecond,
-			"elapsed time between CIS updates"); err != nil {
-			log.Fatal(err)
-		}
-		var lastWriteError string
-		if err := tricorder.RegisterMetric(
-			"cis/lastWriteError",
-			&lastWriteError,
-			units.None,
-			"Last CIS write error"); err != nil {
-			log.Fatal(err)
-		}
-		var successfulWrites uint64
-		if err := tricorder.RegisterMetric(
-			"cis/successfulWrites",
-			&successfulWrites,
-			units.None,
-			"Successful write count"); err != nil {
-			log.Fatal(err)
-		}
-		var totalWrites uint64
-		if err := tricorder.RegisterMetric(
-			"cis/totalWrites",
-			&totalWrites,
-			units.None,
-			"total write count"); err != nil {
-			log.Fatal(err)
-		}
+		startCisLoop(cisQueue, cisClient, programStartTime)
+	}
 
-		// CIS loop
-		go func() {
-			lastTimeStampByKey := make(map[interface{}]time.Time)
-			for {
-				stat := cisQueue.Remove().(*cis.Stats)
-				key := stat.Key()
-				if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
-					timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
-				} else {
-					// On first write, just use time elapsed since start of
-					// scotty
-					timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
-				}
-				lastTimeStampByKey[key] = stat.TimeStamp
-				writeStartTime := time.Now()
-				if err := cisClient.Write(stat); err != nil {
+	if cloudHealthWriter != nil && cloudHealthChannel != nil {
+		startCloudFireLoop(cloudHealthWriter, cloudHealthChannel)
+	}
+}
+
+func startCloudFireLoop(
+	cloudHealthWriter *cloudhealth.Writer,
+	cloudHealthChannel chan chpipeline.CloudHealthInstanceCall) {
+	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+	var successfulWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/successfulWrites",
+		&successfulWrites,
+		units.None,
+		"Successful write count"); err != nil {
+		log.Fatal(err)
+	}
+	var overflowWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/overflowWrites",
+		&overflowWrites,
+		units.None,
+		"overflow write count"); err != nil {
+		log.Fatal(err)
+	}
+	var errorWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/errorWrites",
+		&errorWrites,
+		units.None,
+		"error write count"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/writeTimes",
+		writeTimesDist,
+		units.Millisecond,
+		"cloud health write times"); err != nil {
+		log.Fatal(err)
+	}
+	var lastWriteError string
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/lastWriteError",
+		&lastWriteError,
+		units.None,
+		"Last CloudHealth write error"); err != nil {
+		log.Fatal(err)
+	}
+	var totalWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/totalWrites",
+		&totalWrites,
+		units.None,
+		"total write count"); err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		loopCount := 0
+		for {
+			loopCount++
+			call := <-cloudHealthChannel
+			newCall, fsCalls := call.Split()
+			writeStartTime := time.Now()
+			/*
+				if _, err := cloudHealthWriter.Write(newCall.Instances, newCall.Fss); err != nil {
 					lastWriteError = err.Error()
+					errorWrites++
 				} else {
 					successfulWrites++
 				}
 				totalWrites++
-				writeTimesDist.Add(time.Since(writeStartTime))
+				for _, fsCall := range fsCalls {
+						if _, err := cloudHealthWriter.Write(nil, fsCall); err != nil {
+								lastWriteError = err.Error()
+					            errorWrites++
+						} else {
+								overflowWrites++
+						}
+				       totalWrites++
+				}
+			*/
+			// if kTestInstances[call.Instances[0].InstanceId] {
+			if loopCount%10 == 0 {
+				fmt.Println("Instance: ", newCall.Instance)
+				fmt.Println("Fss: ", newCall.Fss)
+				successfulWrites++
+				for _, fsCall := range fsCalls {
+					fmt.Println("Overflow: ", fsCall)
+					overflowWrites++
+					totalWrites++
+				}
 			}
-		}()
+			totalWrites++
+			writeTimesDist.Add(time.Since(writeStartTime))
+		}
+	}()
+
+}
+
+func startCisLoop(
+	cisQueue *keyedqueue.Queue,
+	cisClient *cis.Client,
+	programStartTime time.Time) {
+	if err := tricorder.RegisterMetric(
+		"cis/queueSize",
+		cisQueue.Len,
+		units.None,
+		"Length of queue"); err != nil {
+		log.Fatal(err)
 	}
+	timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+	if err := tricorder.RegisterMetric(
+		"cis/timeBetweenWrites",
+		timeBetweenWritesDist,
+		units.Second,
+		"elapsed time between CIS updates"); err != nil {
+		log.Fatal(err)
+	}
+	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+	if err := tricorder.RegisterMetric(
+		"cis/writeTimes",
+		writeTimesDist,
+		units.Millisecond,
+		"elapsed time between CIS updates"); err != nil {
+		log.Fatal(err)
+	}
+	var lastWriteError string
+	if err := tricorder.RegisterMetric(
+		"cis/lastWriteError",
+		&lastWriteError,
+		units.None,
+		"Last CIS write error"); err != nil {
+		log.Fatal(err)
+	}
+	var successfulWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cis/successfulWrites",
+		&successfulWrites,
+		units.None,
+		"Successful write count"); err != nil {
+		log.Fatal(err)
+	}
+	var totalWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cis/totalWrites",
+		&totalWrites,
+		units.None,
+		"total write count"); err != nil {
+		log.Fatal(err)
+	}
+
+	// CIS loop
+	go func() {
+		lastTimeStampByKey := make(map[interface{}]time.Time)
+		for {
+			stat := cisQueue.Remove().(*cis.Stats)
+			key := stat.Key()
+			if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
+				timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
+			} else {
+				// On first write, just use time elapsed since start of
+				// scotty
+				timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
+			}
+			lastTimeStampByKey[key] = stat.TimeStamp
+			writeStartTime := time.Now()
+			if err := cisClient.Write(stat); err != nil {
+				lastWriteError = err.Error()
+			} else {
+				successfulWrites++
+			}
+			totalWrites++
+			writeTimesDist.Add(time.Since(writeStartTime))
+		}
+	}()
 }

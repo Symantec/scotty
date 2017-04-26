@@ -18,7 +18,7 @@ func getStats(list metrics.List) InstanceStats {
 
 	result.UserTimeFraction, _ = metrics.GetFloat64(
 		list, "/sys/sched/cpu/user-time-fraction")
-	result.MemoryFree, _ = metrics.GetUint64(list, "/sys/memory/free")
+	result.MemoryFree, _ = metrics.GetUint64(list, "/sys/memory/available")
 	result.MemoryTotal, _ = metrics.GetUint64(list, "/sys/memory/total")
 
 	fileSystems := metrics.FileSystems(list)

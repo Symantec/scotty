@@ -16,8 +16,11 @@ func getStats(list metrics.List) InstanceStats {
 	// TODO: Maybe use time from remote host instead?
 	result.Ts = time.Now().UTC()
 
-	result.UserTimeFraction, _ = metrics.GetFloat64(
-		list, "/sys/sched/cpu/user-time-fraction")
+	idleTimeFraction, idleTimeFractionOk := metrics.GetFloat64(
+		list, "/sys/sched/cpu/idle-time-fraction")
+	if idleTimeFractionOk {
+		result.UserTimeFraction = 1.0 - idleTimeFraction
+	}
 	result.MemoryFree, _ = metrics.GetUint64(list, "/sys/memory/available")
 	result.MemoryTotal, _ = metrics.GetUint64(list, "/sys/memory/total")
 

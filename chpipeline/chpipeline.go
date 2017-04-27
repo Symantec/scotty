@@ -11,15 +11,68 @@ const (
 	kMaxFileSystems             = cloudhealth.MaxDataPoints / cloudhealth.FsDataPointCount
 )
 
+func newMaybeFloat64(value float64, ok bool) MaybeFloat64 {
+	return MaybeFloat64{Value: value, Ok: ok}
+}
+
+func newMaybeUint64(value uint64, ok bool) MaybeUint64 {
+	return MaybeUint64{Value: value, Ok: ok}
+}
+
+func (f *FsStats) used() (result uint64, ok bool) {
+	if !f.Size.Ok || !f.Free.Ok {
+		return
+	}
+	if f.Free.Value > f.Size.Value {
+		return 0, true
+	}
+	return f.Size.Value - f.Free.Value, true
+}
+
+func (f *FsStats) usedPercent() (result float64, ok bool) {
+	used, usedOk := f.used()
+	if !usedOk || !f.Size.Ok || f.Size.Value == 0 {
+		return
+	}
+	return (float64(used) / float64(f.Size.Value) * 100.0), true
+}
+
+func (s *InstanceStats) cpuUsedPercent() (result float64, ok bool) {
+	if !s.UserTimeFraction.Ok {
+		return
+	}
+	percent := s.UserTimeFraction.Value * 100.0
+	if percent < 0.0 {
+		return 0.0, true
+	}
+	if percent > 100.0 {
+		return 100.0, true
+	}
+	return percent, true
+}
+
+func (s *InstanceStats) memoryUsedPercent() (result float64, ok bool) {
+	if !s.MemoryTotal.Ok || !s.MemoryFree.Ok || s.MemoryTotal.Value == 0 {
+		return
+	}
+	var memoryUsed uint64
+	if s.MemoryFree.Value < s.MemoryTotal.Value {
+		memoryUsed = s.MemoryTotal.Value - s.MemoryFree.Value
+	}
+	return float64(memoryUsed) / float64(s.MemoryTotal.Value) * 100.0, true
+}
+
 func getStats(list metrics.List) InstanceStats {
 	var result InstanceStats
 	// TODO: Maybe use time from remote host instead?
 	result.Ts = time.Now().UTC()
 
-	result.UserTimeFraction, _ = metrics.GetFloat64(
-		list, "/sys/sched/cpu/user-time-fraction")
-	result.MemoryFree, _ = metrics.GetUint64(list, "/sys/memory/available")
-	result.MemoryTotal, _ = metrics.GetUint64(list, "/sys/memory/total")
+	result.UserTimeFraction = newMaybeFloat64(metrics.GetFloat64(
+		list, "/sys/sched/cpu/user-time-fraction"))
+	result.MemoryFree = newMaybeUint64(metrics.GetUint64(
+		list, "/sys/memory/available"))
+	result.MemoryTotal = newMaybeUint64(metrics.GetUint64(
+		list, "/sys/memory/total"))
 
 	fileSystems := metrics.FileSystems(list)
 	for _, fileSystem := range fileSystems {
@@ -27,8 +80,8 @@ func getStats(list metrics.List) InstanceStats {
 		if fileSystem != "/" {
 			prefix += fileSystem
 		}
-		size, _ := metrics.GetUint64(list, prefix+"/METRICS/size")
-		free, _ := metrics.GetUint64(list, prefix+"/METRICS/free")
+		size := newMaybeUint64(metrics.GetUint64(list, prefix+"/METRICS/size"))
+		free := newMaybeUint64(metrics.GetUint64(list, prefix+"/METRICS/free"))
 		result.Fss = append(
 			result.Fss,
 			FsStats{MountPoint: fileSystem, Size: size, Free: free})
@@ -37,18 +90,18 @@ func getStats(list metrics.List) InstanceStats {
 }
 
 type rollUpFsStatsType struct {
-	isNotEmpty    bool
 	fsSizeBytes   cloudhealth.IVariable
 	fsUsedBytes   cloudhealth.IVariable
 	fsUsedPercent cloudhealth.FVariable
 }
 
 func (r *rollUpFsStatsType) IsEmpty() bool {
-	return !r.isNotEmpty
+	return r.fsSizeBytes.IsEmpty() && r.fsUsedBytes.IsEmpty() && r.fsUsedPercent.IsEmpty()
 }
 
 func (r *RollUpStats) timeOk(t time.Time) bool {
-	if r.IsEmpty() {
+	// Time is ok if no roll up time is yet established
+	if !r.tsOk {
 		return true
 	}
 	return r.roundTime(t).Equal(r.ts)
@@ -59,12 +112,18 @@ func (r *RollUpStats) add(s InstanceStats) {
 		panic("Time not ok")
 	}
 	r.ts = r.roundTime(s.Ts)
-	r.notEmpty = true
-	r.cpuUsedPercent.Add(s.CPUUsedPercent())
-	r.memoryFreeBytes.Add(s.MemoryFree)
-	r.memorySizeBytes.Add(s.MemoryTotal)
-	used, ok := s.MemoryUsedPercent()
-	if ok {
+	r.tsOk = true
+
+	if cpuUsedPercent, ok := s.CPUUsedPercent(); ok {
+		r.cpuUsedPercent.Add(cpuUsedPercent)
+	}
+	if s.MemoryFree.Ok {
+		r.memoryFreeBytes.Add(s.MemoryFree.Value)
+	}
+	if s.MemoryTotal.Ok {
+		r.memorySizeBytes.Add(s.MemoryTotal.Value)
+	}
+	if used, ok := s.MemoryUsedPercent(); ok {
 		r.memoryUsedPercent.Add(used)
 	}
 	for _, fss := range s.Fss {
@@ -73,19 +132,21 @@ func (r *RollUpStats) add(s InstanceStats) {
 			rollupFs = &rollUpFsStatsType{}
 			r.fss[fss.MountPoint] = rollupFs
 		}
-		rollupFs.isNotEmpty = true
-		rollupFs.fsSizeBytes.Add(fss.Size)
-		rollupFs.fsUsedBytes.Add(fss.Used())
-		usedPercent, ok := fss.UsedPercent()
-		if ok {
+		if fss.Size.Ok {
+			rollupFs.fsSizeBytes.Add(fss.Size.Value)
+		}
+		if used, ok := fss.Used(); ok {
+			rollupFs.fsUsedBytes.Add(used)
+		}
+		if usedPercent, ok := fss.UsedPercent(); ok {
 			rollupFs.fsUsedPercent.Add(usedPercent)
 		}
 	}
 }
 
-func (r *RollUpStats) clear() CloudHealthInstanceCall {
-	if r.IsEmpty() {
-		panic("Already empty")
+func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
+	if !r.tsOk {
+		panic("No timestamp")
 	}
 	instance := cloudhealth.InstanceData{
 		InstanceId:        r.instanceId,
@@ -110,9 +171,14 @@ func (r *RollUpStats) clear() CloudHealthInstanceCall {
 		}
 		fss = append(fss, fsData)
 	}
+	return CloudHealthInstanceCall{
+		Instance: instance,
+		Fss:      fss,
+	}
+}
 
-	// Now clear everything
-	r.notEmpty = false
+func (r *RollUpStats) clear() {
+	r.tsOk = false
 	r.cpuUsedPercent.Clear()
 	r.memoryFreeBytes.Clear()
 	r.memorySizeBytes.Clear()
@@ -121,11 +187,6 @@ func (r *RollUpStats) clear() CloudHealthInstanceCall {
 		rollupFs.fsSizeBytes.Clear()
 		rollupFs.fsUsedBytes.Clear()
 		rollupFs.fsUsedPercent.Clear()
-		rollupFs.isNotEmpty = false
-	}
-	return CloudHealthInstanceCall{
-		Instance: instance,
-		Fss:      fss,
 	}
 }
 

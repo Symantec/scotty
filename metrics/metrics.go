@@ -143,6 +143,15 @@ func getUint64(list List, path string) (uint64, bool) {
 	return v, k
 }
 
+func getTime(list List, path string) (time.Time, bool) {
+	val, ok := get(list, path)
+	if !ok {
+		return time.Time{}, false
+	}
+	v, k := val.(time.Time)
+	return v, k
+}
+
 func verifyList(list List) error {
 	length := list.Len()
 	pathSet := make(map[string]bool, length)

@@ -184,11 +184,11 @@ func (l *loggerType) LogResponse(
 			}
 			if l.CloudHealthChannel != nil {
 				stats := chpipeline.GetStats(list)
-				if l.CloudHealthStats.TimeOk(stats.Ts) {
-					l.CloudHealthStats.Add(stats)
-				} else {
-					l.CloudHealthChannel <- l.CloudHealthStats.Clear()
+				if !l.CloudHealthStats.TimeOk(stats.Ts) {
+					l.CloudHealthChannel <- l.CloudHealthStats.CloudHealth()
+					l.CloudHealthStats.Clear()
 				}
+				l.CloudHealthStats.Add(stats)
 			}
 		}
 	}

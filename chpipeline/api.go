@@ -6,62 +6,58 @@ import (
 	"time"
 )
 
+// MaybeFloat64 values are either nothing or a float64.
+type MaybeFloat64 struct {
+	Value float64
+	Ok    bool // True if Value is set; false if nothing.
+}
+
+// MaybeUint64 values are either nothing or a uint64.
+type MaybeUint64 struct {
+	Value uint64
+	Ok    bool // True if Value is set; false if nothing.
+}
+
 // FsStats contains stats for a particular file system for some point in time
 type FsStats struct {
 	MountPoint string
-	Size       uint64
-	Free       uint64
+	Size       MaybeUint64
+	Free       MaybeUint64
 }
 
-// Used returns how many bytes are used.
-func (f *FsStats) Used() uint64 {
-	if f.Free > f.Size {
-		return 0
-	}
-	return f.Size - f.Free
+// Used returns how many bytes are used or false if information is missing.
+func (f *FsStats) Used() (uint64, bool) {
+	return f.used()
 }
 
 // UsedPercent returns the percentage of the file system that is used.
-// UsedPercent returns false if the size of the file system is zero.
+// UsedPercent returns false if the size of the file system is zero or if
+// needed information is missing.
 func (f *FsStats) UsedPercent() (float64, bool) {
-	if f.Size == 0 {
-		return 0.0, false
-	}
-	return float64(f.Used()) / float64(f.Size) * 100.0, true
+	return f.usedPercent()
 }
 
 // InstanceStats contains cloudhealth statistics for an aws instance at
 // some point in time
 type InstanceStats struct {
 	Ts               time.Time // Timestamp of statistics.
-	UserTimeFraction float64
-	MemoryFree       uint64
-	MemoryTotal      uint64
+	UserTimeFraction MaybeFloat64
+	MemoryFree       MaybeUint64
+	MemoryTotal      MaybeUint64
 	Fss              []FsStats
 }
 
-func (s *InstanceStats) CPUUsedPercent() float64 {
-	result := s.UserTimeFraction * 100.0
-	if result < 0.0 {
-		return 0.0
-	}
-	if result > 100.0 {
-		return 100.0
-	}
-	return result
+// CPUUsedPercent returns CPU usage between 0.0 and 100.0. Returns false
+// if needed information is missing.
+func (s *InstanceStats) CPUUsedPercent() (float64, bool) {
+	return s.cpuUsedPercent()
 }
 
 // MemoryUsedPercent returns the percentage of memory used.
-// MemoryUsedPercent returns false if total memory is 0.
+// MemoryUsedPercent returns false if total memory is 0 or if needed
+// information is missing.
 func (s *InstanceStats) MemoryUsedPercent() (float64, bool) {
-	if s.MemoryTotal == 0 {
-		return 0.0, false
-	}
-	var memoryUsed uint64
-	if s.MemoryFree < s.MemoryTotal {
-		memoryUsed = s.MemoryTotal - s.MemoryFree
-	}
-	return float64(memoryUsed) / float64(s.MemoryTotal) * 100.0, true
+	return s.memoryUsedPercent()
 }
 
 // GetStats reads cloudhealth statistics from a group of collected metrics
@@ -93,8 +89,8 @@ func (c CloudHealthInstanceCall) Split() (
 type RollUpStats struct {
 	instanceId        string
 	ts                time.Time
+	tsOk              bool
 	roundDuration     time.Duration
-	notEmpty          bool
 	cpuUsedPercent    cloudhealth.FVariable
 	memoryFreeBytes   cloudhealth.IVariable
 	memorySizeBytes   cloudhealth.IVariable
@@ -125,14 +121,15 @@ func (r *RollUpStats) Add(s InstanceStats) {
 	r.add(s)
 }
 
-// Clear clears this instance and returns the call needed to write the data
-// that was cleared to cloud health. After clear is called, Add will accept
-// data with any timestamp. Clear panics if IsEmpty() returns true.
-func (r *RollUpStats) Clear() CloudHealthInstanceCall {
-	return r.clear()
+// CloudHealth returns the call needed to write the data in this instance to
+// cloud health.
+// CloudHealth panics if Add has not been called since the last call to Clear.
+func (r *RollUpStats) CloudHealth() CloudHealthInstanceCall {
+	return r.cloudHealth()
 }
 
-// IsEmpty returns true if this instance has not data.
-func (r *RollUpStats) IsEmpty() bool {
-	return !r.notEmpty
+// Clear clears this instance
+// After clear is called, Add will accept data with any timestamp.
+func (r *RollUpStats) Clear() {
+	r.clear()
 }

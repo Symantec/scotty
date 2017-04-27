@@ -23,7 +23,10 @@ func getStats(list metrics.List) InstanceStats {
 
 	fileSystems := metrics.FileSystems(list)
 	for _, fileSystem := range fileSystems {
-		prefix := "/sys/fs" + fileSystem
+		prefix := "/sys/fs"
+		if fileSystem != "/" {
+			prefix += fileSystem
+		}
 		size, _ := metrics.GetUint64(list, prefix+"/METRICS/size")
 		free, _ := metrics.GetUint64(list, prefix+"/METRICS/free")
 		result.Fss = append(

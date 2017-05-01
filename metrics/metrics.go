@@ -91,6 +91,7 @@ func fileSystems(list List) (result []string) {
 		result = append(result, current.Sub(sysFsLen, metricsPos).String())
 		beginning = findNext(list, current.Truncate(metricsPos+1))
 	}
+	sort.Strings(result)
 	return
 }
 

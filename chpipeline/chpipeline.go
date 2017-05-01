@@ -3,6 +3,7 @@ package chpipeline
 import (
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/metrics"
+	"sort"
 	"time"
 )
 
@@ -171,6 +172,7 @@ func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
 		}
 		fss = append(fss, fsData)
 	}
+	sort.Sort(byMountPointType(fss))
 	return CloudHealthInstanceCall{
 		Instance: instance,
 		Fss:      fss,
@@ -212,4 +214,14 @@ func (c CloudHealthInstanceCall) split() (
 	}
 	extraFs = append(extraFs, fssLeft)
 	return
+}
+
+type byMountPointType []cloudhealth.FsData
+
+func (b byMountPointType) Len() int { return len(b) }
+
+func (b byMountPointType) Swap(i, j int) { b[j], b[i] = b[i], b[j] }
+
+func (b byMountPointType) Less(i, j int) bool {
+	return b[i].MountPoint < b[j].MountPoint
 }

@@ -87,6 +87,7 @@ func (c CloudHealthInstanceCall) Split() (
 // RollUpStats represents rolled up statistics for a machine by some time
 // period.
 type RollUpStats struct {
+	accountNumber     string
 	instanceId        string
 	ts                time.Time
 	tsOk              bool
@@ -98,12 +99,15 @@ type RollUpStats struct {
 	fss               map[string]*rollUpFsStatsType
 }
 
-// NewRollUpStats creates a new RollUpStats for given instanceId that
-// rolls up data every roundDuration. Hint: to do hourly rollups, pass
-// time.Hour for roundDuration.
+// NewRollUpStats creates a new RollUpStats for given accountNumber and
+// instanceId that rolls up data every roundDuration. Hint: to do hourly
+// rollups, pass time.Hour for roundDuration.
 func NewRollUpStats(
-	instanceId string, roundDuration time.Duration) *RollUpStats {
+	accountNumber string,
+	instanceId string,
+	roundDuration time.Duration) *RollUpStats {
 	return &RollUpStats{
+		accountNumber: accountNumber,
 		instanceId:    instanceId,
 		roundDuration: roundDuration,
 		fss:           make(map[string]*rollUpFsStatsType)}

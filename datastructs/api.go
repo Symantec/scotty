@@ -39,6 +39,9 @@ type ApplicationStatus struct {
 	// Whether or not it is currently down.
 	Down bool
 
+	// If non-empty the AWS account number of the machine of the application
+	AccountNumber string
+
 	// If non-empty the AWS instance-id of the machine of the application
 	InstanceId string
 

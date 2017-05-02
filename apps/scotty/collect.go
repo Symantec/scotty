@@ -372,7 +372,7 @@ func startCollector(
 				if cloudHealthStats == nil {
 					app := appStats.ByEndpointId(endpoint)
 					cloudHealthStats = chpipeline.NewRollUpStats(
-						app.InstanceId, time.Hour)
+						app.AccountNumber, app.InstanceId, time.Hour)
 					endpointToCloudHealthStats[endpoint] = cloudHealthStats
 				}
 				maybeCisQueue := cisQueue

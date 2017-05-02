@@ -67,6 +67,7 @@ const InstanceDataPointCount = 12 // 4 variables * (min,max,avg)
 
 // InstanceData contains rolled up data for a particular instance
 type InstanceData struct {
+	AccountNumber     string    // account number if different from default
 	InstanceId        string    // The aws instance ID
 	Ts                time.Time // The timestamp at one hour granularity
 	CpuUsedPercent    FVariable
@@ -82,6 +83,7 @@ const MaxDataPoints = 1000
 
 // FsData contains rolled up data for a particular file system
 type FsData struct {
+	AccountNumber string    // account number if different from default
 	InstanceId    string    // the aws instance ID
 	MountPoint    string    // The mount point of file system
 	Ts            time.Time // The timestamp at one hour granularity
@@ -93,9 +95,9 @@ type FsData struct {
 // Config configures the writer
 type Config struct {
 	ApiKey        string `yaml:"apiKey"`
-	DataCenter    string `yaml:"dataCenter"` // e.g us-east-1
-	AccountNumber string `yaml:"accountNumber"`
-	DryRun        bool   `yaml:"dryRun"` // If true, runs in dry run mode
+	DataCenter    string `yaml:"dataCenter"`    // e.g us-east-1
+	AccountNumber string `yaml:"accountNumber"` // default account number
+	DryRun        bool   `yaml:"dryRun"`        // If true, runs in dry run mode
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {

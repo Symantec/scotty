@@ -150,6 +150,7 @@ func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
 		panic("No timestamp")
 	}
 	instance := cloudhealth.InstanceData{
+		AccountNumber:     r.accountNumber,
 		InstanceId:        r.instanceId,
 		Ts:                r.ts,
 		CpuUsedPercent:    r.cpuUsedPercent,
@@ -163,6 +164,7 @@ func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
 			continue
 		}
 		fsData := cloudhealth.FsData{
+			AccountNumber: r.accountNumber,
 			InstanceId:    r.instanceId,
 			MountPoint:    mountPoint,
 			Ts:            r.ts,
@@ -172,6 +174,7 @@ func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
 		}
 		fss = append(fss, fsData)
 	}
+	// Needed to make testing possible
 	sort.Sort(byMountPointType(fss))
 	return CloudHealthInstanceCall{
 		Instance: instance,

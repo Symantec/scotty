@@ -66,16 +66,17 @@ type hostAndPort struct {
 }
 
 func (a *ApplicationStatuses) newApplicationStatus(
-	e *scotty.Endpoint, instanceId string) *ApplicationStatus {
+	e *scotty.Endpoint, accountNumber, instanceId string) *ApplicationStatus {
 	app := a.appList.ByPort(e.Port())
 	if app == nil {
 		panic("Oops, unknown port in endpoint.")
 	}
 	return &ApplicationStatus{
-		EndpointId: e,
-		Name:       app.Name(),
-		Active:     true,
-		InstanceId: instanceId}
+		EndpointId:    e,
+		Name:          app.Name(),
+		Active:        true,
+		AccountNumber: accountNumber,
+		InstanceId:    instanceId}
 }
 
 func (a *ApplicationStatuses) store() *store.Store {
@@ -159,12 +160,13 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 				activeEndpoint = scotty.NewEndpointWithConnector(
 					hp.Host, hp.Port, apps[j].Connectors())
 				a.byHostPort[hp] = activeEndpoint
-				var instanceId string
+				var instanceId, accountNumber string
 				if activeHosts[i].AwsMetadata != nil {
+					accountNumber = activeHosts[i].AwsMetadata.AccountId
 					instanceId = activeHosts[i].AwsMetadata.InstanceId
 				}
 				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(
-					activeEndpoint, instanceId)
+					activeEndpoint, accountNumber, instanceId)
 				if storeCopy == a.currentStore {
 					storeCopy = a.currentStore.ShallowCopy()
 				}

@@ -187,7 +187,7 @@ func toMachines(names []string) []mdb.Machine {
 	return result
 }
 
-func TestInstanceId(t *testing.T) {
+func TestInstanceIdAccountId(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
 	alBuilder.Add(
 		37, "First", sources.ConnectorList{trisource.GetConnector()})
@@ -203,8 +203,10 @@ func TestInstanceId(t *testing.T) {
 		104.25,
 		[]mdb.Machine{
 			{
-				Hostname:    "host101",
-				AwsMetadata: &mdb.AwsMetadata{InstanceId: "i-42793"},
+				Hostname: "host101",
+				AwsMetadata: &mdb.AwsMetadata{
+					InstanceId: "i-42793",
+					AccountId:  "12345"},
 			},
 			{
 				Hostname: "host102",
@@ -215,11 +217,16 @@ func TestInstanceId(t *testing.T) {
 	for _, ep := range endpoints {
 		eps[fmt.Sprintf("%s_%d", ep.HostName(), ep.Port())] = ep
 	}
-	Convey("instance IDs should be populated", t, func() {
+	Convey("instance ID and account Id should be populated", t, func() {
 		So(
 			appStatus.ByEndpointId(eps["host101_37"]).InstanceId,
 			ShouldEqual,
 			"i-42793",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host101_37"]).AccountNumber,
+			ShouldEqual,
+			"12345",
 		)
 		So(
 			appStatus.ByEndpointId(eps["host101_81"]).InstanceId,
@@ -227,12 +234,27 @@ func TestInstanceId(t *testing.T) {
 			"i-42793",
 		)
 		So(
+			appStatus.ByEndpointId(eps["host101_81"]).AccountNumber,
+			ShouldEqual,
+			"12345",
+		)
+		So(
 			appStatus.ByEndpointId(eps["host102_37"]).InstanceId,
 			ShouldEqual,
 			"",
 		)
 		So(
+			appStatus.ByEndpointId(eps["host102_37"]).AccountNumber,
+			ShouldEqual,
+			"",
+		)
+		So(
 			appStatus.ByEndpointId(eps["host102_81"]).InstanceId,
+			ShouldEqual,
+			"",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_81"]).AccountNumber,
 			ShouldEqual,
 			"",
 		)

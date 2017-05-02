@@ -98,8 +98,12 @@ func toTsValue(t time.Time) string {
 
 func (d *InstanceData) toValues(
 	dataCenter, accountNumber string) []interface{} {
+	accountNumberToUse := accountNumber
+	if d.AccountNumber != "" {
+		accountNumberToUse = d.AccountNumber
+	}
 	assetId := fmt.Sprintf(
-		"%s:%s:%s", dataCenter, accountNumber, d.InstanceId)
+		"%s:%s:%s", dataCenter, accountNumberToUse, d.InstanceId)
 	cpuUsedPercentAvg, cpuUsedPercentMax, cpuUsedPercentMin :=
 		d.CpuUsedPercent.toValues()
 	memoryFreeBytesAvg, memoryFreeBytesMax, memoryFreeBytesMin :=
@@ -128,10 +132,14 @@ func (d *InstanceData) toValues(
 
 func (d *FsData) toValues(
 	dataCenter, accountNumber string) []interface{} {
+	accountNumberToUse := accountNumber
+	if d.AccountNumber != "" {
+		accountNumberToUse = d.AccountNumber
+	}
 	assetId := fmt.Sprintf(
 		"%s:%s:%s:%s",
 		dataCenter,
-		accountNumber,
+		accountNumberToUse,
 		d.InstanceId,
 		d.MountPoint)
 	fsSizeBytesAvg, fsSizeBytesMax, fsSizeBytesMin :=

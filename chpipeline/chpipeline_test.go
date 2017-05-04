@@ -93,38 +93,75 @@ func TestFileSystemStats(t *testing.T) {
 				Path:  "/sys/fs/boot/METRICS/free",
 				Value: uint64(210000),
 			},
-		}
-		stats := chpipeline.GetStats(list)
-		expected := []chpipeline.FsStats{
 			{
-				MountPoint: "/",
-				Size: chpipeline.MaybeUint64{
-					Ok:    true,
-					Value: uint64(10000000),
-				},
-				Free: chpipeline.MaybeUint64{
-					Ok:    true,
-					Value: uint64(8000000),
-				},
+				Path:  "/sys/fs/mnt/METRICS/free",
+				Value: uint64(5000000),
 			},
 			{
-				MountPoint: "/boot",
-				Size: chpipeline.MaybeUint64{
-					Ok: false,
-				},
-				Free: chpipeline.MaybeUint64{
-					Ok:    true,
-					Value: 210000,
-				},
+				Path:  "/sys/fs/mnt/METRICS/size",
+				Value: uint64(6000000),
 			},
 		}
-		So(expected, ShouldResemble, stats.Fss)
+		Convey("Non combined file system stats", func() {
+			stats := chpipeline.GetStats(list)
+			expected := []chpipeline.FsStats{
+				{
+					MountPoint: "/",
+					Size: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(10000000),
+					},
+					Free: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(8000000),
+					},
+				},
+				{
+					MountPoint: "/boot",
+					Free: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: 210000,
+					},
+				},
+				{
+					MountPoint: "/mnt",
+					Size: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(6000000),
+					},
+					Free: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(5000000),
+					},
+				},
+			}
+			So(expected, ShouldResemble, stats.Fss)
+		})
+		Convey("combined file system stats", func() {
+			stats := chpipeline.GetStats(list)
+			stats.CombineFsStats()
+			expected := []chpipeline.FsStats{
+				{
+					MountPoint: "/",
+					Size: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(16000000),
+					},
+					Free: chpipeline.MaybeUint64{
+						Ok:    true,
+						Value: uint64(13000000),
+					},
+				},
+			}
+			So(expected, ShouldResemble, stats.Fss)
+		})
 	})
 }
 
 func TestRollUp(t *testing.T) {
 	Convey("With file system stats", t, func() {
-		rollup := chpipeline.NewRollUpStats("instanceId", time.Hour)
+		rollup := chpipeline.NewRollUpStats(
+			"accountNumber", "instanceId", time.Hour)
 		stats1 := chpipeline.InstanceStats{
 			Ts: kToday.Add(13 * time.Hour).Add(31 * time.Minute),
 			UserTimeFraction: chpipeline.MaybeFloat64{
@@ -249,6 +286,11 @@ func TestRollUp(t *testing.T) {
 			chInstanceCall := rollup.CloudHealth()
 			instance := chInstanceCall.Instance
 			So(
+				instance.AccountNumber,
+				ShouldEqual,
+				"accountNumber",
+			)
+			So(
 				instance.InstanceId,
 				ShouldEqual,
 				"instanceId",
@@ -276,6 +318,7 @@ func TestRollUp(t *testing.T) {
 
 			fss := chInstanceCall.Fss
 			So(fss, ShouldHaveLength, 2)
+			So(fss[0].AccountNumber, ShouldEqual, "accountNumber")
 			So(fss[0].InstanceId, ShouldEqual, "instanceId")
 			So(fss[0].MountPoint, ShouldEqual, "/")
 			So(fss[0].Ts, ShouldResemble, kToday.Add(14*time.Hour))
@@ -283,6 +326,7 @@ func TestRollUp(t *testing.T) {
 			So(fss[0].FsUsedBytes.Avg(), ShouldEqual, 3150)
 			So(fss[0].FsUsedPercent.Avg(), ShouldEqual, 43.75)
 
+			So(fss[1].AccountNumber, ShouldEqual, "accountNumber")
 			So(fss[1].InstanceId, ShouldEqual, "instanceId")
 			So(fss[1].MountPoint, ShouldEqual, "/boot")
 			So(fss[1].Ts, ShouldResemble, kToday.Add(14*time.Hour))

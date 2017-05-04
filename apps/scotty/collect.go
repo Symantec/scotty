@@ -48,6 +48,10 @@ var (
 		"dataCenter",
 		"",
 		"Required for CIS writing: The data center name")
+	fCombineFileSystems = flag.Bool(
+		"combineFoileSystems",
+		false,
+		"Whether or not to combine file systems")
 )
 
 type byHostName messages.ErrorList
@@ -184,6 +188,9 @@ func (l *loggerType) LogResponse(
 			}
 			if l.CloudHealthChannel != nil {
 				stats := chpipeline.GetStats(list)
+				if *fCombineFileSystems {
+					stats.CombineFsStats()
+				}
 				if !l.CloudHealthStats.TimeOk(stats.Ts) {
 					l.CloudHealthChannel <- l.CloudHealthStats.CloudHealth()
 					l.CloudHealthStats.Clear()

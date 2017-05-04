@@ -127,6 +127,8 @@ func NewRollUpStats(
 		fss:           make(map[string]*rollUpFsStatsType)}
 }
 
+func (r *RollUpStats) InstanceId() string { return r.instanceId }
+
 // TimeOk returns true if time t is for the same time period as the other times
 // in this instancce.
 func (r *RollUpStats) TimeOk(t time.Time) bool {

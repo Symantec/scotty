@@ -342,6 +342,7 @@ func (t *timestampSeriesType) Inactivate() (
 		return
 	}
 	neededToAdd = true
+	actualTs = incTs(t.lastTs)
 	lastPage, isNew := t.pages.LastPageMustHaveSpace(nil)
 	if lastPage == nil {
 		return
@@ -354,7 +355,6 @@ func (t *timestampSeriesType) Inactivate() (
 	latestPage := lastPage.Times()
 	latestPage.Add(t.lastTs)
 	t.lastTs = incTs(t.lastTs)
-	actualTs = t.lastTs
 	return
 }
 

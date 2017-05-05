@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/Symantec/Dominator/lib/flagutil"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
@@ -48,7 +49,28 @@ var (
 		"dataCenter",
 		"",
 		"Required for CIS writing: The data center name")
+	fCombineFileSystemIds flagutil.StringList
 )
+
+func init() {
+	flag.Var(
+		&fCombineFileSystemIds,
+		"combineFileSystemIds",
+		"comma separated aws instance Ids on which file system cloudhealth stats must be combined. 'all' means all instances")
+}
+
+// toInstanceMap converts a slice of instanceIds to a map of instanceIds.
+// An empty map means no instanceIds; the nil map means all instance Ids.
+func toInstanceIdMap(instanceIds []string) map[string]bool {
+	if len(instanceIds) == 1 && strings.ToUpper(instanceIds[0]) == "ALL" {
+		return nil
+	}
+	result := make(map[string]bool, len(instanceIds))
+	for _, id := range instanceIds {
+		result[id] = true
+	}
+	return result
+}
 
 type byHostName messages.ErrorList
 
@@ -126,6 +148,7 @@ type loggerType struct {
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
 	NamesSentToSuggest  nameSetType
 	CloudHealthStats    *chpipeline.RollUpStats
+	CombineFileSystems  bool
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
@@ -182,8 +205,11 @@ func (l *loggerType) LogResponse(
 					l.CisQueue.Add(stats)
 				}
 			}
-			if l.CloudHealthChannel != nil {
+			if l.CloudHealthChannel != nil && l.CloudHealthStats != nil {
 				stats := chpipeline.GetStats(list)
+				if l.CombineFileSystems {
+					stats.CombineFsStats()
+				}
 				if !l.CloudHealthStats.TimeOk(stats.Ts) {
 					l.CloudHealthChannel <- l.CloudHealthStats.CloudHealth()
 					l.CloudHealthStats.Clear()
@@ -345,6 +371,7 @@ func startCollector(
 			}
 		}
 	}
+	combineFsMap := toInstanceIdMap(fCombineFileSystemIds)
 
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
@@ -375,12 +402,18 @@ func startCollector(
 						app.AccountNumber, app.InstanceId, time.Hour)
 					endpointToCloudHealthStats[endpoint] = cloudHealthStats
 				}
+				combineFileSystems := true
+				if combineFsMap != nil {
+					combineFileSystems = combineFsMap[cloudHealthStats.InstanceId()]
+				}
+
 				maybeCisQueue := cisQueue
 				// If there is a regex filter and our machine doesn't match
 				// nil out the cisQueue so that we don't send to CIS.
 				if cisRegex != nil && !cisRegex.MatchString(endpoint.HostName()) {
 					maybeCisQueue = nil
 				}
+
 				logger := &loggerType{
 					Store:               metricStore,
 					AppStats:            appStats,
@@ -390,6 +423,7 @@ func startCollector(
 					ChangedMetricsDist:  changedMetricsPerEndpointDist,
 					NamesSentToSuggest:  namesSentToSuggest,
 					CloudHealthStats:    cloudHealthStats,
+					CombineFileSystems:  combineFileSystems,
 					MetricNameAdder:     metricNameAdder,
 					TotalCounts:         totalCounts,
 					CisQueue:            maybeCisQueue,

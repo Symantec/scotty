@@ -25,6 +25,14 @@ type FsStats struct {
 	Free       MaybeUint64
 }
 
+// CombineFsStats returns a collection of FsStats as a single FsStats with
+// mount point of '/'. The returned instance contains the combined size and
+// free space of all file systems. When combining, CombineFsStats ignores
+// any FsStats instance with missing data.
+func CombineFsStats(stats []FsStats) FsStats {
+	return combineFsStats(stats)
+}
+
 // Used returns how many bytes are used or false if information is missing.
 func (f *FsStats) Used() (uint64, bool) {
 	return f.used()
@@ -45,6 +53,12 @@ type InstanceStats struct {
 	MemoryFree       MaybeUint64
 	MemoryTotal      MaybeUint64
 	Fss              []FsStats
+}
+
+// CombineFsStats combines the file system stats of this instance in place
+// using the CombineFsStats() function.
+func (s *InstanceStats) CombineFsStats() {
+	s.Fss = []FsStats{CombineFsStats(s.Fss)}
 }
 
 // CPUUsedPercent returns CPU usage between 0.0 and 100.0. Returns false
@@ -112,6 +126,8 @@ func NewRollUpStats(
 		roundDuration: roundDuration,
 		fss:           make(map[string]*rollUpFsStatsType)}
 }
+
+func (r *RollUpStats) InstanceId() string { return r.instanceId }
 
 // TimeOk returns true if time t is for the same time period as the other times
 // in this instancce.

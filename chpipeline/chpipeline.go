@@ -228,3 +228,17 @@ func (b byMountPointType) Swap(i, j int) { b[j], b[i] = b[i], b[j] }
 func (b byMountPointType) Less(i, j int) bool {
 	return b[i].MountPoint < b[j].MountPoint
 }
+
+func combineFsStats(stats []FsStats) (result FsStats) {
+	result.MountPoint = "/"
+	for _, stat := range stats {
+		if !stat.Size.Ok || !stat.Free.Ok {
+			continue
+		}
+		result.Size.Value += stat.Size.Value
+		result.Size.Ok = true
+		result.Free.Value += stat.Free.Value
+		result.Free.Ok = true
+	}
+	return
+}

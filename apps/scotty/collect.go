@@ -49,7 +49,7 @@ var (
 		"dataCenter",
 		"",
 		"Required for CIS writing: The data center name")
-	fCombineFileSystemIds flagutil.StringList
+	fCombineFileSystemIds = flagutil.StringList{"ALL"}
 )
 
 func init() {

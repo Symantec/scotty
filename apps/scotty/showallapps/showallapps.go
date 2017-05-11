@@ -35,7 +35,7 @@ const (
 	\ {{with $top := .}} \
 	\ {{range .Apps}} \
 	  <tr>
-	    <td>{{.EndpointId.HostName}}<br>{{.InstanceId}}</td>
+	    <td>{{.EndpointId.HostName}}<br>{{.InstanceId}}<br>{{.AccountNumber}}{{if .CloudWatch}}<br>{{.CloudWatch}}{{end}}</td>
 	    <td>{{.EndpointId.Port}}</td>
 	    <td><a href="{{$top.Link .}}">{{.Name}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>

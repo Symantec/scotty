@@ -7,7 +7,9 @@ import (
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
 	"github.com/Symantec/scotty/cloudhealth"
+	"github.com/Symantec/scotty/cloudwatch"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/lib/dynconfig"
 	"github.com/Symantec/scotty/lib/keyedqueue"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/messages"
@@ -18,6 +20,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -50,6 +53,10 @@ var (
 		"",
 		"Required for CIS writing: The data center name")
 	fCombineFileSystemIds = flagutil.StringList{"ALL"}
+	fCloudWatchFreq       = flag.Duration(
+		"cloudWatchFreq",
+		5*time.Minute,
+		"Rollup time for cloudwatch")
 )
 
 func init() {
@@ -140,19 +147,18 @@ type totalCountUpdaterType interface {
 // keeping track of collection statistics
 type loggerType struct {
 	Store               *store.Store
-	AppList             *datastructs.ApplicationList
 	AppStats            *datastructs.ApplicationStatuses
+	App                 *datastructs.ApplicationStatus
 	ConnectionErrors    *connectionErrorsType
 	CollectionTimesDist *tricorder.CumulativeDistribution
 	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
 	ChangedMetricsDist  *tricorder.CumulativeDistribution
-	NamesSentToSuggest  nameSetType
-	CloudHealthStats    *chpipeline.RollUpStats
-	CombineFileSystems  bool
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
 	CloudHealthChannel  chan chpipeline.CloudHealthInstanceCall
+	CloudWatchChannel   chan chpipeline.Snapshot
+	EndpointData        *datastructs.EndpointData
 }
 
 func (l *loggerType) LogStateChange(
@@ -196,26 +202,41 @@ func (l *loggerType) LogResponse(
 		l.TotalCounts.Update(l.Store, e)
 		if e.Port() == 6910 {
 			if l.CisQueue != nil {
-				var instanceId string
-				if app := l.AppStats.ByEndpointId(e); app != nil {
-					instanceId = app.InstanceId()
-				}
-				stats := cis.GetStats(list, instanceId)
+				stats := cis.GetStats(list, l.App.InstanceId())
 				if stats != nil {
 					l.CisQueue.Add(stats)
 				}
 			}
-			if l.CloudHealthChannel != nil && l.CloudHealthStats != nil {
-				stats := chpipeline.GetStats(list)
-				if l.CombineFileSystems {
-					stats = stats.WithCombinedFsStats()
-				}
-				if !l.CloudHealthStats.TimeOk(stats.Ts) {
-					l.CloudHealthChannel <- l.CloudHealthStats.CloudHealth()
-					l.CloudHealthStats.Clear()
-				}
-				l.CloudHealthStats.Add(stats)
+		}
+		var stats chpipeline.InstanceStats
+		var statsOk bool
+		chRollup := l.EndpointData.CHRollup
+		if l.CloudHealthChannel != nil && chRollup != nil {
+			if !statsOk {
+				stats = chpipeline.GetStats(list)
+				statsOk = true
 			}
+			if !chRollup.TimeOk(stats.Ts) {
+				l.CloudHealthChannel <- chRollup.CloudHealth()
+				chRollup.Clear()
+			}
+			if l.EndpointData.CHCombineFS {
+				chRollup.Add(stats.WithCombinedFsStats())
+			} else {
+				chRollup.Add(stats)
+			}
+		}
+		cwRollup := l.EndpointData.CWRollup
+		if l.CloudWatchChannel != nil && cwRollup != nil {
+			if !statsOk {
+				stats = chpipeline.GetStats(list)
+				statsOk = true
+			}
+			if !cwRollup.TimeOk(stats.Ts) {
+				l.CloudWatchChannel <- cwRollup.TakeSnapshot()
+				cwRollup.Clear()
+			}
+			cwRollup.Add(stats)
 		}
 	}
 	// This error just means that the endpoint was marked inactive
@@ -233,9 +254,9 @@ func (l *loggerType) reportNewNamesForSuggest(
 		var value metrics.Value
 		list.Index(i, &value)
 		if types.FromGoValue(value.Value).CanToFromFloat() {
-			if !l.NamesSentToSuggest[value.Path] {
+			if !l.EndpointData.NamesSentToSuggest[value.Path] {
 				l.MetricNameAdder.Add(value.Path)
-				l.NamesSentToSuggest[value.Path] = true
+				l.EndpointData.NamesSentToSuggest[value.Path] = true
 			}
 		}
 	}
@@ -253,12 +274,22 @@ func createCloudHealthWriter(path string) *cloudhealth.Writer {
 	return cloudhealth.NewWriter(config)
 }
 
+func newCloudWatchWriter(reader io.Reader) (interface{}, error) {
+	var config cloudwatch.Config
+	if err := yamlutil.Read(reader, &config); err != nil {
+		return nil, err
+	}
+	writer, err := cloudwatch.NewWriter(config)
+	return writer, err
+}
+
 func startCollector(
 	appStats *datastructs.ApplicationStatuses,
 	connectionErrors *connectionErrorsType,
 	totalCounts totalCountUpdaterType,
 	metricNameAdder suggest.Adder,
-	memoryChecker memoryCheckerType) {
+	memoryChecker memoryCheckerType,
+	logger *log.Logger) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -339,6 +370,23 @@ func startCollector(
 		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
 	}
 
+	var cloudWatchChannel chan chpipeline.Snapshot
+	var cloudWatchConfig *dynconfig.DynConfig
+
+	cloudWatchConfigFile := path.Join(*fConfigDir, "cloudwatch.yaml")
+	if _, err := os.Stat(cloudWatchConfigFile); err == nil {
+		var err error
+		cloudWatchConfig, err = dynconfig.NewInitialized(
+			cloudWatchConfigFile,
+			newCloudWatchWriter,
+			"cloudwatch",
+			logger)
+		if err != nil {
+			log.Fatal(err)
+		}
+		cloudWatchChannel = make(chan chpipeline.Snapshot, 10000)
+	}
+
 	var cisClient *cis.Client
 	var cisRegex *regexp.Regexp
 	var cisQueue *keyedqueue.Queue
@@ -375,37 +423,32 @@ func startCollector(
 
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
-		// We assign each endpoint its very own nameSetType instance
-		// to store metric names already sent to suggest.
-		// Only that endpoint's fetch goroutine reads and modifies
-		// the contents of its nameSetType instance. Although
-		// this goroutine creates nameSetType instances and manages
-		// the references to them, it never reads or modifies the
-		// contents of any nameSetType instance after creating it.
-		endpointToNamesSentToSuggest := make(
-			map[*collector.Endpoint]nameSetType)
-		endpointToCloudHealthStats := make(
-			map[*collector.Endpoint]*chpipeline.RollUpStats)
+		endpointToData := make(
+			map[*collector.Endpoint]*datastructs.EndpointData)
 		for {
 			endpoints, metricStore := appStats.ActiveEndpointIds()
 			sweepTime := time.Now()
 			for _, endpoint := range endpoints {
-				namesSentToSuggest := endpointToNamesSentToSuggest[endpoint]
-				if namesSentToSuggest == nil {
-					namesSentToSuggest = make(nameSetType)
-					endpointToNamesSentToSuggest[endpoint] = namesSentToSuggest
+				app := appStats.ByEndpointId(endpoint)
+				// app shouldn't be nil, but just in case.
+				if app == nil {
+					continue
 				}
-				cloudHealthStats := endpointToCloudHealthStats[endpoint]
-				if cloudHealthStats == nil {
-					app := appStats.ByEndpointId(endpoint)
-					cloudHealthStats = chpipeline.NewRollUpStats(
-						app.AccountNumber(), app.InstanceId(), time.Hour)
-					endpointToCloudHealthStats[endpoint] = cloudHealthStats
+				endpointData := endpointToData[endpoint]
+				if endpointData == nil {
+					endpointData = datastructs.NewEndpointData()
 				}
-				combineFileSystems := true
-				if combineFsMap != nil {
-					combineFileSystems = combineFsMap[cloudHealthStats.InstanceId()]
+				if endpoint.Port() == 6910 {
+					if cloudHealthChannel != nil {
+						endpointData = endpointData.UpdateForCloudHealth(
+							app, combineFsMap)
+					}
+					if cloudWatchChannel != nil {
+						endpointData = endpointData.UpdateForCloudWatch(
+							app, *fCloudWatchFreq)
+					}
 				}
+				endpointToData[endpoint] = endpointData
 
 				maybeCisQueue := cisQueue
 				// If there is a regex filter and our machine doesn't match
@@ -417,17 +460,17 @@ func startCollector(
 				logger := &loggerType{
 					Store:               metricStore,
 					AppStats:            appStats,
+					App:                 app,
 					ConnectionErrors:    connectionErrors,
 					CollectionTimesDist: collectionTimesDist,
 					ByProtocolDist:      byProtocolDist,
 					ChangedMetricsDist:  changedMetricsPerEndpointDist,
-					NamesSentToSuggest:  namesSentToSuggest,
-					CloudHealthStats:    cloudHealthStats,
-					CombineFileSystems:  combineFileSystems,
 					MetricNameAdder:     metricNameAdder,
 					TotalCounts:         totalCounts,
 					CisQueue:            maybeCisQueue,
 					CloudHealthChannel:  cloudHealthChannel,
+					CloudWatchChannel:   cloudWatchChannel,
+					EndpointData:        endpointData,
 				}
 
 				endpoint.Poll(sweepTime, logger)
@@ -448,6 +491,71 @@ func startCollector(
 	if cloudHealthWriter != nil && cloudHealthChannel != nil {
 		startCloudFireLoop(cloudHealthWriter, cloudHealthChannel)
 	}
+
+	if cloudWatchConfig != nil && cloudWatchChannel != nil {
+		startCloudWatchLoop(cloudWatchConfig, cloudWatchChannel)
+	}
+}
+
+func startCloudWatchLoop(
+	cloudWatchConfig *dynconfig.DynConfig,
+	cloudWatchChannel chan chpipeline.Snapshot) {
+	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
+	var successfulWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudwatch/successfulWrites",
+		&successfulWrites,
+		units.None,
+		"Successful write count"); err != nil {
+		log.Fatal(err)
+	}
+	var errorWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudwatch/errorWrites",
+		&errorWrites,
+		units.None,
+		"error write count"); err != nil {
+		log.Fatal(err)
+	}
+	if err := tricorder.RegisterMetric(
+		"cloudwatch/writeTimes",
+		writeTimesDist,
+		units.Millisecond,
+		"cloud watch write times"); err != nil {
+		log.Fatal(err)
+	}
+	var lastWriteError string
+	if err := tricorder.RegisterMetric(
+		"cloudwatch/lastWriteError",
+		&lastWriteError,
+		units.None,
+		"Last CloudWatch write error"); err != nil {
+		log.Fatal(err)
+	}
+	var totalWrites uint64
+	if err := tricorder.RegisterMetric(
+		"cloudwatch/totalWrites",
+		&totalWrites,
+		units.None,
+		"total write count"); err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		for {
+			snapshot := <-cloudWatchChannel
+			writer := cloudWatchConfig.Get().(*cloudwatch.Writer)
+			writeStartTime := time.Now()
+			if err := writer.Write(&snapshot); err != nil {
+				lastWriteError = err.Error()
+				errorWrites++
+			} else {
+				successfulWrites++
+			}
+			totalWrites++
+			writeTimesDist.Add(time.Since(writeStartTime))
+		}
+	}()
 }
 
 func startCloudFireLoop(

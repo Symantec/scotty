@@ -145,11 +145,26 @@ func (r *RollUpStats) add(s InstanceStats) {
 	}
 }
 
-func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
+func (r *RollUpStats) takeSnapshot() Snapshot {
 	if !r.tsOk {
 		panic("No timestamp")
 	}
-	instance := cloudhealth.InstanceData{
+	var fss []FsSnapshot
+	for mountPoint, rollupFs := range r.fss {
+		if rollupFs.IsEmpty() {
+			continue
+		}
+		fsData := FsSnapshot{
+			MountPoint:  mountPoint,
+			Size:        rollupFs.fsSizeBytes,
+			Used:        rollupFs.fsUsedBytes,
+			UsedPercent: rollupFs.fsUsedPercent,
+		}
+		fss = append(fss, fsData)
+	}
+	// Needed to make testing possible
+	sort.Sort(byMountPointType(fss))
+	return Snapshot{
 		AccountNumber:     r.accountNumber,
 		InstanceId:        r.instanceId,
 		Ts:                r.ts,
@@ -157,25 +172,33 @@ func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
 		MemoryFreeBytes:   r.memoryFreeBytes,
 		MemorySizeBytes:   r.memorySizeBytes,
 		MemoryUsedPercent: r.memoryUsedPercent,
+		Fss:               fss,
 	}
-	var fss []cloudhealth.FsData
-	for mountPoint, rollupFs := range r.fss {
-		if rollupFs.IsEmpty() {
-			continue
-		}
-		fsData := cloudhealth.FsData{
-			AccountNumber: r.accountNumber,
-			InstanceId:    r.instanceId,
-			MountPoint:    mountPoint,
-			Ts:            r.ts,
-			FsSizeBytes:   rollupFs.fsSizeBytes,
-			FsUsedBytes:   rollupFs.fsUsedBytes,
-			FsUsedPercent: rollupFs.fsUsedPercent,
-		}
-		fss = append(fss, fsData)
+}
+
+func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
+	snapshot := r.takeSnapshot()
+	instance := cloudhealth.InstanceData{
+		AccountNumber:     snapshot.AccountNumber,
+		InstanceId:        snapshot.InstanceId,
+		Ts:                snapshot.Ts,
+		CpuUsedPercent:    snapshot.CpuUsedPercent,
+		MemoryFreeBytes:   snapshot.MemoryFreeBytes,
+		MemorySizeBytes:   snapshot.MemorySizeBytes,
+		MemoryUsedPercent: snapshot.MemoryUsedPercent,
 	}
-	// Needed to make testing possible
-	sort.Sort(byMountPointType(fss))
+	fss := make([]cloudhealth.FsData, len(snapshot.Fss))
+	for i := range snapshot.Fss {
+		fss[i] = cloudhealth.FsData{
+			AccountNumber: snapshot.AccountNumber,
+			InstanceId:    snapshot.InstanceId,
+			MountPoint:    snapshot.Fss[i].MountPoint,
+			Ts:            snapshot.Ts,
+			FsSizeBytes:   snapshot.Fss[i].Size,
+			FsUsedBytes:   snapshot.Fss[i].Used,
+			FsUsedPercent: snapshot.Fss[i].UsedPercent,
+		}
+	}
 	return CloudHealthInstanceCall{
 		Instance: instance,
 		Fss:      fss,
@@ -219,7 +242,7 @@ func (c CloudHealthInstanceCall) split() (
 	return
 }
 
-type byMountPointType []cloudhealth.FsData
+type byMountPointType []FsSnapshot
 
 func (b byMountPointType) Len() int { return len(b) }
 

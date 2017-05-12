@@ -1,3 +1,4 @@
+// Package chpipeline manages collecting data for cloudhealth and other systems
 package chpipeline
 
 import (
@@ -55,10 +56,11 @@ type InstanceStats struct {
 	Fss              []FsStats
 }
 
-// CombineFsStats combines the file system stats of this instance in place
-// using the CombineFsStats() function.
-func (s *InstanceStats) CombineFsStats() {
+// WithCombinedFsStats returns an instance like this one but with the file
+// system stats combined using the CombineFsStats() function.
+func (s InstanceStats) WithCombinedFsStats() InstanceStats {
 	s.Fss = []FsStats{CombineFsStats(s.Fss)}
+	return s
 }
 
 // CPUUsedPercent returns CPU usage between 0.0 and 100.0. Returns false
@@ -98,6 +100,26 @@ func (c CloudHealthInstanceCall) Split() (
 	return c.split()
 }
 
+// Snapshot represents a snapshot of a RollUpStats instance.
+type Snapshot struct {
+	AccountNumber     string
+	InstanceId        string
+	Ts                time.Time
+	CpuUsedPercent    cloudhealth.FVariable
+	MemoryFreeBytes   cloudhealth.IVariable
+	MemorySizeBytes   cloudhealth.IVariable
+	MemoryUsedPercent cloudhealth.FVariable
+	Fss               []FsSnapshot
+}
+
+// FsSnaapshot depicts a snapshot of a file system
+type FsSnapshot struct {
+	MountPoint  string
+	Size        cloudhealth.IVariable
+	Used        cloudhealth.IVariable
+	UsedPercent cloudhealth.FVariable
+}
+
 // RollUpStats represents rolled up statistics for a machine by some time
 // period.
 type RollUpStats struct {
@@ -127,6 +149,10 @@ func NewRollUpStats(
 		fss:           make(map[string]*rollUpFsStatsType)}
 }
 
+func (r *RollUpStats) RoundDuration() time.Duration { return r.roundDuration }
+
+func (r *RollUpStats) AccountNumber() string { return r.accountNumber }
+
 func (r *RollUpStats) InstanceId() string { return r.instanceId }
 
 // TimeOk returns true if time t is for the same time period as the other times
@@ -139,6 +165,11 @@ func (r *RollUpStats) TimeOk(t time.Time) bool {
 // for the same time period as times already in this instance.
 func (r *RollUpStats) Add(s InstanceStats) {
 	r.add(s)
+}
+
+// TakeSnapshot grabs a snapshot of this instance
+func (r *RollUpStats) TakeSnapshot() Snapshot {
+	return r.takeSnapshot()
 }
 
 // CloudHealth returns the call needed to write the data in this instance to

@@ -208,7 +208,7 @@ func (l *loggerType) LogResponse(
 			if l.CloudHealthChannel != nil && l.CloudHealthStats != nil {
 				stats := chpipeline.GetStats(list)
 				if l.CombineFileSystems {
-					stats.CombineFsStats()
+					stats = stats.WithCombinedFsStats()
 				}
 				if !l.CloudHealthStats.TimeOk(stats.Ts) {
 					l.CloudHealthChannel <- l.CloudHealthStats.CloudHealth()

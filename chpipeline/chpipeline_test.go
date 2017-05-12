@@ -138,8 +138,7 @@ func TestFileSystemStats(t *testing.T) {
 			So(expected, ShouldResemble, stats.Fss)
 		})
 		Convey("combined file system stats", func() {
-			stats := chpipeline.GetStats(list)
-			stats.CombineFsStats()
+			stats := chpipeline.GetStats(list).WithCombinedFsStats()
 			expected := []chpipeline.FsStats{
 				{
 					MountPoint: "/",

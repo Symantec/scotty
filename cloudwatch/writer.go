@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/cloudwatch"
@@ -17,6 +18,8 @@ func newWriter(c Config) (*Writer, error) {
 	sess, err := session.NewSessionWithOptions(
 		session.Options{
 			Config: aws.Config{
+				Credentials: credentials.NewSharedCredentials(
+					c.SharedCredentialsFile, c.SharedCredentialsProfile),
 				Region: aws.String(c.Region)}})
 	if err != nil {
 		return nil, err

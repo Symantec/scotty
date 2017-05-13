@@ -198,7 +198,7 @@ func (l *loggerType) LogResponse(
 			if l.CisQueue != nil {
 				var instanceId string
 				if app := l.AppStats.ByEndpointId(e); app != nil {
-					instanceId = app.InstanceId
+					instanceId = app.InstanceId()
 				}
 				stats := cis.GetStats(list, instanceId)
 				if stats != nil {
@@ -399,7 +399,7 @@ func startCollector(
 				if cloudHealthStats == nil {
 					app := appStats.ByEndpointId(endpoint)
 					cloudHealthStats = chpipeline.NewRollUpStats(
-						app.AccountNumber, app.InstanceId, time.Hour)
+						app.AccountNumber(), app.InstanceId(), time.Hour)
 					endpointToCloudHealthStats[endpoint] = cloudHealthStats
 				}
 				combineFileSystems := true

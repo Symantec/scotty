@@ -17,6 +17,8 @@ import (
 	"time"
 )
 
+const kCloudWatchTag = "CloudWatchRefreshRate"
+
 type byHostAndName []*ApplicationStatus
 
 func (b byHostAndName) Len() int { return len(b) }
@@ -65,18 +67,61 @@ type hostAndPort struct {
 	Port uint
 }
 
+func (a *ApplicationStatus) accountNumber() string {
+	if a.Aws != nil {
+		return a.Aws.AccountId
+	}
+	return ""
+}
+
+func (a *ApplicationStatus) instanceId() string {
+	if a.Aws != nil {
+		return a.Aws.InstanceId
+	}
+	return ""
+}
+
+func (a *ApplicationStatus) cloudWatch() string {
+	if a.Aws != nil {
+		if result, ok := a.Aws.Tags[kCloudWatchRate]; ok {
+			if _, err := time.ParseDuration(result); err != nil {
+				return "defaultRate"
+			}
+			return result
+		}
+	}
+	return ""
+}
+
+func (a *ApplicationStatus) cloudWatchRefreshRate(defaultRate time.Duration) (
+	time.Duration, bool) {
+	if a.Aws == nil || a.Aws.Tags == nil {
+		return 0, false
+	}
+	durStr, ok := a.Aws.Tags[kCloudWatchTag]
+	if !ok {
+		return 0, false
+	}
+	dur, err := time.ParseDuration(durStr)
+	if err != nil {
+		dur = defaultRate
+	}
+	return dur, true
+}
+
 func (a *ApplicationStatuses) newApplicationStatus(
-	e *scotty.Endpoint, accountNumber, instanceId string) *ApplicationStatus {
+	e *scotty.Endpoint, awsMetadata *mdb.AwsMetadata) *ApplicationStatus {
 	app := a.appList.ByPort(e.Port())
 	if app == nil {
 		panic("Oops, unknown port in endpoint.")
 	}
-	return &ApplicationStatus{
-		EndpointId:    e,
-		Name:          app.Name(),
-		Active:        true,
-		AccountNumber: accountNumber,
-		InstanceId:    instanceId}
+	result := &ApplicationStatus{
+		EndpointId: e,
+		Name:       app.Name(),
+		Active:     true,
+		Aws:        awsMetadata,
+	}
+	return result
 }
 
 func (a *ApplicationStatuses) store() *store.Store {
@@ -160,19 +205,15 @@ func (a *ApplicationStatuses) _markHostsActiveExclusively(
 				activeEndpoint = scotty.NewEndpointWithConnector(
 					hp.Host, hp.Port, apps[j].Connectors())
 				a.byHostPort[hp] = activeEndpoint
-				var instanceId, accountNumber string
-				if activeHosts[i].AwsMetadata != nil {
-					accountNumber = activeHosts[i].AwsMetadata.AccountId
-					instanceId = activeHosts[i].AwsMetadata.InstanceId
-				}
 				a.byEndpoint[activeEndpoint] = a.newApplicationStatus(
-					activeEndpoint, accountNumber, instanceId)
+					activeEndpoint, activeHosts[i].AwsMetadata)
 				if storeCopy == a.currentStore {
 					storeCopy = a.currentStore.ShallowCopy()
 				}
 				storeCopy.RegisterEndpoint(activeEndpoint)
 			} else {
 				val := a.byEndpoint[activeEndpoint]
+				val.Aws = activeHosts[i].AwsMetadata
 				if !val.Active {
 					val.Active = true
 					toBecomeActive = append(

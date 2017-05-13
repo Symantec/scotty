@@ -4,6 +4,7 @@ package datastructs
 import (
 	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/store"
 	"io"
@@ -11,6 +12,63 @@ import (
 	"sync"
 	"time"
 )
+
+// EndpointData represents data specific to a particular endpoint used when
+// reading metrics from that endpoint.
+// EndpointData instances must be treated as immutable. However, instances
+// contain fields with pointers/references to mutable data structures that
+// can't be used with multiple goroutines.
+// Although multiple goroutine can read these fields, only one goroutine
+// at a time can access and change the actual data structures they reference.
+// These fields are denoted as protected fields.
+// In scotty, only one goroutine at a time reads metrics for a particular
+// endpoint and stores it in scotty. Therefore, only that goroutine gets
+// to use the data structures that the protected fields reference.
+type EndpointData struct {
+	NamesSentToSuggest map[string]bool // protected
+
+	// protected: for cloudhealth. nil if not sending data to cloudhealth
+	CHRollup *chpipeline.RollUpStats
+
+	// True if file system stats are to be combined for cloudhealth.
+	CHCombineFS bool
+
+	// protected: for cloudwatch. nil if not sending data to cloudwatch
+	CWRollup *chpipeline.RollUpStats
+}
+
+func NewEndpointData() *EndpointData {
+	return &EndpointData{
+		NamesSentToSuggest: make(map[string]bool),
+	}
+}
+
+// UpdateForCloudHealth returns a new EndpointData instance set up to
+// collect cloud health data. app represents the endpoint; combineFsMap
+// is a map of instance ids for which file system metrics should be rolled up.
+// A nil map means file system metrics should be rolled up for all instance Ids.
+// An empty map means file system metrics should never be rolled up.
+//
+// If nothing changed, UpdateForCloudHealth just returns e.
+func (e *EndpointData) UpdateForCloudHealth(
+	app *ApplicationStatus, combineFsMap map[string]bool) *EndpointData {
+	return e.updateForCloudHealth(app, combineFsMap)
+}
+
+// UpdateForCloudWatch returns a new EndpointData instance set up to collect
+// Cloud watch data or not. app represents the endpoint; defaultFreq is
+// the default rollup time to use.
+//
+// If nothing changed, UpdateForCloudWatch just returns e.
+//
+// If the endpoint's machine has an AWS tag called CloudWatchRate, the time
+// in there is the roll up time to use. If the tag exists but the value is
+// missing, that means use defaultFreq for the rollup time. If the tag
+// doesn't exist, that means don't collect data for cloud watch.
+func (e *EndpointData) UpdateForCloudWatch(
+	app *ApplicationStatus, defaultFreq time.Duration) *EndpointData {
+	return e.updateForCloudWatch(app, defaultFreq)
+}
 
 // ApplicationStatus represents the status of a single application.
 type ApplicationStatus struct {
@@ -39,14 +97,31 @@ type ApplicationStatus struct {
 	// Whether or not it is currently down.
 	Down bool
 
-	// If non-empty the AWS account number of the machine of the application
-	AccountNumber string
-
-	// If non-empty the AWS instance-id of the machine of the application
-	InstanceId string
+	// If non-nil contains aws metadata
+	Aws *mdb.AwsMetadata
 
 	changedMetrics_Sum   uint64
 	changedMetrics_Count uint64
+}
+
+// AccountNumber returns the AWS account number of the machine of the endpoint
+// or the empty string if machine is not an AWS machine.
+func (a *ApplicationStatus) AccountNumber() string {
+	return a.accountNumber()
+}
+
+// InstanceId returns the AWS instance id of the machine of the endpoint
+// or the empty string if machine is not an AWS machine.
+func (a *ApplicationStatus) InstanceId() string {
+	return a.instanceId()
+}
+
+// CloudWatch returns how often data for the machine gets written to
+// cloud watch as a string like "5m" If the rate is to be whatever the
+// default rate is, returns "defaultRate". If data not to be written to
+// cloudwatch, returns the empty string.
+func (a *ApplicationStatus) CloudWatch() string {
+	return a.cloudWatch()
 }
 
 // Returns last error time as 2006-01-02T15:04:05
@@ -69,6 +144,13 @@ func (a *ApplicationStatus) Staleness() time.Duration {
 		return 0
 	}
 	return time.Now().Sub(a.LastReadTime)
+}
+
+// Returns the desired cloudwatch refresh rate for this application's
+// machine
+func (a *ApplicationStatus) CloudWatchRefreshRate(defaultRate time.Duration) (
+	time.Duration, bool) {
+	return a.cloudWatchRefreshRate(defaultRate)
 }
 
 // ByHostAndName sorts list by the hostname and then by application name

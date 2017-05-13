@@ -15,6 +15,7 @@ import (
 	"math"
 	"reflect"
 	"testing"
+	"time"
 )
 
 const (
@@ -187,6 +188,68 @@ func toMachines(names []string) []mdb.Machine {
 	return result
 }
 
+func TestCloudWatchRefreshRate(t *testing.T) {
+	Convey("With some machines", t, func() {
+		alBuilder := NewApplicationListBuilder()
+		alBuilder.Add(
+			37, "First", sources.ConnectorList{trisource.GetConnector()})
+		appList := alBuilder.Build()
+		appStatus := NewApplicationStatuses(
+			appList,
+			newStore(t, "TestCloudWatchRefreshRate", 1, 100, 1.0, 10))
+		appStatus.MarkHostsActiveExclusively(
+			104.25,
+			[]mdb.Machine{
+				{
+					Hostname: "host101",
+					AwsMetadata: &mdb.AwsMetadata{
+						Tags: map[string]string{
+							"CloudWatchRefreshRate": "4m",
+						},
+					},
+				},
+				{
+					Hostname: "host102",
+					AwsMetadata: &mdb.AwsMetadata{
+						Tags: map[string]string{
+							"CloudWatchRefreshRate": "",
+						},
+					},
+				},
+				{
+					Hostname:    "host103",
+					AwsMetadata: &mdb.AwsMetadata{},
+				},
+				{
+					Hostname: "host104",
+				},
+			})
+		endpoints, _ := appStatus.ActiveEndpointIds()
+		eps := make(map[string]*scotty.Endpoint)
+		for _, ep := range endpoints {
+			eps[fmt.Sprintf("%s_%d", ep.HostName(), ep.Port())] = ep
+		}
+		Convey("If tag and cloudwatch refresh rate present, use it", func() {
+			rate, ok := appStatus.ByEndpointId(eps["host101_37"]).CloudWatchRefreshRate(time.Minute)
+			So(rate, ShouldEqual, 4*time.Minute)
+			So(ok, ShouldBeTrue)
+		})
+		Convey("If tag present but no refresh rate, use default", func() {
+			rate, ok := appStatus.ByEndpointId(eps["host102_37"]).CloudWatchRefreshRate(time.Minute)
+			So(rate, ShouldEqual, time.Minute)
+			So(ok, ShouldBeTrue)
+		})
+		Convey("If no tag present don't use cloudwatch", func() {
+			_, ok := appStatus.ByEndpointId(eps["host103_37"]).CloudWatchRefreshRate(time.Minute)
+			So(ok, ShouldBeFalse)
+		})
+		Convey("If no aws present, don't use cloudwatch", func() {
+			_, ok := appStatus.ByEndpointId(eps["host104_37"]).CloudWatchRefreshRate(time.Minute)
+			So(ok, ShouldBeFalse)
+		})
+	})
+}
+
 func TestInstanceIdAccountId(t *testing.T) {
 	alBuilder := NewApplicationListBuilder()
 	alBuilder.Add(
@@ -219,47 +282,103 @@ func TestInstanceIdAccountId(t *testing.T) {
 	}
 	Convey("instance ID and account Id should be populated", t, func() {
 		So(
-			appStatus.ByEndpointId(eps["host101_37"]).InstanceId,
+			appStatus.ByEndpointId(eps["host101_37"]).InstanceId(),
 			ShouldEqual,
 			"i-42793",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host101_37"]).AccountNumber,
+			appStatus.ByEndpointId(eps["host101_37"]).AccountNumber(),
 			ShouldEqual,
 			"12345",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host101_81"]).InstanceId,
+			appStatus.ByEndpointId(eps["host101_81"]).InstanceId(),
 			ShouldEqual,
 			"i-42793",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host101_81"]).AccountNumber,
+			appStatus.ByEndpointId(eps["host101_81"]).AccountNumber(),
 			ShouldEqual,
 			"12345",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host102_37"]).InstanceId,
+			appStatus.ByEndpointId(eps["host102_37"]).InstanceId(),
 			ShouldEqual,
 			"",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host102_37"]).AccountNumber,
+			appStatus.ByEndpointId(eps["host102_37"]).AccountNumber(),
 			ShouldEqual,
 			"",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host102_81"]).InstanceId,
+			appStatus.ByEndpointId(eps["host102_81"]).InstanceId(),
 			ShouldEqual,
 			"",
 		)
 		So(
-			appStatus.ByEndpointId(eps["host102_81"]).AccountNumber,
+			appStatus.ByEndpointId(eps["host102_81"]).AccountNumber(),
 			ShouldEqual,
 			"",
 		)
 	})
 
+	appStatus.MarkHostsActiveExclusively(
+		104.26,
+		[]mdb.Machine{
+			{
+				Hostname: "host101",
+				AwsMetadata: &mdb.AwsMetadata{
+					InstanceId: "i-99993",
+					AccountId:  "98765"},
+			},
+			{
+				Hostname: "host102",
+			},
+		})
+
+	Convey("InstanceId and AccountId should update", t, func() {
+		So(
+			appStatus.ByEndpointId(eps["host101_37"]).InstanceId(),
+			ShouldEqual,
+			"i-99993",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host101_37"]).AccountNumber(),
+			ShouldEqual,
+			"98765",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host101_81"]).InstanceId(),
+			ShouldEqual,
+			"i-99993",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host101_81"]).AccountNumber(),
+			ShouldEqual,
+			"98765",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_37"]).InstanceId(),
+			ShouldEqual,
+			"",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_37"]).AccountNumber(),
+			ShouldEqual,
+			"",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_81"]).InstanceId(),
+			ShouldEqual,
+			"",
+		)
+		So(
+			appStatus.ByEndpointId(eps["host102_81"]).AccountNumber(),
+			ShouldEqual,
+			"",
+		)
+	})
 }
 
 func TestMarkHostsActiveExclusively(t *testing.T) {

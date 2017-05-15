@@ -204,7 +204,7 @@ func TestCloudWatchRefreshRate(t *testing.T) {
 					Hostname: "host101",
 					AwsMetadata: &mdb.AwsMetadata{
 						Tags: map[string]string{
-							"CloudWatchRefreshRate": "4m",
+							"PushMetricsToCloudWatch": "4m",
 						},
 					},
 				},
@@ -212,7 +212,7 @@ func TestCloudWatchRefreshRate(t *testing.T) {
 					Hostname: "host102",
 					AwsMetadata: &mdb.AwsMetadata{
 						Tags: map[string]string{
-							"CloudWatchRefreshRate": "",
+							"PushMetricsToCloudWatch": "",
 						},
 					},
 				},

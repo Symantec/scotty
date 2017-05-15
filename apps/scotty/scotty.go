@@ -412,7 +412,8 @@ func main() {
 		connectionErrors,
 		totalCounts,
 		metricNameAdder,
-		&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager})
+		&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager},
+		logger)
 
 	http.Handle(
 		"/",

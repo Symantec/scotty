@@ -25,6 +25,13 @@ func (a *AwsRole) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Config struct {
 	Roles []AwsRole `yaml:"roles"`
 
+	// Full path of AWS shared credentials file
+	SharedCredentialsFile string `yaml:"sharedCredentialsFile"`
+
+	// The AWS profile name to use in shared credentials file.
+	// Omitting this is equivalent to specifying the "default" profile
+	SharedCredentialsProfile string `yaml:"sharedCredentialsProfile"`
+
 	// looks like "us-east-1", "us-west-2", etc.
 	Region string `yaml:"region"`
 }

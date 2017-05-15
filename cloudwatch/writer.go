@@ -40,6 +40,11 @@ func (w *Writer) write(snapshot *chpipeline.Snapshot) error {
 	if !ok {
 		return fmt.Errorf("Unrecognizsed account: %s", snapshot.AccountNumber)
 	}
+	if len(snapshot.Fss) > 1 {
+		return fmt.Errorf(
+			"multiple file systems not supported. found %d",
+			len(snapshot.Fss))
+	}
 	_, err := serviceClients.CloudWatch.PutMetricData(
 		toPutMetricData(snapshot))
 	return err

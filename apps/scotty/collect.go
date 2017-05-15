@@ -209,11 +209,13 @@ func (l *loggerType) LogResponse(
 			}
 		}
 		var stats chpipeline.InstanceStats
+		var combinedFsStats chpipeline.InstanceStats
 		var statsOk bool
 		chRollup := l.EndpointData.CHRollup
 		if l.CloudHealthChannel != nil && chRollup != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
+				combinedFsStats = stats.WithCombinedFsStats()
 				statsOk = true
 			}
 			if !chRollup.TimeOk(stats.Ts) {
@@ -221,7 +223,7 @@ func (l *loggerType) LogResponse(
 				chRollup.Clear()
 			}
 			if l.EndpointData.CHCombineFS {
-				chRollup.Add(stats.WithCombinedFsStats())
+				chRollup.Add(combinedFsStats)
 			} else {
 				chRollup.Add(stats)
 			}
@@ -230,13 +232,14 @@ func (l *loggerType) LogResponse(
 		if l.CloudWatchChannel != nil && cwRollup != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
+				combinedFsStats = stats.WithCombinedFsStats()
 				statsOk = true
 			}
 			if !cwRollup.TimeOk(stats.Ts) {
 				l.CloudWatchChannel <- cwRollup.TakeSnapshot()
 				cwRollup.Clear()
 			}
-			cwRollup.Add(stats)
+			cwRollup.Add(combinedFsStats)
 		}
 	}
 	// This error just means that the endpoint was marked inactive

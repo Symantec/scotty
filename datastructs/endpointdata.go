@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	kCloudWatchRate = "CloudWatchRate"
+	kCloudWatchRate = "PushMetricsToCloudWatch"
 )
 
 func (e *EndpointData) updateForCloudHealth(

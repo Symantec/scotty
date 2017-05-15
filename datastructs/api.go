@@ -61,10 +61,10 @@ func (e *EndpointData) UpdateForCloudHealth(
 //
 // If nothing changed, UpdateForCloudWatch just returns e.
 //
-// If the endpoint's machine has an AWS tag called CloudWatchRate, the time
-// in there is the roll up time to use. If the tag exists but the value is
-// missing, that means use defaultFreq for the rollup time. If the tag
-// doesn't exist, that means don't collect data for cloud watch.
+// If the endpoint's machine has an AWS tag called PushMetricsToCloudWatch,
+// the time in there is the roll up time to use. If the tag exists but the
+// value is missing, that means use defaultFreq for the rollup time. If
+// the tag doesn't exist, that means don't collect data for cloud watch.
 func (e *EndpointData) UpdateForCloudWatch(
 	app *ApplicationStatus, defaultFreq time.Duration) *EndpointData {
 	return e.updateForCloudWatch(app, defaultFreq)

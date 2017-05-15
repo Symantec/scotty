@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const kCloudWatchTag = "CloudWatchRefreshRate"
+const kCloudWatchTag = "PushMetricsToCloudWatch"
 
 type byHostAndName []*ApplicationStatus
 
@@ -83,7 +83,7 @@ func (a *ApplicationStatus) instanceId() string {
 
 func (a *ApplicationStatus) cloudWatch() string {
 	if a.Aws != nil {
-		if result, ok := a.Aws.Tags[kCloudWatchRate]; ok {
+		if result, ok := a.Aws.Tags[kCloudWatchTag]; ok {
 			if _, err := time.ParseDuration(result); err != nil {
 				return "defaultRate"
 			}

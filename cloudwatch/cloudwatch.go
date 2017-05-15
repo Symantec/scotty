@@ -16,9 +16,8 @@ var (
 	kMemoryFreeBytes       = aws.String("MemoryFreeBytes")
 	kMemorySizeBytes       = aws.String("MemorySizeBytes")
 	kMemoryUsedPercent     = aws.String("MemoryUsedPercent")
-	kMountPoint            = aws.String("MountPoint")
 	kPercent               = aws.String("Percent")
-	kScotty                = aws.String("scotty")
+	kScotty                = aws.String("Scotty")
 )
 
 func toPutMetricData(
@@ -42,26 +41,6 @@ func toPutMetricData(
 		}
 		metricData = append(metricData, cpuUsedPercent)
 	}
-	if !snapshot.MemoryFreeBytes.IsEmpty() {
-		memoryFreeBytes := &cloudwatch.MetricDatum{
-			MetricName: kMemoryFreeBytes,
-			Dimensions: instanceIdDims,
-			Timestamp:  timestamp,
-			Unit:       kBytes,
-			Value:      aws.Float64(float64(snapshot.MemoryFreeBytes.Avg())),
-		}
-		metricData = append(metricData, memoryFreeBytes)
-	}
-	if !snapshot.MemorySizeBytes.IsEmpty() {
-		memorySizeBytes := &cloudwatch.MetricDatum{
-			MetricName: kMemorySizeBytes,
-			Dimensions: instanceIdDims,
-			Timestamp:  timestamp,
-			Unit:       kBytes,
-			Value:      aws.Float64(float64(snapshot.MemorySizeBytes.Avg())),
-		}
-		metricData = append(metricData, memorySizeBytes)
-	}
 	if !snapshot.MemoryUsedPercent.IsEmpty() {
 		memoryUsedPercent := &cloudwatch.MetricDatum{
 			MetricName: kMemoryUsedPercent,
@@ -72,38 +51,15 @@ func toPutMetricData(
 		}
 		metricData = append(metricData, memoryUsedPercent)
 	}
-	for _, fss := range snapshot.Fss {
-		instanceIdMountPointDims := []*cloudwatch.Dimension{
-			instanceIdDim,
-			{
-				Name:  kMountPoint,
-				Value: aws.String(fss.MountPoint),
-			},
-		}
-		if !fss.Size.IsEmpty() {
-			sizeMetric := &cloudwatch.MetricDatum{
-				MetricName: kFileSystemSize,
-				Dimensions: instanceIdMountPointDims,
-				Timestamp:  timestamp,
-				Unit:       kBytes,
-				Value:      aws.Float64(float64(fss.Size.Avg())),
-			}
-			metricData = append(metricData, sizeMetric)
-		}
-		if !fss.Used.IsEmpty() {
-			usedMetric := &cloudwatch.MetricDatum{
-				MetricName: kFileSystemUsed,
-				Dimensions: instanceIdMountPointDims,
-				Timestamp:  timestamp,
-				Unit:       kBytes,
-				Value:      aws.Float64(float64(fss.Used.Avg())),
-			}
-			metricData = append(metricData, usedMetric)
-		}
+	if len(snapshot.Fss) > 1 {
+		panic("Can't have multiple file systems")
+	}
+	if len(snapshot.Fss) == 1 {
+		fss := snapshot.Fss[0]
 		if !fss.UsedPercent.IsEmpty() {
 			usedPercentMetric := &cloudwatch.MetricDatum{
 				MetricName: kFileSystemUsedPercent,
-				Dimensions: instanceIdMountPointDims,
+				Dimensions: instanceIdDims,
 				Timestamp:  timestamp,
 				Unit:       kPercent,
 				Value:      aws.Float64(fss.UsedPercent.Avg()),

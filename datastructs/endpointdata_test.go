@@ -56,7 +56,7 @@ func TestEndpointData(t *testing.T) {
 					AccountId:  "2468",
 					InstanceId: "1357",
 					Tags: map[string]string{
-						"CloudWatchRate": "2m",
+						"PushMetricsToCloudWatch": "2m",
 					},
 				},
 			}
@@ -88,7 +88,7 @@ func TestEndpointData(t *testing.T) {
 							AccountId:  "2468",
 							InstanceId: "1357",
 							Tags: map[string]string{
-								"CloudWatchRate": "",
+								"PushMetricsToCloudWatch": "",
 							},
 						},
 					}
@@ -104,7 +104,7 @@ func TestEndpointData(t *testing.T) {
 							AccountId:  "2468",
 							InstanceId: "1357",
 							Tags: map[string]string{
-								"CloudWatchRate": "3m",
+								"PushMetricsToCloudWatch": "3m",
 							},
 						},
 					}

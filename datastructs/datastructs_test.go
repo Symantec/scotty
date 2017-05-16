@@ -223,6 +223,14 @@ func TestCloudWatchRefreshRate(t *testing.T) {
 				{
 					Hostname: "host104",
 				},
+				{
+					Hostname: "host105",
+					AwsMetadata: &mdb.AwsMetadata{
+						Tags: map[string]string{
+							"PushMetricsToCloudWatch": "-3s",
+						},
+					},
+				},
 			})
 		endpoints, _ := appStatus.ActiveEndpointIds()
 		eps := make(map[string]*scotty.Endpoint)
@@ -246,6 +254,11 @@ func TestCloudWatchRefreshRate(t *testing.T) {
 		Convey("If no aws present, don't use cloudwatch", func() {
 			_, ok := appStatus.ByEndpointId(eps["host104_37"]).CloudWatchRefreshRate(time.Minute)
 			So(ok, ShouldBeFalse)
+		})
+		Convey("If tag present but doesn't make sense, use default", func() {
+			rate, ok := appStatus.ByEndpointId(eps["host105_37"]).CloudWatchRefreshRate(time.Minute)
+			So(rate, ShouldEqual, time.Minute)
+			So(ok, ShouldBeTrue)
 		})
 	})
 }

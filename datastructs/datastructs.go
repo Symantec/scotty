@@ -19,6 +19,10 @@ import (
 
 const kCloudWatchTag = "PushMetricsToCloudWatch"
 
+var (
+	kDurationTooSmall = errors.New("Duration too small")
+)
+
 type byHostAndName []*ApplicationStatus
 
 func (b byHostAndName) Len() int { return len(b) }
@@ -81,10 +85,21 @@ func (a *ApplicationStatus) instanceId() string {
 	return ""
 }
 
+func parseDuration(durStr string) (time.Duration, error) {
+	dur, err := time.ParseDuration(durStr)
+	if err != nil {
+		return 0, err
+	}
+	if dur < time.Minute {
+		return 0, kDurationTooSmall
+	}
+	return dur, nil
+}
+
 func (a *ApplicationStatus) cloudWatch() string {
 	if a.Aws != nil {
 		if result, ok := a.Aws.Tags[kCloudWatchTag]; ok {
-			if _, err := time.ParseDuration(result); err != nil {
+			if _, err := parseDuration(result); err != nil {
 				return "defaultRate"
 			}
 			return result
@@ -102,7 +117,7 @@ func (a *ApplicationStatus) cloudWatchRefreshRate(defaultRate time.Duration) (
 	if !ok {
 		return 0, false
 	}
-	dur, err := time.ParseDuration(durStr)
+	dur, err := parseDuration(durStr)
 	if err != nil {
 		dur = defaultRate
 	}

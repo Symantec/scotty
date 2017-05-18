@@ -101,6 +101,7 @@ func (c CloudHealthInstanceCall) Split() (
 }
 
 // Snapshot represents a snapshot of a RollUpStats instance.
+// Snapshot instances should be treated as immutable.
 type Snapshot struct {
 	AccountNumber     string
 	InstanceId        string
@@ -168,7 +169,7 @@ func (r *RollUpStats) Add(s InstanceStats) {
 }
 
 // TakeSnapshot grabs a snapshot of this instance
-func (r *RollUpStats) TakeSnapshot() Snapshot {
+func (r *RollUpStats) TakeSnapshot() *Snapshot {
 	return r.takeSnapshot()
 }
 

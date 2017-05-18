@@ -145,7 +145,7 @@ func (r *RollUpStats) add(s InstanceStats) {
 	}
 }
 
-func (r *RollUpStats) takeSnapshot() Snapshot {
+func (r *RollUpStats) takeSnapshot() *Snapshot {
 	if !r.tsOk {
 		panic("No timestamp")
 	}
@@ -164,7 +164,7 @@ func (r *RollUpStats) takeSnapshot() Snapshot {
 	}
 	// Needed to make testing possible
 	sort.Sort(byMountPointType(fss))
-	return Snapshot{
+	return &Snapshot{
 		AccountNumber:     r.accountNumber,
 		InstanceId:        r.instanceId,
 		Ts:                r.ts,

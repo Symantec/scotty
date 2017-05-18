@@ -282,7 +282,8 @@ func TestRollUp(t *testing.T) {
 		So(rollup.TimeOk(kToday.Add(15*time.Hour)), ShouldBeFalse)
 		So(func() { rollup.Add(stats4) }, ShouldPanic)
 		Convey("Rollup successful", func() {
-			chInstanceCall := rollup.CloudHealth()
+			chInstanceCall := chpipeline.NewCloudHealthInstanceCall(
+				rollup.TakeSnapshot())
 			instance := chInstanceCall.Instance
 			So(
 				instance.AccountNumber,
@@ -335,7 +336,7 @@ func TestRollUp(t *testing.T) {
 		})
 		Convey("Clear works", func() {
 			rollup.Clear()
-			So(func() { rollup.CloudHealth() }, ShouldPanic)
+			So(func() { rollup.TakeSnapshot() }, ShouldPanic)
 			stats4 := chpipeline.InstanceStats{
 				Ts: kToday.Add(15 * time.Hour),
 				MemoryTotal: chpipeline.MaybeUint64{
@@ -344,7 +345,8 @@ func TestRollUp(t *testing.T) {
 				},
 			}
 			rollup.Add(stats4)
-			chInstanceCall := rollup.CloudHealth()
+			chInstanceCall := chpipeline.NewCloudHealthInstanceCall(
+				rollup.TakeSnapshot())
 			instance := chInstanceCall.Instance
 			So(
 				instance.MemorySizeBytes.Avg(),

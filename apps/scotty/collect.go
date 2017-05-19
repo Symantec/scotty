@@ -156,7 +156,7 @@ type loggerType struct {
 	MetricNameAdder     suggest.Adder
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
-	CloudHealthChannel  chan chpipeline.CloudHealthInstanceCall
+	CloudHealthChannel  chan *chpipeline.Snapshot
 	CloudWatchChannel   chan *chpipeline.Snapshot
 	EndpointData        *datastructs.EndpointData
 }
@@ -219,7 +219,7 @@ func (l *loggerType) LogResponse(
 				statsOk = true
 			}
 			if !chRollup.TimeOk(stats.Ts) {
-				l.CloudHealthChannel <- chRollup.CloudHealth()
+				l.CloudHealthChannel <- chRollup.TakeSnapshot()
 				chRollup.Clear()
 			}
 			if l.EndpointData.CHCombineFS {
@@ -364,12 +364,12 @@ func startCollector(
 	}
 
 	var cloudHealthWriter *cloudhealth.Writer
-	var cloudHealthChannel chan chpipeline.CloudHealthInstanceCall
+	var cloudHealthChannel chan *chpipeline.Snapshot
 
 	cloudHealthConfig := path.Join(*fConfigDir, "cloudhealth.yaml")
 	if _, err := os.Stat(cloudHealthConfig); err == nil {
 		// TODO: Revisit this.
-		cloudHealthChannel = make(chan chpipeline.CloudHealthInstanceCall, 10000)
+		cloudHealthChannel = make(chan *chpipeline.Snapshot, 10000)
 		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
 	}
 
@@ -563,7 +563,7 @@ func startCloudWatchLoop(
 
 func startCloudFireLoop(
 	cloudHealthWriter *cloudhealth.Writer,
-	cloudHealthChannel chan chpipeline.CloudHealthInstanceCall) {
+	cloudHealthChannel chan *chpipeline.Snapshot) {
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	var successfulWrites uint64
 	if err := tricorder.RegisterMetric(
@@ -615,7 +615,8 @@ func startCloudFireLoop(
 
 	go func() {
 		for {
-			call := <-cloudHealthChannel
+			snapshot := <-cloudHealthChannel
+			call := chpipeline.NewCloudHealthInstanceCall(snapshot)
 			newCall, fsCalls := call.Split()
 			writeStartTime := time.Now()
 			if _, err := cloudHealthWriter.Write(

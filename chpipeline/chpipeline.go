@@ -176,8 +176,7 @@ func (r *RollUpStats) takeSnapshot() *Snapshot {
 	}
 }
 
-func (r *RollUpStats) cloudHealth() CloudHealthInstanceCall {
-	snapshot := r.takeSnapshot()
+func newCloudHealthInstanceCall(snapshot *Snapshot) CloudHealthInstanceCall {
 	instance := cloudhealth.InstanceData{
 		AccountNumber:     snapshot.AccountNumber,
 		InstanceId:        snapshot.InstanceId,

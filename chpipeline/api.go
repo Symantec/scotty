@@ -89,6 +89,12 @@ type CloudHealthInstanceCall struct {
 	Fss      []cloudhealth.FsData     // Data for each file system in instance
 }
 
+// NewCloudHealthInstanceCall creates a new CloudHealthInstanceCall from a
+// Snapshot.
+func NewCloudHealthInstanceCall(s *Snapshot) CloudHealthInstanceCall {
+	return newCloudHealthInstanceCall(s)
+}
+
 // Split splits this call into smaller calls that are below the maximum size
 // for writing to cloudhealth.
 // If c is small enough, then split returns c, nil. If c is too big,
@@ -171,13 +177,6 @@ func (r *RollUpStats) Add(s InstanceStats) {
 // TakeSnapshot grabs a snapshot of this instance
 func (r *RollUpStats) TakeSnapshot() *Snapshot {
 	return r.takeSnapshot()
-}
-
-// CloudHealth returns the call needed to write the data in this instance to
-// cloud health.
-// CloudHealth panics if Add has not been called since the last call to Clear.
-func (r *RollUpStats) CloudHealth() CloudHealthInstanceCall {
-	return r.cloudHealth()
 }
 
 // Clear clears this instance

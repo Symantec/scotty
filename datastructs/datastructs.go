@@ -18,6 +18,7 @@ import (
 )
 
 const kCloudWatchTag = "PushMetricsToCloudWatch"
+const kForScottyTestTag = "ForScottyTest"
 
 var (
 	kDurationTooSmall = errors.New("Duration too small")
@@ -94,6 +95,14 @@ func parseDuration(durStr string) (time.Duration, error) {
 		return 0, kDurationTooSmall
 	}
 	return dur, nil
+}
+
+func (a *ApplicationStatus) forTest() bool {
+	if a.Aws != nil {
+		_, ok := a.Aws.Tags[kForScottyTestTag]
+		return ok
+	}
+	return false
 }
 
 func (a *ApplicationStatus) cloudWatch() string {

@@ -57,6 +57,10 @@ var (
 		"cloudWatchFreq",
 		5*time.Minute,
 		"Rollup time for cloudwatch")
+	fCloudHealthTest = flag.Bool(
+		"cloudHealthTest", false, "Whether or not this is testing cloudhealth")
+	fCloudWatchTest = flag.Bool(
+		"cloudWatchTest", false, "Whether or not this is testing cloudwatch")
 )
 
 func init() {
@@ -444,11 +448,11 @@ func startCollector(
 				if endpoint.Port() == 6910 {
 					if cloudHealthChannel != nil {
 						endpointData = endpointData.UpdateForCloudHealth(
-							app, combineFsMap)
+							app, combineFsMap, *fCloudHealthTest)
 					}
 					if cloudWatchChannel != nil {
 						endpointData = endpointData.UpdateForCloudWatch(
-							app, *fCloudWatchFreq)
+							app, *fCloudWatchFreq, *fCloudWatchTest)
 					}
 				}
 				endpointToData[endpoint] = endpointData

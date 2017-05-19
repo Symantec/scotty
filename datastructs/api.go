@@ -30,6 +30,9 @@ type EndpointData struct {
 	// protected: for cloudhealth. nil if not sending data to cloudhealth
 	CHRollup *chpipeline.RollUpStats
 
+	// protected: for cloudhealth. nil if not sending data to cloudhealth.
+	CHStore *chpipeline.SnapshotStore
+
 	// True if file system stats are to be combined for cloudhealth.
 	CHCombineFS bool
 

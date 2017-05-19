@@ -157,7 +157,7 @@ type loggerType struct {
 	TotalCounts         totalCountUpdaterType
 	CisQueue            *keyedqueue.Queue
 	CloudHealthChannel  chan chpipeline.CloudHealthInstanceCall
-	CloudWatchChannel   chan chpipeline.Snapshot
+	CloudWatchChannel   chan *chpipeline.Snapshot
 	EndpointData        *datastructs.EndpointData
 }
 
@@ -373,7 +373,7 @@ func startCollector(
 		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
 	}
 
-	var cloudWatchChannel chan chpipeline.Snapshot
+	var cloudWatchChannel chan *chpipeline.Snapshot
 	var cloudWatchConfig *dynconfig.DynConfig
 
 	cloudWatchConfigFile := path.Join(*fConfigDir, "cloudwatch.yaml")
@@ -387,7 +387,7 @@ func startCollector(
 		if err != nil {
 			log.Fatal(err)
 		}
-		cloudWatchChannel = make(chan chpipeline.Snapshot, 10000)
+		cloudWatchChannel = make(chan *chpipeline.Snapshot, 10000)
 	}
 
 	var cisClient *cis.Client
@@ -502,7 +502,7 @@ func startCollector(
 
 func startCloudWatchLoop(
 	cloudWatchConfig *dynconfig.DynConfig,
-	cloudWatchChannel chan chpipeline.Snapshot) {
+	cloudWatchChannel chan *chpipeline.Snapshot) {
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	var successfulWrites uint64
 	if err := tricorder.RegisterMetric(
@@ -549,7 +549,7 @@ func startCloudWatchLoop(
 			snapshot := <-cloudWatchChannel
 			writer := cloudWatchConfig.Get().(*cloudwatch.Writer)
 			writeStartTime := time.Now()
-			if err := writer.Write(&snapshot); err != nil {
+			if err := writer.Write(snapshot); err != nil {
 				lastWriteError = err.Error()
 				errorWrites++
 			} else {

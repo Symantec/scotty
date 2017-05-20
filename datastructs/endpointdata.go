@@ -6,13 +6,22 @@ import (
 )
 
 func (e *EndpointData) updateForCloudHealth(
-	app *ApplicationStatus, combineFsMap map[string]bool) *EndpointData {
+	app *ApplicationStatus,
+	combineFsMap map[string]bool,
+	bTestRun bool) *EndpointData {
 	// If we don't have any aws data don't do anything
 	if app.Aws == nil {
 		return e
 	}
-	if e.CHRollup == nil {
+	needToDoCloudHealth := bTestRun == app.CloudHealthTest()
+	doingCloudHealth := e.CHRollup != nil
+	if needToDoCloudHealth != doingCloudHealth {
 		result := *e
+		if !needToDoCloudHealth {
+			result.CHRollup = nil
+			result.CHCombineFS = false
+			return &result
+		}
 		instanceId := app.InstanceId()
 		result.CHRollup = chpipeline.NewRollUpStats(
 			app.AccountNumber(),
@@ -28,8 +37,11 @@ func (e *EndpointData) updateForCloudHealth(
 }
 
 func (e *EndpointData) updateForCloudWatch(
-	app *ApplicationStatus, defaultFreq time.Duration) *EndpointData {
+	app *ApplicationStatus,
+	defaultFreq time.Duration,
+	bTestRun bool) *EndpointData {
 	rate, rateOk := app.CloudWatchRefreshRate(defaultFreq)
+	rateOk = rateOk && (bTestRun == app.CloudWatchTest())
 	cwExists := e.CWRollup != nil
 
 	// Calling RoundDuration() here is safe because its returned value never

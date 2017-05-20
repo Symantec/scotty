@@ -96,6 +96,14 @@ func parseDuration(durStr string) (time.Duration, error) {
 	return dur, nil
 }
 
+func (a *ApplicationStatus) forTest(tagName string) bool {
+	if a.Aws != nil {
+		_, ok := a.Aws.Tags[tagName]
+		return ok
+	}
+	return false
+}
+
 func (a *ApplicationStatus) cloudWatch() string {
 	if a.Aws != nil {
 		if result, ok := a.Aws.Tags[kCloudWatchTag]; ok {

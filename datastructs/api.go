@@ -125,13 +125,13 @@ func (a *ApplicationStatus) InstanceId() string {
 // CloudHealthTest returns true iff the machine of this endpoint is for testing
 // scotty with cloud health
 func (a *ApplicationStatus) CloudHealthTest() bool {
-	return a.forTest("CloudHealthTest")
+	return a.forTest("ScottyCloudHealthTest")
 }
 
 // CloudWatchTest returns true iff the machine of this endpoint is for testing
 // scotty with cloud watch
 func (a *ApplicationStatus) CloudWatchTest() bool {
-	return a.forTest("CloudWatchTest")
+	return a.forTest("ScottyCloudWatchTest")
 }
 
 // CloudWatch returns how often data for the machine gets written to

@@ -12,31 +12,31 @@ func TestEndpointData(t *testing.T) {
 	Convey("With EndpointData", t, func() {
 		data := datastructs.NewEndpointData()
 		So(data.NamesSentToSuggest, ShouldNotBeNil)
-		Convey("CloudWatchTest and CloudHealthTest tags set", func() {
+		Convey("ScottyCloudWatchTest and ScottyCloudHealthTest tags set", func() {
 			app := &datastructs.ApplicationStatus{
 				Aws: &mdb.AwsMetadata{
 					AccountId:  "2468",
 					InstanceId: "1357",
 					Tags: map[string]string{
-						"CloudWatchTest":          "true",
-						"CloudHealthTest":         "true",
+						"ScottyCloudWatchTest":    "true",
+						"ScottyCloudHealthTest":   "true",
 						"PushMetricsToCloudWatch": "",
 					},
 				},
 			}
-			Convey("Machines with CloudHealthTest tag applicable for test scotty with CloudHealth", func() {
+			Convey("Machines with ScottyCloudHealthTest tag applicable for test scotty with CloudHealth", func() {
 				newData := data.UpdateForCloudHealth(app, nil, true)
 				So(newData, ShouldNotEqual, data)
 			})
-			Convey("Machines with CloudWatchTest tag applicable for test scotty with CloudWatch", func() {
+			Convey("Machines with ScottyCloudWatchTest tag applicable for test scotty with CloudWatch", func() {
 				newData := data.UpdateForCloudWatch(app, 5*time.Minute, true)
 				So(newData, ShouldNotEqual, data)
 			})
-			Convey("Machines with CloudHealthTest tag not applicable for production scotty with cloud health", func() {
+			Convey("Machines with ScottyCloudHealthTest tag not applicable for production scotty with cloud health", func() {
 				newData := data.UpdateForCloudHealth(app, nil, false)
 				So(newData, ShouldEqual, data)
 			})
-			Convey("Machines with CloudWatchTest tag not applicable for production scotty with cloud watch", func() {
+			Convey("Machines with ScottyCloudWatchTest tag not applicable for production scotty with cloud watch", func() {
 				newData := data.UpdateForCloudWatch(app, 5*time.Minute, false)
 				So(newData, ShouldEqual, data)
 			})

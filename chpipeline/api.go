@@ -2,6 +2,7 @@
 package chpipeline
 
 import (
+	"container/list"
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/metrics"
 	"time"
@@ -183,4 +184,60 @@ func (r *RollUpStats) TakeSnapshot() *Snapshot {
 // After clear is called, Add will accept data with any timestamp.
 func (r *RollUpStats) Clear() {
 	r.clear()
+}
+
+// SnapshotStore stores snapshots from least to most recent. SnapshotStore
+// evicts snapshots with older timestamps automatically as new snapshots
+// are added. SnapshotStore instances also know how to persist themselves
+// to the local file system.
+type SnapshotStore struct {
+	dirPath   string
+	hostName  string
+	port      uint
+	span      time.Duration
+	id        string
+	snapshots list.List
+}
+
+// NewSnapshotStore creates a new SnapshotStore instance. dirPath is the
+// full path of the directory where the new instance will store its data.
+// Mutliple instances at once may store their data within the same directory.
+// hostName and port are the hostname and port of the endpoint for which the
+// new instance will store snapshots. span controls how long snapshots stay
+// in newly created instance. The difference between the oldest and newest
+// snapshot will never exceed span.
+func NewSnapshotStore(
+	dirPath string, hostName string, port uint, span time.Duration) *SnapshotStore {
+	result := &SnapshotStore{
+		dirPath:  dirPath,
+		hostName: hostName,
+		port:     port,
+		span:     span,
+		id:       computeId(hostName, port)}
+	result.snapshots.Init()
+	return result
+}
+
+func (s *SnapshotStore) HostName() string { return s.hostName }
+
+func (s *SnapshotStore) Port() uint { return s.port }
+
+// Load loads this instance's data from the file system into this instance.
+func (s *SnapshotStore) Load() error {
+	return s.load()
+}
+
+// Save saves this instance's data to the file system
+func (s *SnapshotStore) Save() error {
+	return s.save()
+}
+
+// Add adds a new snapshot to this instance
+func (s *SnapshotStore) Add(snapshot *Snapshot) {
+	s.add(snapshot)
+}
+
+// GetAll retrieves all the snapshots in this instance from oldest to newest.
+func (s *SnapshotStore) GetAll() []*Snapshot {
+	return s.getAll()
 }

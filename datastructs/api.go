@@ -47,12 +47,15 @@ func NewEndpointData() *EndpointData {
 // collect cloud health data. app represents the endpoint; combineFsMap
 // is a map of instance ids for which file system metrics should be rolled up.
 // A nil map means file system metrics should be rolled up for all instance Ids.
-// An empty map means file system metrics should never be rolled up.
+// An empty map means file system metrics should never be rolled up. bTestRun
+// is true if this is a test instance of scotty.
 //
 // If nothing changed, UpdateForCloudHealth just returns e.
 func (e *EndpointData) UpdateForCloudHealth(
-	app *ApplicationStatus, combineFsMap map[string]bool) *EndpointData {
-	return e.updateForCloudHealth(app, combineFsMap)
+	app *ApplicationStatus,
+	combineFsMap map[string]bool,
+	bTestRun bool) *EndpointData {
+	return e.updateForCloudHealth(app, combineFsMap, bTestRun)
 }
 
 // UpdateForCloudWatch returns a new EndpointData instance set up to collect
@@ -65,9 +68,12 @@ func (e *EndpointData) UpdateForCloudHealth(
 // the time in there is the roll up time to use. If the tag exists but the
 // value is missing, that means use defaultFreq for the rollup time. If
 // the tag doesn't exist, that means don't collect data for cloud watch.
+// bTestRun is true if this is a test instance of scotty.
 func (e *EndpointData) UpdateForCloudWatch(
-	app *ApplicationStatus, defaultFreq time.Duration) *EndpointData {
-	return e.updateForCloudWatch(app, defaultFreq)
+	app *ApplicationStatus,
+	defaultFreq time.Duration,
+	bTestRun bool) *EndpointData {
+	return e.updateForCloudWatch(app, defaultFreq, bTestRun)
 }
 
 // ApplicationStatus represents the status of a single application.
@@ -114,6 +120,12 @@ func (a *ApplicationStatus) AccountNumber() string {
 // or the empty string if machine is not an AWS machine.
 func (a *ApplicationStatus) InstanceId() string {
 	return a.instanceId()
+}
+
+// ForTest returns true iff the machine of this endpoint is for testing
+// scotty
+func (a *ApplicationStatus) ForTest() bool {
+	return a.forTest()
 }
 
 // CloudWatch returns how often data for the machine gets written to

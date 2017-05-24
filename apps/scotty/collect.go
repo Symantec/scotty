@@ -280,12 +280,12 @@ type memoryCheckerType interface {
 	Check()
 }
 
-func createCloudHealthWriter(path string) *cloudhealth.Writer {
+func newCloudHealthWriter(reader io.Reader) (interface{}, error) {
 	var config cloudhealth.Config
-	if err := yamlutil.ReadFromFile(path, &config); err != nil {
-		log.Fatal(err)
+	if err := yamlutil.Read(reader, &config); err != nil {
+		return nil, err
 	}
-	return cloudhealth.NewWriter(config)
+	return cloudhealth.NewWriter(config), nil
 }
 
 func newCloudWatchWriter(reader io.Reader) (interface{}, error) {
@@ -374,14 +374,20 @@ func startCollector(
 		"json":      jsonCollectionTimesDist,
 	}
 
-	var cloudHealthWriter *cloudhealth.Writer
 	var cloudHealthChannel chan *chpipeline.Snapshot
+	var cloudHealthConfig *dynconfig.DynConfig
 
-	cloudHealthConfig := path.Join(*fConfigDir, "cloudhealth.yaml")
-	if _, err := os.Stat(cloudHealthConfig); err == nil {
-		// TODO: Revisit this.
+	cloudHealthConfigFile := path.Join(*fConfigDir, "cloudhealth.yaml")
+	if _, err := os.Stat(cloudHealthConfigFile); err == nil {
+		cloudHealthConfig, err = dynconfig.NewInitialized(
+			cloudHealthConfigFile,
+			newCloudHealthWriter,
+			"cloudHealth",
+			logger)
+		if err != nil {
+			log.Fatal(err)
+		}
 		cloudHealthChannel = make(chan *chpipeline.Snapshot, 10000)
-		cloudHealthWriter = createCloudHealthWriter(cloudHealthConfig)
 	}
 
 	var cloudWatchChannel chan *chpipeline.Snapshot
@@ -502,8 +508,8 @@ func startCollector(
 		startCisLoop(cisQueue, cisClient, programStartTime)
 	}
 
-	if cloudHealthWriter != nil && cloudHealthChannel != nil {
-		startCloudFireLoop(cloudHealthWriter, cloudHealthChannel)
+	if cloudHealthConfig != nil && cloudHealthChannel != nil {
+		startCloudFireLoop(cloudHealthConfig, cloudHealthChannel)
 	}
 
 	if cloudWatchConfig != nil && cloudWatchChannel != nil {
@@ -573,7 +579,7 @@ func startCloudWatchLoop(
 }
 
 func startCloudFireLoop(
-	cloudHealthWriter *cloudhealth.Writer,
+	cloudHealthConfig *dynconfig.DynConfig,
 	cloudHealthChannel chan *chpipeline.Snapshot) {
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	var successfulWrites uint64
@@ -627,10 +633,11 @@ func startCloudFireLoop(
 	go func() {
 		for {
 			snapshot := <-cloudHealthChannel
+			writer := cloudHealthConfig.Get().(*cloudhealth.Writer)
 			call := chpipeline.NewCloudHealthInstanceCall(snapshot)
 			newCall, fsCalls := call.Split()
 			writeStartTime := time.Now()
-			if _, err := cloudHealthWriter.Write(
+			if _, err := writer.Write(
 				[]cloudhealth.InstanceData{newCall.Instance},
 				newCall.Fss); err != nil {
 				lastWriteError = err.Error()
@@ -642,7 +649,7 @@ func startCloudFireLoop(
 			writeTimesDist.Add(time.Since(writeStartTime))
 			for _, fsCall := range fsCalls {
 				writeStartTime := time.Now()
-				if _, err := cloudHealthWriter.Write(nil, fsCall); err != nil {
+				if _, err := writer.Write(nil, fsCall); err != nil {
 					lastWriteError = err.Error()
 					errorWrites++
 				} else {

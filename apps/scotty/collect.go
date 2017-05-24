@@ -7,10 +7,12 @@ import (
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
 	"github.com/Symantec/scotty/cloudhealth"
+	"github.com/Symantec/scotty/cloudhealthlmm"
 	"github.com/Symantec/scotty/cloudwatch"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/dynconfig"
 	"github.com/Symantec/scotty/lib/keyedqueue"
+	"github.com/Symantec/scotty/lib/trimetrics"
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
@@ -150,19 +152,20 @@ type totalCountUpdaterType interface {
 // logger implements the scotty.Logger interface
 // keeping track of collection statistics
 type loggerType struct {
-	Store               *store.Store
-	AppStats            *datastructs.ApplicationStatuses
-	App                 *datastructs.ApplicationStatus
-	ConnectionErrors    *connectionErrorsType
-	CollectionTimesDist *tricorder.CumulativeDistribution
-	ByProtocolDist      map[string]*tricorder.CumulativeDistribution
-	ChangedMetricsDist  *tricorder.CumulativeDistribution
-	MetricNameAdder     suggest.Adder
-	TotalCounts         totalCountUpdaterType
-	CisQueue            *keyedqueue.Queue
-	CloudHealthChannel  chan *chpipeline.Snapshot
-	CloudWatchChannel   chan *chpipeline.Snapshot
-	EndpointData        *datastructs.EndpointData
+	Store                 *store.Store
+	AppStats              *datastructs.ApplicationStatuses
+	App                   *datastructs.ApplicationStatus
+	ConnectionErrors      *connectionErrorsType
+	CollectionTimesDist   *tricorder.CumulativeDistribution
+	ByProtocolDist        map[string]*tricorder.CumulativeDistribution
+	ChangedMetricsDist    *tricorder.CumulativeDistribution
+	MetricNameAdder       suggest.Adder
+	TotalCounts           totalCountUpdaterType
+	CisQueue              *keyedqueue.Queue
+	CloudHealthLmmChannel chan *chpipeline.Snapshot
+	CloudHealthChannel    chan *chpipeline.Snapshot
+	CloudWatchChannel     chan *chpipeline.Snapshot
+	EndpointData          *datastructs.EndpointData
 }
 
 func (l *loggerType) LogStateChange(
@@ -217,19 +220,25 @@ func (l *loggerType) LogResponse(
 		var statsOk bool
 		chRollup := l.EndpointData.CHRollup
 		chStore := l.EndpointData.CHStore
-		if l.CloudHealthChannel != nil && chRollup != nil && chStore != nil {
+		if (l.CloudHealthChannel != nil || l.CloudHealthLmmChannel != nil) && chRollup != nil && chStore != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
 				combinedFsStats = stats.WithCombinedFsStats()
 				statsOk = true
 			}
 			if !chRollup.TimeOk(stats.Ts) {
-				chStore.Add(chRollup.TakeSnapshot())
+				snapshot := chRollup.TakeSnapshot()
+				chStore.Add(snapshot)
 				if err := chStore.Save(); err != nil {
 					return err
 				}
-				for _, snapshot := range chStore.GetAll() {
-					l.CloudHealthChannel <- snapshot
+				if l.CloudHealthChannel != nil {
+					for _, s := range chStore.GetAll() {
+						l.CloudHealthChannel <- s
+					}
+				}
+				if l.CloudHealthLmmChannel != nil {
+					l.CloudHealthLmmChannel <- snapshot
 				}
 				chRollup.Clear()
 			}
@@ -280,6 +289,20 @@ type memoryCheckerType interface {
 	Check()
 }
 
+type snapshotWriterType interface {
+	Write(s *chpipeline.Snapshot) error
+}
+
+func newCloudHealthLmmWriter(reader io.Reader) (interface{}, error) {
+	var config cloudhealthlmm.Config
+	if err := yamlutil.Read(reader, &config); err != nil {
+		return nil, err
+	}
+	var writer snapshotWriterType
+	writer, err := cloudhealthlmm.NewWriter(config)
+	return writer, err
+}
+
 func newCloudHealthWriter(reader io.Reader) (interface{}, error) {
 	var config cloudhealth.Config
 	if err := yamlutil.Read(reader, &config); err != nil {
@@ -293,6 +316,7 @@ func newCloudWatchWriter(reader io.Reader) (interface{}, error) {
 	if err := yamlutil.Read(reader, &config); err != nil {
 		return nil, err
 	}
+	var writer snapshotWriterType
 	writer, err := cloudwatch.NewWriter(config)
 	return writer, err
 }
@@ -390,6 +414,22 @@ func startCollector(
 		cloudHealthChannel = make(chan *chpipeline.Snapshot, 10000)
 	}
 
+	var cloudHealthLmmChannel chan *chpipeline.Snapshot
+	var cloudHealthLmmConfig *dynconfig.DynConfig
+
+	cloudHealthLmmConfigFile := path.Join(*fConfigDir, "cloudhealthlmm.yaml")
+	if _, err := os.Stat(cloudHealthLmmConfigFile); err == nil {
+		cloudHealthLmmConfig, err = dynconfig.NewInitialized(
+			cloudHealthLmmConfigFile,
+			newCloudHealthLmmWriter,
+			"cloudHealthLmm",
+			logger)
+		if err != nil {
+			log.Fatal(err)
+		}
+		cloudHealthLmmChannel = make(chan *chpipeline.Snapshot, 10000)
+	}
+
 	var cloudWatchChannel chan *chpipeline.Snapshot
 	var cloudWatchConfig *dynconfig.DynConfig
 
@@ -459,7 +499,7 @@ func startCollector(
 					endpointData = datastructs.NewEndpointData()
 				}
 				if endpoint.Port() == 6910 {
-					if cloudHealthChannel != nil {
+					if cloudHealthChannel != nil || cloudHealthLmmChannel != nil {
 						endpointData = endpointData.UpdateForCloudHealth(
 							app, combineFsMap, *fCloudHealthTest)
 					}
@@ -478,19 +518,20 @@ func startCollector(
 				}
 
 				pollLogger := &loggerType{
-					Store:               metricStore,
-					AppStats:            appStats,
-					App:                 app,
-					ConnectionErrors:    connectionErrors,
-					CollectionTimesDist: collectionTimesDist,
-					ByProtocolDist:      byProtocolDist,
-					ChangedMetricsDist:  changedMetricsPerEndpointDist,
-					MetricNameAdder:     metricNameAdder,
-					TotalCounts:         totalCounts,
-					CisQueue:            maybeCisQueue,
-					CloudHealthChannel:  cloudHealthChannel,
-					CloudWatchChannel:   cloudWatchChannel,
-					EndpointData:        endpointData,
+					Store:                 metricStore,
+					AppStats:              appStats,
+					App:                   app,
+					ConnectionErrors:      connectionErrors,
+					CollectionTimesDist:   collectionTimesDist,
+					ByProtocolDist:        byProtocolDist,
+					ChangedMetricsDist:    changedMetricsPerEndpointDist,
+					MetricNameAdder:       metricNameAdder,
+					TotalCounts:           totalCounts,
+					CisQueue:              maybeCisQueue,
+					CloudHealthChannel:    cloudHealthChannel,
+					CloudHealthLmmChannel: cloudHealthLmmChannel,
+					CloudWatchChannel:     cloudWatchChannel,
+					EndpointData:          endpointData,
 				}
 
 				endpoint.Poll(sweepTime, pollLogger)
@@ -512,121 +553,50 @@ func startCollector(
 		startCloudFireLoop(cloudHealthConfig, cloudHealthChannel)
 	}
 
+	if cloudHealthLmmConfig != nil && cloudHealthLmmChannel != nil {
+		startSnapshotLoop(
+			"cloudhealthlmm",
+			cloudHealthLmmConfig,
+			cloudHealthLmmChannel)
+	}
+
 	if cloudWatchConfig != nil && cloudWatchChannel != nil {
-		startCloudWatchLoop(cloudWatchConfig, cloudWatchChannel)
+		startSnapshotLoop(
+			"cloudwatch", cloudWatchConfig, cloudWatchChannel)
 	}
 }
 
-func startCloudWatchLoop(
-	cloudWatchConfig *dynconfig.DynConfig,
-	cloudWatchChannel chan *chpipeline.Snapshot) {
-	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-	var successfulWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudwatch/successfulWrites",
-		&successfulWrites,
-		units.None,
-		"Successful write count"); err != nil {
-		log.Fatal(err)
-	}
-	var errorWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudwatch/errorWrites",
-		&errorWrites,
-		units.None,
-		"error write count"); err != nil {
-		log.Fatal(err)
-	}
-	if err := tricorder.RegisterMetric(
-		"cloudwatch/writeTimes",
-		writeTimesDist,
-		units.Millisecond,
-		"cloud watch write times"); err != nil {
-		log.Fatal(err)
-	}
-	var lastWriteError string
-	if err := tricorder.RegisterMetric(
-		"cloudwatch/lastWriteError",
-		&lastWriteError,
-		units.None,
-		"Last CloudWatch write error"); err != nil {
-		log.Fatal(err)
-	}
-	var totalWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudwatch/totalWrites",
-		&totalWrites,
-		units.None,
-		"total write count"); err != nil {
+func startSnapshotLoop(
+	parentDir string,
+	config *dynconfig.DynConfig,
+	channel chan *chpipeline.Snapshot) {
+
+	writerMetrics, err := trimetrics.NewWriterMetrics(parentDir)
+	if err != nil {
 		log.Fatal(err)
 	}
 
 	go func() {
 		for {
-			snapshot := <-cloudWatchChannel
-			writer := cloudWatchConfig.Get().(*cloudwatch.Writer)
+			snapshot := <-channel
+			writer := config.Get().(snapshotWriterType)
 			writeStartTime := time.Now()
 			if err := writer.Write(snapshot); err != nil {
-				lastWriteError = err.Error()
-				errorWrites++
+				writerMetrics.LogError(time.Since(writeStartTime), 1, err)
 			} else {
-				successfulWrites++
+				writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
 			}
-			totalWrites++
-			writeTimesDist.Add(time.Since(writeStartTime))
 		}
 	}()
+
 }
 
 func startCloudFireLoop(
 	cloudHealthConfig *dynconfig.DynConfig,
 	cloudHealthChannel chan *chpipeline.Snapshot) {
-	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-	var successfulWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/successfulWrites",
-		&successfulWrites,
-		units.None,
-		"Successful write count"); err != nil {
-		log.Fatal(err)
-	}
-	var overflowWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/overflowWrites",
-		&overflowWrites,
-		units.None,
-		"overflow write count"); err != nil {
-		log.Fatal(err)
-	}
-	var errorWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/errorWrites",
-		&errorWrites,
-		units.None,
-		"error write count"); err != nil {
-		log.Fatal(err)
-	}
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/writeTimes",
-		writeTimesDist,
-		units.Millisecond,
-		"cloud health write times"); err != nil {
-		log.Fatal(err)
-	}
-	var lastWriteError string
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/lastWriteError",
-		&lastWriteError,
-		units.None,
-		"Last CloudHealth write error"); err != nil {
-		log.Fatal(err)
-	}
-	var totalWrites uint64
-	if err := tricorder.RegisterMetric(
-		"cloudhealth/totalWrites",
-		&totalWrites,
-		units.None,
-		"total write count"); err != nil {
+
+	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth")
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -640,23 +610,17 @@ func startCloudFireLoop(
 			if _, err := writer.Write(
 				[]cloudhealth.InstanceData{newCall.Instance},
 				newCall.Fss); err != nil {
-				lastWriteError = err.Error()
-				errorWrites++
+				writerMetrics.LogError(time.Since(writeStartTime), 1, err)
 			} else {
-				successfulWrites++
+				writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
 			}
-			totalWrites++
-			writeTimesDist.Add(time.Since(writeStartTime))
 			for _, fsCall := range fsCalls {
 				writeStartTime := time.Now()
 				if _, err := writer.Write(nil, fsCall); err != nil {
-					lastWriteError = err.Error()
-					errorWrites++
+					writerMetrics.LogError(time.Since(writeStartTime), 1, err)
 				} else {
-					overflowWrites++
+					writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
 				}
-				totalWrites++
-				writeTimesDist.Add(time.Since(writeStartTime))
 			}
 		}
 	}()

@@ -200,6 +200,13 @@ func (w *Writer) buildRequest(
 		}, "", "\t")
 }
 
+func newWriter(c Config) *Writer {
+	if c.Endpoint == "" {
+		c.Endpoint = DefaultEndpoint
+	}
+	return &Writer{config: c}
+}
+
 func (w *Writer) write(
 	instances []InstanceData, fss []FsData) (int, error) {
 	if len(instances)*InstanceDataPointCount+len(fss)*FsDataPointCount > MaxDataPoints {
@@ -210,7 +217,7 @@ func (w *Writer) write(
 		return 0, err
 	}
 	url := httputil.NewUrl(
-		"https://chapi.cloudhealthtech.com/metrics/v1",
+		w.config.Endpoint,
 		"api_key",
 		w.config.ApiKey)
 	if w.config.DryRun {

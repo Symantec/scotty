@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+const (
+	// Default endpoint for cloudhealth service.
+	DefaultEndpoint = "https://chapi.cloudhealthtech.com/metrics/v1"
+)
+
 // FVariable represents a floating point cloudfire variable rolled up over
 // some amount of time
 type FVariable struct {
@@ -98,6 +103,10 @@ type Config struct {
 	DataCenter    string `yaml:"dataCenter"`    // e.g us-east-1
 	AccountNumber string `yaml:"accountNumber"` // default account number
 	DryRun        bool   `yaml:"dryRun"`        // If true, runs in dry run mode
+
+	// like "http://somehost.com:1234/endpoint" If omitted, defaults to
+	// standard endpoint for cloudhealth.
+	Endpoint string `yaml:"endpoint"`
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -115,7 +124,7 @@ type Writer struct {
 
 // NewWriter returns a new Writer instance.
 func NewWriter(config Config) *Writer {
-	return &Writer{config: config}
+	return newWriter(config)
 }
 
 // Write writes the provided data in a single request.

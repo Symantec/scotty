@@ -21,6 +21,8 @@ func TestEndpointData(t *testing.T) {
 		So(data.NamesSentToSuggest, ShouldNotBeNil)
 		Convey("ScottyCloudWatchTest and ScottyCloudHealthTest tags set", func() {
 			app := &datastructs.ApplicationStatus{
+				EndpointId: scotty.NewEndpointWithConnector(
+					"host1", 1, kSources),
 				Aws: &mdb.AwsMetadata{
 					AccountId:  "2468",
 					InstanceId: "1357",

@@ -65,9 +65,11 @@ func (s *InstanceStats) memoryUsedPercent() (result float64, ok bool) {
 
 func getStats(list metrics.List) InstanceStats {
 	var result InstanceStats
-	// TODO: Maybe use time from remote host instead?
-	result.Ts = time.Now().UTC()
-
+	if ctime, ok := metrics.GetTime(list, "/sys/systime/time"); ok {
+		result.Ts = ctime.UTC()
+	} else {
+		result.Ts = time.Now().UTC()
+	}
 	result.UserTimeFraction = newMaybeFloat64(metrics.GetFloat64(
 		list, "/sys/sched/cpu/user-time-fraction"))
 	result.MemoryFree = newMaybeUint64(metrics.GetUint64(

@@ -71,6 +71,12 @@ func GetUint64(list List, path string) (uint64, bool) {
 	return getUint64(list, path)
 }
 
+// GetTime gets the Uint64 value at path.
+// GetTime returns false if path doesn't exist or if value is not time.Time.
+func GetTime(list List, path string) (time.Time, bool) {
+	return getTime(list, path)
+}
+
 // VerifyList verifies that the given list adheres to the specification.
 func VerifyList(list List) error {
 	return verifyList(list)

@@ -1,9 +1,12 @@
 package datastructs
 
 import (
+	"flag"
 	"github.com/Symantec/scotty/chpipeline"
 	"time"
 )
+
+var fCloudHealthPath = flag.String("cloudhHealthStoragePath", "/var/lib/scotty/cloudhealth", "Directory where scotty stores cloud health data")
 
 func (e *EndpointData) updateForCloudHealth(
 	app *ApplicationStatus,
@@ -31,6 +34,9 @@ func (e *EndpointData) updateForCloudHealth(
 		if combineFsMap != nil {
 			result.CHCombineFS = combineFsMap[instanceId]
 		}
+		result.CHStore = chpipeline.NewSnapshotStore(
+			*fCloudHealthPath, app.EndpointId.HostName(), app.EndpointId.Port(), 48*time.Hour)
+		result.CHStore.Load()
 		return &result
 	}
 	return e

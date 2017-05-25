@@ -216,14 +216,21 @@ func (l *loggerType) LogResponse(
 		var combinedFsStats chpipeline.InstanceStats
 		var statsOk bool
 		chRollup := l.EndpointData.CHRollup
-		if l.CloudHealthChannel != nil && chRollup != nil {
+		chStore := l.EndpointData.CHStore
+		if l.CloudHealthChannel != nil && chRollup != nil && chStore != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
 				combinedFsStats = stats.WithCombinedFsStats()
 				statsOk = true
 			}
 			if !chRollup.TimeOk(stats.Ts) {
-				l.CloudHealthChannel <- chRollup.TakeSnapshot()
+				chStore.Add(chRollup.TakeSnapshot())
+				if err := chStore.Save(); err != nil {
+					return err
+				}
+				for _, snapshot := range chStore.GetAll() {
+					l.CloudHealthChannel <- snapshot
+				}
 				chRollup.Clear()
 			}
 			if l.EndpointData.CHCombineFS {
@@ -464,7 +471,7 @@ func startCollector(
 					maybeCisQueue = nil
 				}
 
-				logger := &loggerType{
+				pollLogger := &loggerType{
 					Store:               metricStore,
 					AppStats:            appStats,
 					App:                 app,
@@ -480,7 +487,7 @@ func startCollector(
 					EndpointData:        endpointData,
 				}
 
-				endpoint.Poll(sweepTime, logger)
+				endpoint.Poll(sweepTime, pollLogger)
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)

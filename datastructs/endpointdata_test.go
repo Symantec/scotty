@@ -2,10 +2,17 @@ package datastructs_test
 
 import (
 	"github.com/Symantec/Dominator/lib/mdb"
+	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/sources"
+	"github.com/Symantec/scotty/sources/trisource"
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
 	"time"
+)
+
+var (
+	kSources = sources.ConnectorList{trisource.GetConnector()}
 )
 
 func TestEndpointData(t *testing.T) {
@@ -43,6 +50,8 @@ func TestEndpointData(t *testing.T) {
 		})
 		Convey("With accountId and instanceId", func() {
 			app := &datastructs.ApplicationStatus{
+				EndpointId: scotty.NewEndpointWithConnector(
+					"host1", 1, kSources),
 				Aws: &mdb.AwsMetadata{
 					AccountId:  "2468",
 					InstanceId: "1357",
@@ -60,6 +69,8 @@ func TestEndpointData(t *testing.T) {
 				So(newData.CHRollup.InstanceId(), ShouldEqual, "1357")
 				So(newData.CHRollup.AccountNumber(), ShouldEqual, "2468")
 				So(newData.CHCombineFS, ShouldBeTrue)
+				So(newData.CHStore.HostName(), ShouldEqual, "host1")
+				So(newData.CHStore.Port(), ShouldEqual, 1)
 
 				Convey("No new memory allocation if nothing changed", func() {
 					newData2 := newData.UpdateForCloudHealth(app, nil, false)

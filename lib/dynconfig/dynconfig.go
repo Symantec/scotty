@@ -6,12 +6,43 @@ import (
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	"io"
 	"os"
+	"reflect"
 	"time"
 )
 
+var (
+	kIOReaderType = reflect.TypeOf((*io.Reader)(nil)).Elem()
+	kErrorType    = reflect.TypeOf((*error)(nil)).Elem()
+)
+
+func builderToValue(builder interface{}) reflect.Value {
+	t := reflect.TypeOf(builder)
+	if t.Kind() != reflect.Func {
+		panic("builder must be a function")
+	}
+	if t.NumIn() != 1 || t.IsVariadic() {
+		panic("builder takes exactly one parameter")
+	}
+	if t.In(0) != kIOReaderType {
+		panic("builder's parameter must be an io.Reader")
+	}
+	if t.NumOut() != 2 {
+		panic("Builder must return any type and an error")
+	}
+	if t.Out(1) != kErrorType {
+		panic("Builder's second return value must be an error")
+	}
+	return reflect.ValueOf(builder)
+}
+
+func callBuilder(builder reflect.Value, r io.Reader) (interface{}, error) {
+	results := builder.Call([]reflect.Value{reflect.ValueOf(r)})
+	return results[0].Interface(), results[1].Interface().(error)
+}
+
 func newDynConfig(
 	path string,
-	builder func(io.Reader) (interface{}, error),
+	builder reflect.Value,
 	name string,
 	logger log.Logger,
 	value interface{}) *DynConfig {
@@ -28,19 +59,19 @@ func newDynConfig(
 
 func readFromPath(
 	path string,
-	builder func(io.Reader) (interface{}, error),
+	builder reflect.Value,
 ) (interface{}, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	return builder(file)
+	return callBuilder(builder, file)
 }
 
 func newInitialized(
 	path string,
-	builder func(io.Reader) (interface{}, error),
+	builder reflect.Value,
 	name string,
 	logger log.Logger) (*DynConfig, error) {
 	value, err := readFromPath(path, builder)
@@ -63,7 +94,7 @@ func (d *DynConfig) set(x interface{}) {
 }
 
 func (d *DynConfig) consumeChange(rc io.ReadCloser) {
-	if result, err := d.builder(rc); err != nil {
+	if result, err := callBuilder(d.builder, rc); err != nil {
 		d.logger.Println(err)
 	} else {
 		d.set(result)

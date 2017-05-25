@@ -4,7 +4,7 @@ package dynconfig
 
 import (
 	"github.com/Symantec/Dominator/lib/log"
-	"io"
+	"reflect"
 	"sync"
 )
 
@@ -15,7 +15,7 @@ import (
 // configuration file, caller calls Get() on the DynConfig instance.
 type DynConfig struct {
 	path    string
-	builder func(io.Reader) (interface{}, error)
+	builder reflect.Value // func(io.Reader) (anytype, error)
 	name    string
 	logger  log.Logger
 	mu      sync.Mutex
@@ -26,18 +26,19 @@ type DynConfig struct {
 // path is the absolute path to the configuration file.
 
 // builder builds the end product from the configuration file contents. builder
-// takes the contents of the configuration file as input and outputs either
-// the final end product or an error. builder is called each time the
+// takes the contents of the configuration file as input as an io.Reader
+// and yields exactly two return values. The first is the end product which
+// can be any type; the second is an error. builder is called each time the
 // configuration file changes.
 //
 // name is the the name of the configuration file and is used as a log prefix
 // logger is where any errors reading the configuration get logged.
 func New(
 	path string,
-	builder func(io.Reader) (interface{}, error),
+	builder interface{}, // func(io.Reader) (anytype, error)
 	name string,
 	logger log.Logger) *DynConfig {
-	return newDynConfig(path, builder, name, logger, nil)
+	return newDynConfig(path, builderToValue(builder), name, logger, nil)
 }
 
 // NewInitialized works like New except that if the configuration file doesn't
@@ -46,10 +47,10 @@ func New(
 // instance, its Get method is guaranteed to return a non-nil value.
 func NewInitialized(
 	path string,
-	builder func(io.Reader) (interface{}, error),
+	builder interface{}, // func(io.Reader) (anytype, error)
 	name string,
 	logger log.Logger) (*DynConfig, error) {
-	return newInitialized(path, builder, name, logger)
+	return newInitialized(path, builderToValue(builder), name, logger)
 }
 
 // Get returns the end product of the configuration file. If the configuration

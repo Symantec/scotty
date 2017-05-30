@@ -54,13 +54,15 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 		return nil
 	}
 	if w.sync != nil {
+		var jsonStuff []interface{}
 		for i := range records {
-			if err = w.sync.Write(
-				w.endpoint,
+			jsonStuff = append(
+				jsonStuff,
 				kafka.LMMJSONPayload(
-					&records[i], w.tenantId, w.apiKey, false)); err != nil {
-				return
-			}
+					&records[i], w.tenantId, w.apiKey, false))
+		}
+		if err = w.sync.Write(w.endpoint, jsonStuff); err != nil {
+			return
 		}
 		return
 	} else {

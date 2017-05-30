@@ -1,7 +1,8 @@
 // cloudhealthtestserver
 //
 // This application is a fake cloudhealth endpoint. It accepts requests
-// for the *real* cloud health endpoint and writes the data to lmm.
+// for the *real* cloud health endpoint and writes the data to lmm. Finally,
+// it forwards requests onto the *real* cloud health endpoint.
 //
 // cloudhealthtestserver accepts incoming cloudhealth requests at
 // http://localhost:7776/endpoint
@@ -21,16 +22,21 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/html"
 	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/lib/dynconfig"
 	"github.com/Symantec/scotty/lib/trimetrics"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 )
 
@@ -45,20 +51,53 @@ var (
 		"Config directory location.")
 )
 
+var (
+	kReverseProxy = newReverseProxy(cloudhealth.DefaultEndpoint)
+)
+
+func newReverseProxy(URL string) *httputil.ReverseProxy {
+	pURL, err := url.Parse(URL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return httputil.NewSingleHostReverseProxy(pURL)
+}
+
 type endpointHandler struct {
 	Logger  *log.Logger
 	Lmm     *dynconfig.DynConfig
 	Metrics *trimetrics.WriterMetrics
 }
 
+func extractAsBytes(r io.Reader) []byte {
+	var buffer bytes.Buffer
+	buffer.ReadFrom(r)
+	return buffer.Bytes()
+}
+
 func (h *endpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	dryRun := r.Form.Get("dryrun") != ""
-	metrics, err := extractMetricsFromBody(r.Body)
+
+	// Ultimately, we have to proxy this request onto the real cloudhealth
+	// service, but when we read the request body we exhaust it so that it
+	// won't get passed on as we want. To get around this, we extract the
+	// request body as a slice of bytes and then create a new request body
+	// off that slice of bytes.
+	bodyAsBytes := extractAsBytes(r.Body)
+
+	// Close the original body as our transport layer won't be able to do
+	// this for us.
+	r.Body.Close()
+
+	// Now set the body to a byte buffer of the original body so that it
+	// can get read again.
+	r.Body = ioutil.NopCloser(bytes.NewBuffer(bodyAsBytes))
+
+	// Here we have to promote our content to a stream to call this function
+	metrics, err := extractMetricsFromBody(bytes.NewBuffer(bodyAsBytes))
 	if err != nil {
-		w.WriteHeader(400)
-		fmt.Fprintf(w, `{ "error": "%v" }`, err)
-		return
+		h.Logger.Println(err)
 	}
 	if !dryRun {
 		start := time.Now()
@@ -68,13 +107,22 @@ func (h *endpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			h.Metrics.LogSuccess(time.Since(start), uint64(len(metrics)))
 		}
-
 	}
-	fmt.Fprintln(w, "{")
-	fmt.Fprintf(w, "  succeeded: %d,", len(metrics))
-	fmt.Fprintln(w, "  failed: 0,")
-	fmt.Fprintln(w, "  errors: 0")
-	fmt.Fprintln(w, "}")
+
+	// Because of how the reverse proxy works, we have to make sure the
+	// path of the request we send to the proxy is empty without changing
+	// the original request
+
+	// Make defensive copy to prevent changing original request
+	newReq := *r
+	{
+		// URL is a pointer field so we have to make another defensive copy
+		newUrl := *r.URL
+		newReq.URL = &newUrl
+	}
+	// zero out the path
+	newReq.URL.Path = ""
+	kReverseProxy.ServeHTTP(w, &newReq)
 }
 
 type htmlWriter interface {

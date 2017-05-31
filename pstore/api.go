@@ -302,7 +302,7 @@ func (c *ConsumerMetrics) ValuesNotWritten() uint64 {
 // ConsumerMetricStore instances are safe to use with multiple goroutines.
 type ConsumerMetricsStore struct {
 	w                  *RecordWriterWithMetrics
-	filterer           store.Filterer
+	filterer           store.TypeFilterer
 	lock               sync.Mutex
 	recordCount        uint64
 	removedRecordCount uint64
@@ -451,6 +451,7 @@ type ConsumerWithMetricsBuilder struct {
 	c       *ConsumerWithMetrics
 	hooks   []RecordWriteHooker
 	metrics ConsumerMetrics
+	filter  func(*store.MetricInfo) bool
 	paused  bool
 }
 

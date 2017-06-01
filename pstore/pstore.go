@@ -350,19 +350,16 @@ func (s *ConsumerMetricsStore) removeFromRecordCount(count uint64) {
 	s.removedRecordCount += count
 }
 
-func toFilterer(w LimitedRecordWriter) store.Filterer {
+func toFilterer(w LimitedRecordWriter) func(*store.MetricInfo) bool {
 	withSubType, ok := w.(LimitedBySubTypeRecordWriter)
 	if ok {
-		f := func(r *store.Record) bool {
-			return withSubType.IsTypeAndSubTypeSupported(
-				r.Info.Kind(), r.Info.SubType()) && r.Active
+		return func(m *store.MetricInfo) bool {
+			return withSubType.IsTypeAndSubTypeSupported(m.Kind(), m.SubType())
 		}
-		return store.FiltererFunc(f)
 	}
-	f := func(r *store.Record) bool {
-		return w.IsTypeSupported(r.Info.Kind()) && r.Active
+	return func(m *store.MetricInfo) bool {
+		return w.IsTypeSupported(m.Kind())
 	}
-	return store.FiltererFunc(f)
 }
 
 func newConsumerWithMetricsBuilder(
@@ -373,27 +370,27 @@ func newConsumerWithMetricsBuilder(
 			BatchSize:   kDefaultBufferSize,
 			Concurrency: 1},
 		metricsStore: &ConsumerMetricsStore{
-			w:        writerWithMetrics,
-			filterer: toFilterer(w),
+			w: writerWithMetrics,
 		},
 	}
-	return &ConsumerWithMetricsBuilder{c: ptr}
+	return &ConsumerWithMetricsBuilder{c: ptr, filter: toFilterer(w)}
 }
 
 func excludeMetrics(
-	filter store.Filterer, metricsToExclude []*regexp.Regexp) store.Filterer {
-	return store.FiltererFunc(func(r *store.Record) bool {
-		if !filter.Filter(r) {
+	filter func(*store.MetricInfo) bool,
+	metricsToExclude []*regexp.Regexp) func(*store.MetricInfo) bool {
+	return func(m *store.MetricInfo) bool {
+		if !filter(m) {
 			return false
 		}
-		path := r.Info.Path()
+		path := m.Path()
 		for _, re := range metricsToExclude {
 			if re.MatchString(path) {
 				return false
 			}
 		}
 		return true
-	})
+	}
 }
 
 func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
@@ -411,8 +408,8 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 			wrapped: writer,
 			hooks:   b.hooks}
 	}
-	result.metricsStore.filterer = excludeMetrics(
-		result.metricsStore.filterer, result.attributes.MetricsToExclude)
+	result.metricsStore.filterer = store.TypeFiltererFuncActiveOnly(
+		excludeMetrics(b.filter, result.attributes.MetricsToExclude))
 	result.metricsStore.w.W = writer
 
 	// fix up writer with metrics
@@ -440,5 +437,6 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	}
 	b.c = nil
 	b.hooks = nil
+	b.filter = nil
 	return result
 }

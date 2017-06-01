@@ -990,6 +990,44 @@ func TestRollUpIterator(t *testing.T) {
 
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
+
+	{
+		expected := newExpectedTsValues()
+		expected.Add("Float", 96000.0, 5.75)
+		expected.Add("Float", 96240.0, 9.125)
+		expected.Add("Float", 96360.0, 1.875)
+		expected.Add("Float", 96480.0, 3.1875)
+
+		// beginning := expected.Checkpoint()
+		iterator, _ := aStore.NamedIteratorForEndpointRollUp(
+			"filtered",
+			kEndpoint0,
+			2*time.Minute,
+			2,
+			store.GroupMetricByPathAndNumeric)
+		iterator = store.NamedIteratorFilter(
+			iterator,
+			store.TypeFiltererFuncActiveOnly(func(m *store.MetricInfo) bool {
+				return m.Path() == "Float"
+			}))
+		expected.Iterate(t, iterator)
+		iterator.Commit()
+
+		iterator, _ = aStore.NamedIteratorForEndpointRollUp(
+			"filtered",
+			kEndpoint0,
+			2*time.Minute,
+			2,
+			store.GroupMetricByPathAndNumeric)
+		iterator = store.NamedIteratorFilter(
+			iterator,
+			store.TypeFiltererFuncActiveOnly(func(m *store.MetricInfo) bool {
+				return m.Path() == "Float"
+			}))
+		expected.Iterate(t, iterator)
+		expected.VerifyDone(t)
+		iterator.Commit()
+	}
 }
 
 func TestRollUpIteratorBool(t *testing.T) {
@@ -1495,6 +1533,30 @@ func TestIterator(t *testing.T) {
 	iterator, _ = aStore.NamedIteratorForEndpoint(
 		"aThirdIterator", kEndpoint0, 0)
 	filteredExpected.Iterate(t, iterator)
+
+	// Now test type filtering
+	{
+		expected := newExpectedTsValues()
+		expected.Add("Alice", 100.0, int64(0))
+		expected.Add("Alice", 200.0, int64(0))
+		expected.Add("Alice", 300.0, int64(200))
+		expected.Add("Alice", 400.0, int64(200))
+		expected.Add("Alice", 500.0, int64(400))
+		expected.Add("Alice", 500.0, int64(400))
+		expected.Add("Alice", 500.0, int64(400))
+		expected.Add("Alice", 800.0, int64(700))
+		expected.Add("Alice", 1000.0, int64(900))
+
+		iterator, _ := aStore.NamedIteratorForEndpoint(
+			"aFilteredIterator", kEndpoint0, 0)
+		iterator = store.NamedIteratorFilter(iterator,
+			store.TypeFiltererFuncActiveOnly(
+				func(m *store.MetricInfo) bool {
+					return m.Path() == "Alice"
+				}))
+		expected.Iterate(t, iterator)
+		expected.VerifyDone(t)
+	}
 
 	// Test StartAtBeginning
 	toStartAtBeginningIterator0, _ := aStore.NamedIteratorForEndpoint(

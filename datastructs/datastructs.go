@@ -9,11 +9,13 @@ import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/jsonsource"
+	"github.com/Symantec/scotty/sources/loadsource"
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"gopkg.in/yaml.v2"
 	"io"
+	"strconv"
 	"time"
 )
 
@@ -59,10 +61,17 @@ func newSnmp(params map[string]string) (sources.ConnectorList, error) {
 	return sources.ConnectorList{snmpsource.NewConnector(community)}, nil
 }
 
+func newLoad(params map[string]string) (sources.ConnectorList, error) {
+	count, _ := strconv.Atoi(params["count"])
+	return sources.ConnectorList{loadsource.NewConnector(
+		loadsource.Config{Count: count})}, nil
+}
+
 var (
 	kProtocols = map[string]protocolType{
 		"tricorder": newTricorder,
 		"snmp":      newSnmp,
+		"load":      newLoad,
 	}
 )
 

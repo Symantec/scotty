@@ -50,6 +50,10 @@ var (
 )
 
 var (
+	fMdbLoadTesting = flag.Int(
+		"mdbLoadTesting",
+		0,
+		"Number of hosts to use for load testing")
 	fPort = flag.Int(
 		"portNum",
 		6980,
@@ -136,6 +140,17 @@ func hostNames(machines []mdb.Machine) (result []string) {
 	return
 }
 
+func loadTestMdbChannel(count int) <-chan *mdb.Mdb {
+	machines := make([]mdb.Machine, count)
+	for i := range machines {
+		machines[i].Hostname = fmt.Sprintf("host_%d", i)
+	}
+	anMdb := &mdb.Mdb{Machines: machines}
+	result := make(chan *mdb.Mdb, 1)
+	result <- anMdb
+	return result
+}
+
 func createApplicationStats(
 	appList *datastructs.ApplicationList,
 	logger *log.Logger,
@@ -167,7 +182,12 @@ func createApplicationStats(
 		log.Fatal(err)
 	}
 	stats := datastructs.NewApplicationStatuses(appList, astore)
-	mdbChannel := mdbd.StartMdbDaemon(*fMdbFile, logger)
+	var mdbChannel <-chan *mdb.Mdb
+	if *fMdbLoadTesting > 0 {
+		mdbChannel = loadTestMdbChannel(*fMdbLoadTesting)
+	} else {
+		mdbChannel = mdbd.StartMdbDaemon(*fMdbFile, logger)
+	}
 	var machines *mdb.Mdb
 	select {
 	case machines = <-mdbChannel:

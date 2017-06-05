@@ -73,21 +73,22 @@ func newWriterMetrics(parentPath string) (*WriterMetrics, error) {
 		result.get(&singles)
 		return time.Now()
 	})
+	dg := tricorder.DirectoryGroup{Group: grp, Directory: parentDir}
 
-	if err := parentDir.RegisterMetricInGroup(
-		"total", &singles.Total, grp, units.None, "Total write calls"); err != nil {
+	if err := dg.RegisterMetric(
+		"total", &singles.Total, units.None, "Total write calls"); err != nil {
 		return nil, err
 	}
-	if err := parentDir.RegisterMetricInGroup(
-		"success", &singles.Success, grp, units.None, "Successful write calls"); err != nil {
+	if err := dg.RegisterMetric(
+		"success", &singles.Success, units.None, "Successful write calls"); err != nil {
 		return nil, err
 	}
-	if err := parentDir.RegisterMetricInGroup(
-		"failure", &singles.Failure, grp, units.None, "Failed write calls"); err != nil {
+	if err := dg.RegisterMetric(
+		"failure", &singles.Failure, units.None, "Failed write calls"); err != nil {
 		return nil, err
 	}
-	if err := parentDir.RegisterMetricInGroup(
-		"lastError", &singles.LastError, grp, units.None, "Last write error"); err != nil {
+	if err := dg.RegisterMetric(
+		"lastError", &singles.LastError, units.None, "Last write error"); err != nil {
 		return nil, err
 	}
 	return result, nil

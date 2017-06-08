@@ -4,7 +4,6 @@ package tsdb
 import (
 	"github.com/Symantec/scotty/lib/yamlutil"
 	"github.com/Symantec/scotty/pstore"
-	"time"
 )
 
 // FromFile creates a new writer from a configuration file.
@@ -19,10 +18,8 @@ func FromFile(filename string) (result pstore.LimitedRecordWriter, err error) {
 // Config represents the configuration of tsdb.
 // Config implements both config.Config and config.WriterFactory
 type Config struct {
-	// The tsdb endpoint. Required.
+	// The tsdb endpoint. Required. Looks like "somehost:4242"
 	HostAndPort string `yaml:"hostAndPort"`
-	// The timeout. Optionsl. Default 30s.
-	Timeout time.Duration `yaml:"timeout"`
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {

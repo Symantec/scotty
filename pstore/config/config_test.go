@@ -54,7 +54,6 @@ func TestReadConfig(t *testing.T) {
     name: "influx store"
 - openTSDB:
     hostAndPort: "localhost:8084"
-    timeout: 37s
   consumer:
     name: "tsdb store"
     rollUpSpan: -2m

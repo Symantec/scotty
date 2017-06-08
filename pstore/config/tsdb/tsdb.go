@@ -1,19 +1,13 @@
 package tsdb
 
 import (
-	//"bytes"
-	//"encoding/json"
 	"errors"
-	//"fmt"
 	"github.com/Symantec/scotty/pstore"
-	"github.com/Symantec/scotty/pstore/config/kafka"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	//	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_bridge/opentsdb"
-	// "github.com/prometheus/prometheus/util/httputil"
-	//"io/ioutil"
-	//"math"
-	"net/http"
-	//"net/url"
+	"github.com/Symantec/tricorder/go/tricorder/units"
+	"github.com/bluebreezecf/opentsdb-goclient/client"
+	"github.com/bluebreezecf/opentsdb-goclient/config"
 	"time"
 )
 
@@ -27,9 +21,27 @@ const (
 	contentTypeJSON = "application/json"
 )
 
+var (
+	supportedTypes = map[types.Type]bool{
+		types.Bool:       true,
+		types.Int8:       true,
+		types.Int16:      true,
+		types.Int32:      true,
+		types.Int64:      true,
+		types.Uint8:      true,
+		types.Uint16:     true,
+		types.Uint32:     true,
+		types.Uint64:     true,
+		types.Float32:    true,
+		types.Float64:    true,
+		types.GoTime:     true,
+		types.GoDuration: true,
+		types.String:     true,
+	}
+)
+
 type writer struct {
-	url        string
-	httpClient *http.Client
+	client client.Client
 }
 
 func newWriter(c Config) (
@@ -39,97 +51,78 @@ func newWriter(c Config) (
 			"HostAndPort fields required.")
 		return
 	}
-	if c.Timeout == 0 {
-		c.Timeout = 30 * time.Second
+	var cl client.Client
+	cl, err = client.NewClient(
+		config.OpenTSDBConfig{OpentsdbHost: c.HostAndPort})
+	if err != nil {
+		return
 	}
-	w := &writer{
-		url: c.HostAndPort,
-		// httpClient: httputil.NewDeadlineClient(c.Timeout, nil),
-	}
-	result = w
+	result = &writer{client: cl}
 	return
 }
 
 func (w *writer) IsTypeSupported(t types.Type) bool {
-	return kafka.IsTypeSupported(t)
+	return supportedTypes[t]
+}
+
+func asInterface(r *pstore.Record) interface{} {
+	switch r.Kind {
+	case types.Bool:
+		if r.Value.(bool) {
+			return 1.0
+		}
+		return 0.0
+	case types.Int8:
+		return int64(r.Value.(int8))
+	case types.Int16:
+		return int64(r.Value.(int16))
+	case types.Int32:
+		return int64(r.Value.(int32))
+	case types.Int64:
+		return r.Value.(int64)
+	case types.Uint8:
+		return int64(r.Value.(uint8))
+	case types.Uint16:
+		return int64(r.Value.(uint16))
+	case types.Uint32:
+		return int64(r.Value.(uint32))
+	case types.Uint64:
+		return int64(r.Value.(uint64))
+	case types.Float32:
+		return float64(r.Value.(float32))
+	case types.Float64:
+		return r.Value.(float64)
+	case types.GoTime:
+		return duration.TimeToFloat(r.Value.(time.Time))
+	case types.GoDuration:
+		return duration.ToFloat(
+			r.Value.(time.Duration)) * units.FromSeconds(
+			r.Unit)
+	case types.String:
+		return r.Value.(string)
+	default:
+		panic("Unsupported type")
+
+	}
+
 }
 
 func (w *writer) Write(records []pstore.Record) (err error) {
-	/*
-		reqs := make([]opentsdb.StoreSamplesRequest, len(records))
-		for i := range records {
-			v := kafka.ToFloat64(&records[i])
-			// We can't allow Infinity or NaN, so we do the best we can.
-			if math.IsInf(v, 1) {
-				v = math.MaxFloat64
-			} else if math.IsInf(v, -1) {
-				v = -math.MaxFloat64
-			} else if math.IsNaN(v) {
-				v = 0
-			}
-			reqs[i] = opentsdb.StoreSamplesRequest{
-				Metric: opentsdb.TagValue(records[i].Path),
-				// TODO: Milliseconds?
-				Timestamp: records[i].Timestamp.Unix(),
-				Value:     v,
-				Tags:      allTagValues(&records[i]),
-			}
-		}
-
-		u, err := url.Parse(w.url)
-		if err != nil {
-			return err
-		}
-
-		u.Path = putEndpoint
-
-		buf, err := json.Marshal(reqs)
-		if err != nil {
-			return err
-		}
-
-		resp, err := w.httpClient.Post(
-			u.String(),
-			contentTypeJSON,
-			bytes.NewBuffer(buf),
-		)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		// API returns status code 204 for successful writes.
-		// http://opentsdb.net/docs/build/html/api_http/put.html
-		if resp.StatusCode == http.StatusNoContent {
-			return nil
-		}
-
-		// API returns status code 400 on error, encoding error details in the
-		// response content in JSON.
-		buf, err = ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-
-		var r map[string]int
-		if err := json.Unmarshal(buf, &r); err != nil {
-			return err
-		}
-		return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
-	*/
-	// Just do nothing for now
-	return nil
-
+	datas := make([]client.DataPoint, len(records))
+	for i := range records {
+		datas[i].Metric = records[i].Path
+		datas[i].Timestamp = records[i].Timestamp.Unix()
+		datas[i].Value = asInterface(&records[i])
+		datas[i].Tags = allTagValues(&records[i])
+	}
+	_, err = w.client.Put(datas, "")
+	return
 }
 
-/*
-func allTagValues(r *pstore.Record) map[string]opentsdb.TagValue {
-	result := map[string]opentsdb.TagValue{
-		kHostName: opentsdb.TagValue(r.HostName),
-	}
+func allTagValues(r *pstore.Record) map[string]string {
+	result := map[string]string{kHostName: r.HostName}
 	for k, v := range r.Tags {
-		result[k] = opentsdb.TagValue(v)
+		result[k] = v
 	}
 	return result
 }
-*/

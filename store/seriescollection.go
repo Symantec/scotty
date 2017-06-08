@@ -144,32 +144,25 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		timeSeries:           allTimeSeries,
 		strategy:             strategy,
 	}
-	timeLeft := timeLeft(timestampSeries, result.nextStartTimeStamps())
+	timeLeft := timeLeft(timestampSeries, timesByGroup)
 	return result, timeLeft
 }
 
 func timeLeft(
 	timestampSeries []*timestampSeriesType,
-	startTimes map[int]float64) float64 {
+	timesByGroup map[int][]float64) float64 {
 	result := 0.0
 	for _, series := range timestampSeries {
-		first := startTimes[series.GroupId()]
-		if first == 0.0 {
-			first = series.Earliest()
-		}
-		current := series.Latest() - first
-		if current > result {
-			result = current
+		times := timesByGroup[series.GroupId()]
+		timesLen := len(times)
+		if timesLen > 0 {
+			current := series.Latest() - times[timesLen-1]
+			if current > result {
+				result = current
+			}
 		}
 	}
 	return result
-}
-
-func (c *timeSeriesCollectionType) TimeLeft(name string) float64 {
-	startTimes,
-		_,
-		timestampSeries := c.NamedIteratorInfo(name)
-	return timeLeft(timestampSeries, startTimes)
 }
 
 func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
@@ -203,7 +196,7 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		strategy: strategy,
 		interval: duration,
 	}
-	timeLeft := timeLeft(timestampSeries, result.nextStartTimeStamps())
+	timeLeft := timeLeft(timestampSeries, timesByGroup)
 	return result, timeLeft
 }
 

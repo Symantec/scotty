@@ -131,6 +131,7 @@ type pstoreHandlerType struct {
 	consumer            *pstore.ConsumerWithMetrics
 	appList             *datastructs.ApplicationList
 	startTime           time.Time
+	secondsBehind       float64
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
 	visitorMetricsStore *visitorMetricsStoreType
@@ -185,13 +186,13 @@ func (p *pstoreHandlerType) Name() string {
 // start visiting scotty
 func (p *pstoreHandlerType) StartVisit() {
 	p.startTime = time.Now()
+	p.secondsBehind = 0.0
 }
 
 // end visit
 func (p *pstoreHandlerType) EndVisit(theStore *store.Store) {
 	p.consumer.Flush()
-	p.visitorMetricsStore.SetTimeLeft(
-		duration.FromFloat(theStore.TimeLeft(p.iteratorName())))
+	p.visitorMetricsStore.SetTimeLeft(duration.FromFloat(p.secondsBehind))
 	totalTime := time.Now().Sub(p.startTime)
 	p.totalTimeSpentDist.Add(totalTime)
 
@@ -223,6 +224,9 @@ func (p *pstoreHandlerType) Visit(
 			aMetricStore.RemoveFromRecordCount)
 	}
 	p.consumer.Write(iterator, hostName, appName)
+	if timeLeft > p.secondsBehind {
+		p.secondsBehind = timeLeft
+	}
 	p.visitorMetricsStore.MaybeIncreaseTimeLeft(
 		duration.FromFloat(timeLeft))
 	return nil

@@ -92,17 +92,6 @@ func (s *Store) byPrefixAndEndpoint(
 		prefix, start, end, strategy, result)
 }
 
-func (s *Store) timeLeft(name string) float64 {
-	result := 0.0
-	for endpointId := range s.byApplication {
-		current := s.byApplication[endpointId].TimeLeft(name)
-		if current > result {
-			result = current
-		}
-	}
-	return result
-}
-
 func (s *Store) namedIteratorForEndpoint(
 	name string,
 	endpointId interface{},

@@ -653,13 +653,6 @@ func (s *Store) ByEndpointStrategy(
 		result)
 }
 
-// TimeLeft returns the the approximate maximum timespan measured in seconds
-// of values left to be iterated from iterator with given name across all
-// end points.
-func (s *Store) TimeLeft(name string) (seconds float64) {
-	return s.timeLeft(name)
-}
-
 // TsdbTimeSeries returns the time series with given name from given endpoint.
 //
 // If no such metric exists for given endpoint, TsdbTimeSeries returns false

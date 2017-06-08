@@ -813,13 +813,8 @@ func TestRollUpIterator(t *testing.T) {
 		"near",       // 4th
 		"far", "too", // 5th
 	)
-	// Assume 0 time left when we haven't added anything
-	assertValueEquals(t, 0.0, aStore.TimeLeft("anIterator"))
 
 	playback.Play(aStore, kEndpoint0)
-
-	// 96610.0 - 96000 > 120500.0 - 120000
-	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
 
 	expected := newExpectedTsValues()
 	expected.Add("Int", 120000.0, int64(26667))
@@ -851,9 +846,6 @@ func TestRollUpIterator(t *testing.T) {
 	expected.VerifyDone(t)
 	assertValueEquals(t, 110.0, timeAfterIterator)
 
-	// We never committed progress, so timeLeft remains unchanged
-	assertValueEquals(t, 610.0, aStore.TimeLeft("anIterator"))
-
 	// Shouldn't get anything else off this iterator
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)
@@ -882,8 +874,6 @@ func TestRollUpIterator(t *testing.T) {
 	assertValueEquals(t, 190.0, timeAfterIterator)
 	iterator.Commit()
 
-	assertValueEquals(t, 190.0, aStore.TimeLeft("anIterator"))
-
 	checkpoint := expected.Checkpoint()
 	iterator, _ = aStore.NamedIteratorForEndpointRollUp(
 		"anIterator",
@@ -903,8 +893,6 @@ func TestRollUpIterator(t *testing.T) {
 	assertValueEquals(t, 110.0, timeAfterIterator)
 	iterator.Commit()
 
-	assertValueEquals(t, 110.0, aStore.TimeLeft("anIterator"))
-
 	expected.VerifyDone(t)
 
 	iterator, timeAfterIterator = aStore.NamedIteratorForEndpointRollUp(
@@ -913,7 +901,7 @@ func TestRollUpIterator(t *testing.T) {
 		2*time.Minute,
 		3,
 		store.GroupMetricByPathAndNumeric)
-	assertValueEquals(t, 110.0, timeAfterIterator)
+	assertValueEquals(t, 0.0, timeAfterIterator)
 	// Shouldn't get anything off iterator
 	expected.Iterate(t, iterator)
 	expected.VerifyDone(t)

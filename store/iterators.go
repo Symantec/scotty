@@ -5,12 +5,6 @@ import (
 	"sort"
 )
 
-type optimisedNamedIteratorType interface {
-	next(r *Record, typeFilter func(*MetricInfo) bool) bool
-	commit(typeFilter func(*MetricInfo) bool)
-	Name() string
-}
-
 // This file contains all the code for implementing iterators.
 
 type filterIteratorType struct {
@@ -25,42 +19,6 @@ func (f *filterIteratorType) Next(r *Record) bool {
 		}
 	}
 	return false
-}
-
-type filterOptimisedNamedIteratorType struct {
-	filter  TypeFilterer
-	wrapped optimisedNamedIteratorType
-}
-
-func (f *filterOptimisedNamedIteratorType) Next(r *Record) bool {
-	for f.wrapped.next(r, f.filter.FilterByType) {
-		if f.filter.Filter(r) {
-			return true
-		}
-	}
-	return false
-}
-
-func (f *filterOptimisedNamedIteratorType) Commit() {
-	f.wrapped.commit(f.filter.FilterByType)
-}
-
-func (f *filterOptimisedNamedIteratorType) Name() string {
-	return f.wrapped.Name()
-}
-
-func namedIteratorFilter(
-	ni NamedIterator, filter Filterer) NamedIterator {
-	aFilter, fok := filter.(TypeFilterer)
-	namedIterator, nok := ni.(optimisedNamedIteratorType)
-	if fok && nok {
-		return &filterOptimisedNamedIteratorType{
-			filter:  aFilter,
-			wrapped: namedIterator}
-	}
-	return &changedNamedIteratorType{
-		NamedIterator: ni,
-		change:        IteratorFilter(ni, filter)}
 }
 
 type coordinatorIteratorType struct {
@@ -157,19 +115,7 @@ func (n *namedIteratorType) recordsFromSingleTimeSeries(
 		appender)
 }
 
-func filterTimeSeries(
-	timeSeries []*timeSeriesType,
-	typeFilter func(*MetricInfo) bool) (filtered []*timeSeriesType) {
-	for _, ts := range timeSeries {
-		if typeFilter(ts.id) {
-			filtered = append(filtered, ts)
-		}
-	}
-	return filtered
-}
-
-func (n *namedIteratorType) moreRecords(
-	typeFilter func(*MetricInfo) bool) bool {
+func (n *namedIteratorType) moreRecords() bool {
 	if len(n.timeSeries) == 0 {
 		return false
 	}
@@ -178,17 +124,12 @@ func (n *namedIteratorType) moreRecords(
 	}
 	subsetLen := nextSubset(n.partition, 0)
 	currentSubset := n.timeSeries[:subsetLen]
-	if typeFilter != nil {
-		currentSubset = filterTimeSeries(currentSubset, typeFilter)
-	}
 	n.timeSeries = n.timeSeries[subsetLen:]
 	n.records = n.records[:0]
-	if len(currentSubset) > 0 {
-		n.merger.MergeOldestFirst(
-			currentSubset,
-			n.recordsFromSingleTimeSeries,
-			AppendTo(&n.records))
-	}
+	n.merger.MergeOldestFirst(
+		currentSubset,
+		n.recordsFromSingleTimeSeries,
+		AppendTo(&n.records))
 	return true
 }
 
@@ -216,9 +157,8 @@ func (n *namedIteratorType) nextStartTimeStamps() map[int]float64 {
 	return result
 }
 
-func (n *namedIteratorType) snapshot(
-	typeFilter func(*MetricInfo) bool) *namedIteratorDataType {
-	if !n.hasNext(typeFilter) {
+func (n *namedIteratorType) snapshot() *namedIteratorDataType {
+	if !n.hasNext() {
 		return &namedIteratorDataType{
 			startTimeStamps: n.nextStartTimeStamps(),
 		}
@@ -234,17 +174,12 @@ func (n *namedIteratorType) Name() string {
 }
 
 func (n *namedIteratorType) Commit() {
-	n.commit(nil)
+	n.timeSeriesCollection.SaveProgress(n.name, n.snapshot())
 }
 
-func (n *namedIteratorType) commit(typeFilter func(*MetricInfo) bool) {
-	n.timeSeriesCollection.SaveProgress(n.name, n.snapshot(typeFilter))
-}
-
-func (n *namedIteratorType) hasNext(
-	typeFilter func(*MetricInfo) bool) bool {
+func (n *namedIteratorType) hasNext() bool {
 	for n.recordIdx == len(n.records) {
-		if !n.moreRecords(typeFilter) {
+		if !n.moreRecords() {
 			return false
 		}
 		n.recordIdx = 0
@@ -253,18 +188,16 @@ func (n *namedIteratorType) hasNext(
 }
 
 // Like Next, but doesn't advance iterator.
-func (n *namedIteratorType) peek(
-	r *Record, typeFilter func(*MetricInfo) bool) bool {
-	if !n.hasNext(typeFilter) {
+func (n *namedIteratorType) peek(r *Record) bool {
+	if !n.hasNext() {
 		return false
 	}
 	*r = n.records[n.recordIdx]
 	return true
 }
 
-func (n *namedIteratorType) next(
-	r *Record, typeFilter func(*MetricInfo) bool) bool {
-	if !n.hasNext(typeFilter) {
+func (n *namedIteratorType) Next(r *Record) bool {
+	if !n.hasNext() {
 		return false
 	}
 	*r = n.records[n.recordIdx]
@@ -272,10 +205,6 @@ func (n *namedIteratorType) next(
 	// Mark current progress
 	n.completed[r.Info] = r.TimeStamp
 	return true
-}
-
-func (n *namedIteratorType) Next(r *Record) bool {
-	return n.next(r, nil)
 }
 
 type aggregatorType struct {
@@ -343,11 +272,6 @@ type rollUpNamedIteratorType struct {
 }
 
 func (n *rollUpNamedIteratorType) Next(result *Record) bool {
-	return n.next(result, nil)
-}
-
-func (n *rollUpNamedIteratorType) next(
-	result *Record, typeFilter func(*MetricInfo) bool) bool {
 	// When rolling up, we use the exclusive end timestamp of the range
 	// instead of the inclusive start time stamp of the range.
 	// By doing this we ensure that if the roll up span changes during run
@@ -364,7 +288,7 @@ func (n *rollUpNamedIteratorType) next(
 	// So we can be confident that we will never overwrite data for the
 	// same timestamp or earlier one.
 	var record Record
-	for n.namedIteratorType.peek(&record, typeFilter) {
+	for n.namedIteratorType.peek(&record) {
 		// Can't roll up inactive values with active ones so we
 		// skip the inactive ones.
 		if !record.Active {

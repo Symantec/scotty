@@ -223,37 +223,6 @@ type Filterer interface {
 	Filter(*Record) bool
 }
 
-// TypeFilterer filters by metric type. Using filters that implement this
-// interface provide for special optimisations. For intance, using filters of
-// this type allow skipping and entire time series rather than visiting a
-// time series while filtering out every value in. Using these filters allows
-// scotty to traverse values not written to persistent storage up to 5X
-// faster.
-type TypeFilterer interface {
-	// If FilterByType returns false then Filter should return false for
-	// any value from that metric for consistency. However, if FilterByType
-	// returns true, the Filter method may stil return false.
-	Filterer
-	// FilterByType returns true if values of a given metric should
-	// be included.
-	FilterByType(info *MetricInfo) bool
-}
-
-// TypeFilterFuncActiveOnly converts a function filtering by metric type
-// into a TypeFilterer.
-type TypeFiltererFuncActiveOnly func(*MetricInfo) bool
-
-// FilterByType returns true if and only if f returns true.
-func (f TypeFiltererFuncActiveOnly) FilterByType(m *MetricInfo) bool {
-	return f(m)
-}
-
-// Filter returns true if and only if f returns true for the metric type
-// and the metric value is flagged as active.
-func (f TypeFiltererFuncActiveOnly) Filter(r *Record) bool {
-	return f(r.Info) && r.Active
-}
-
 // FiltererFunc is an adapter allowing an ordinary function to be used as a
 // Filterer.
 type FiltererFunc func(*Record) bool
@@ -363,11 +332,11 @@ func NamedIteratorFilterFunc(
 
 // NamedIteratorFilter returns an Iterator like the given one except
 // that it yields only metric values for which filter returns true.
-// If filter is a TypeFilterer, the returned NamedIterator will apply
-// opitimisations if possible.
 func NamedIteratorFilter(
 	ni NamedIterator, filter Filterer) NamedIterator {
-	return namedIteratorFilter(ni, filter)
+	return &changedNamedIteratorType{
+		NamedIterator: ni,
+		change:        IteratorFilter(ni, filter)}
 }
 
 // NamedIteratorCoordinate returns an Iterator like given one except that

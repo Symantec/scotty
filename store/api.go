@@ -674,6 +674,24 @@ func (s *Store) TsdbTimeSeries(
 	return s.tsdbTimeSeries(name, endpointId, start, end)
 }
 
+// FloatVar represents a floating point random variable
+type FloatVar struct {
+	Sum   float64
+	Count uint64
+}
+
+// Avg computes the average of this random variable. Returns NaN if this
+// instance is empty (Count == 0).
+func (f FloatVar) Avg() float64 {
+	return f.Sum / float64(f.Count)
+}
+
+// Add adds the values in a to this random variable
+func (f *FloatVar) Add(a FloatVar) {
+	f.Sum += a.Sum
+	f.Count += a.Count
+}
+
 // NamedIteratorForEndpoint returns an iterator for the given name that
 // iterates over metric values for all known timestamps for the given endpoint.
 // Since the name is used to track progress of iterating over the given
@@ -702,7 +720,7 @@ func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
 	maxFrames uint) (
-	iterator NamedIterator, remainingValuesInSeconds float64) {
+	iterator NamedIterator, remainingValuesInSeconds float64, percentCaughtUp FloatVar) {
 	return s.namedIteratorForEndpoint(name, endpointId, int(maxFrames))
 }
 
@@ -760,7 +778,7 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 	dur time.Duration,
 	maxFrames uint,
 	strategy MetricGroupingStrategy) (
-	iterator NamedIterator, remainingValuesInSeconds float64) {
+	iterator NamedIterator, remainingValuesInSeconds float64, percentCaughtUp FloatVar) {
 	return s.namedIteratorForEndpointRollUp(
 		name, endpointId, dur, int(maxFrames), strategy)
 }

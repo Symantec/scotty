@@ -123,7 +123,7 @@ func (c *timeSeriesCollectionType) NamedIteratorInfo(name string) (
 func (c *timeSeriesCollectionType) NewNamedIterator(
 	name string,
 	maxFrames int,
-	strategy MetricGroupingStrategy) (NamedIterator, float64) {
+	strategy MetricGroupingStrategy) (NamedIterator, float64, FloatVar) {
 	startTimes,
 		completed,
 		timestampSeries := c.NamedIteratorInfo(name)
@@ -144,14 +144,16 @@ func (c *timeSeriesCollectionType) NewNamedIterator(
 		timeSeries:           allTimeSeries,
 		strategy:             strategy,
 	}
-	timeLeft := timeLeft(timestampSeries, timesByGroup)
-	return result, timeLeft
+	timeLeft, percentCaughtUp := timeLeft(timestampSeries, timesByGroup)
+	return result, timeLeft, percentCaughtUp
 }
 
 func timeLeft(
 	timestampSeries []*timestampSeriesType,
-	timesByGroup map[int][]float64) float64 {
+	timesByGroup map[int][]float64) (float64, FloatVar) {
 	result := 0.0
+	percentCaughtUpSum := 0.0
+	percentCaughtUpCount := uint64(0)
 	for _, series := range timestampSeries {
 		times := timesByGroup[series.GroupId()]
 		timesLen := len(times)
@@ -160,9 +162,16 @@ func timeLeft(
 			if current > result {
 				result = current
 			}
+			earliest := series.Earliest()
+			latest := series.Latest()
+			diff := latest - earliest
+			if diff > 0.0 {
+				percentCaughtUpSum += (times[0] - earliest) / diff * 100.0
+				percentCaughtUpCount++
+			}
 		}
 	}
-	return result
+	return result, FloatVar{Sum: percentCaughtUpSum, Count: percentCaughtUpCount}
 }
 
 func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
@@ -170,7 +179,7 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 	duration float64,
 	maxFrames int,
 	strategy MetricGroupingStrategy) (
-	NamedIterator, float64) {
+	NamedIterator, float64, FloatVar) {
 	startTimes,
 		completed,
 		timestampSeries := c.NamedIteratorInfo(name)
@@ -196,8 +205,8 @@ func (c *timeSeriesCollectionType) NewNamedIteratorRollUp(
 		strategy: strategy,
 		interval: duration,
 	}
-	timeLeft := timeLeft(timestampSeries, timesByGroup)
-	return result, timeLeft
+	timeLeft, percentCaughtUp := timeLeft(timestampSeries, timesByGroup)
+	return result, timeLeft, percentCaughtUp
 }
 
 func (c *timeSeriesCollectionType) StartAtBeginning(names []string) {

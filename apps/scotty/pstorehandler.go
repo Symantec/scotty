@@ -74,7 +74,7 @@ func (t *totalCountType) Update(
 	theStore *store.Store, endpointId interface{}) {
 	var r store.Record
 	var tempCount uint64
-	iterator, _ := createNamedIterator(
+	iterator, _, _ := createNamedIterator(
 		theStore, endpointId, t.iteratorName(), t.rollUpSpan)
 	for iterator.Next(&r) {
 		if t.metrics.Filter(&r) {
@@ -86,13 +86,19 @@ func (t *totalCountType) Update(
 }
 
 type visitorMetricsType struct {
-	TimeLeft time.Duration
-	Blocked  bool
+	TimeLeft        time.Duration
+	PercentCaughtUp float64
+	Blocked         bool
 }
 
 type visitorMetricsStoreType struct {
 	lock    sync.Mutex
 	metrics visitorMetricsType
+}
+
+func newVisitorMetricsStoreType() *visitorMetricsStoreType {
+	return &visitorMetricsStoreType{
+		metrics: visitorMetricsType{PercentCaughtUp: 100.0}}
 }
 
 func (v *visitorMetricsStoreType) Metrics(metrics *visitorMetricsType) {
@@ -105,6 +111,12 @@ func (v *visitorMetricsStoreType) SetTimeLeft(timeLeft time.Duration) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 	v.metrics.TimeLeft = timeLeft
+}
+
+func (v *visitorMetricsStoreType) SetPercentCaughtUp(percentCaughtUp float64) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	v.metrics.PercentCaughtUp = percentCaughtUp
 }
 
 func (v *visitorMetricsStoreType) MaybeIncreaseTimeLeft(
@@ -132,6 +144,7 @@ type pstoreHandlerType struct {
 	appList             *datastructs.ApplicationList
 	startTime           time.Time
 	secondsBehind       float64
+	percentCaughtUp     store.FloatVar
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
 	visitorMetricsStore *visitorMetricsStoreType
@@ -163,7 +176,7 @@ func newPStoreHandler(
 	totalTimeSpentDist *tricorder.CumulativeDistribution,
 	maybeNilCoordBuilder coordinatorBuilderType) *pstoreHandlerType {
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
-	visitorMetricsStore := &visitorMetricsStoreType{}
+	visitorMetricsStore := newVisitorMetricsStoreType()
 	var maybeNilCoord store.Coordinator
 	if maybeNilCoordBuilder != nil {
 		maybeNilCoord = maybeNilCoordBuilder.WithStateListener(
@@ -187,12 +200,18 @@ func (p *pstoreHandlerType) Name() string {
 func (p *pstoreHandlerType) StartVisit() {
 	p.startTime = time.Now()
 	p.secondsBehind = 0.0
+	p.percentCaughtUp = store.FloatVar{}
 }
 
 // end visit
 func (p *pstoreHandlerType) EndVisit(theStore *store.Store) {
 	p.consumer.Flush()
 	p.visitorMetricsStore.SetTimeLeft(duration.FromFloat(p.secondsBehind))
+	if p.percentCaughtUp.Count > 0 {
+		p.visitorMetricsStore.SetPercentCaughtUp(p.percentCaughtUp.Avg())
+	} else {
+		p.visitorMetricsStore.SetPercentCaughtUp(100.0)
+	}
 	totalTime := time.Now().Sub(p.startTime)
 	p.totalTimeSpentDist.Add(totalTime)
 
@@ -205,7 +224,7 @@ func (p *pstoreHandlerType) Visit(
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
 	appName := p.appList.ByPort(port).Name()
-	iterator, timeLeft := p.namedIterator(theStore, endpointId)
+	iterator, timeLeft, percentCaughtUp := p.namedIterator(theStore, endpointId)
 	if p.maybeNilCoord != nil {
 		// aMetricStore from the consumer exposes the same filtering that
 		// the consumer does internally.
@@ -227,8 +246,8 @@ func (p *pstoreHandlerType) Visit(
 	if timeLeft > p.secondsBehind {
 		p.secondsBehind = timeLeft
 	}
-	p.visitorMetricsStore.MaybeIncreaseTimeLeft(
-		duration.FromFloat(timeLeft))
+	p.percentCaughtUp.Add(percentCaughtUp)
+	p.visitorMetricsStore.MaybeIncreaseTimeLeft(duration.FromFloat(timeLeft))
 	return nil
 }
 
@@ -325,6 +344,13 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = group.RegisterMetric(
+		fmt.Sprintf("writer/%s/writePositionIndex", p.Name()),
+		&visitorData.PercentCaughtUp,
+		units.None,
+		"100 = writing most recent data; 0 = writing earliest data. Data may be evicted before written"); err != nil {
+		return
+	}
+	if err = group.RegisterMetric(
 		fmt.Sprintf("writer/%s/timeLeft", p.Name()),
 		&visitorData.TimeLeft,
 		units.None,
@@ -396,7 +422,7 @@ func (p *pstoreHandlerType) iteratorName() string {
 
 func (p *pstoreHandlerType) namedIterator(
 	theStore *store.Store,
-	endpointId interface{}) (store.NamedIterator, float64) {
+	endpointId interface{}) (store.NamedIterator, float64, store.FloatVar) {
 	var attributes pstore.ConsumerAttributes
 	p.Attributes(&attributes)
 	return createNamedIterator(
@@ -410,7 +436,7 @@ func createNamedIterator(
 	theStore *store.Store,
 	endpointId interface{},
 	iteratorName string,
-	rollUpSpan time.Duration) (store.NamedIterator, float64) {
+	rollUpSpan time.Duration) (store.NamedIterator, float64, store.FloatVar) {
 	if rollUpSpan == 0 {
 		return theStore.NamedIteratorForEndpoint(
 			iteratorName,

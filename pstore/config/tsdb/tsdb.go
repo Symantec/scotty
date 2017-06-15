@@ -115,7 +115,24 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 		datas[i].Value = asInterface(&records[i])
 		datas[i].Tags = allTagValues(&records[i])
 	}
-	_, err = w.client.Put(datas, "")
+	// We have to pass details as the second arg or else the call will return
+	// an error. Internally, this call parses the JSON in the response, but
+	// it expects the response to be "details" style. Arguably this is a bug
+	// in the bluebreezecf/opentsdb-goclient library because according to the
+	// open tsdb spec, it should be acceptable to pass the empty string as
+	// the second param and receive no details.
+	//
+	// Also, the go runtime uses Transfer-Encoding = chunked when it deems
+	// appropriate. So to use this go library, the open tsdb server must be
+	// set up to accept Transfer-Encoding = chunked. We do this by changing
+	// the opentsdb.conf file. Chunk size in go appears to be 8192 but we set
+	// to 65536 for good measure.
+	//
+	// Add these lines to opentsdb.conf:
+	//
+	// tsd.http.request.enable_chunked = true
+	// tsd.http.request.max_chunk = 65536
+	_, err = w.client.Put(datas, "details")
 	return
 }
 

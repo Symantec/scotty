@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/Symantec/scotty/lib/httputil"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -200,11 +201,27 @@ func (w *Writer) buildRequest(
 		}, "", "\t")
 }
 
-func newWriter(c Config) *Writer {
+func cloudhealthUrl(c *Config) (string, error) {
+	endpoint, err := url.Parse(c.Endpoint)
+	if err != nil {
+		return "", err
+	}
+	endpoint = httputil.AppendParams(endpoint, "api_key", c.ApiKey)
+	if c.DryRun {
+		endpoint = httputil.AppendParams(endpoint, "dryrun", "true")
+	}
+	return endpoint.String(), nil
+}
+
+func newWriter(c Config) (*Writer, error) {
 	if c.Endpoint == "" {
 		c.Endpoint = DefaultEndpoint
 	}
-	return &Writer{config: c}
+	urlStr, err := cloudhealthUrl(&c)
+	if err != nil {
+		return nil, err
+	}
+	return &Writer{config: c, urlStr: urlStr}, nil
 }
 
 func (w *Writer) write(
@@ -216,20 +233,9 @@ func (w *Writer) write(
 	if err != nil {
 		return 0, err
 	}
-	url := httputil.NewUrl(
-		w.config.Endpoint,
-		"api_key",
-		w.config.ApiKey)
-	if w.config.DryRun {
-		url = httputil.AppendParams(
-			url,
-			"dryrun",
-			"true")
-	}
-	urlStr := url.String()
 	var client http.Client
 	resp, err := client.Post(
-		urlStr, "application/json", bytes.NewBuffer(body))
+		w.urlStr, "application/json", bytes.NewBuffer(body))
 	if err != nil {
 		return 0, err
 	}
@@ -239,7 +245,7 @@ func (w *Writer) write(
 		time.Sleep(delay)
 		delay *= 2
 		resp, err = client.Post(
-			urlStr, "application/json", bytes.NewBuffer(body))
+			w.urlStr, "application/json", bytes.NewBuffer(body))
 		if err != nil {
 			return 0, err
 		}

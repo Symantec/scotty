@@ -308,7 +308,8 @@ func newCloudHealthWriter(reader io.Reader) (interface{}, error) {
 	if err := yamlutil.Read(reader, &config); err != nil {
 		return nil, err
 	}
-	return cloudhealth.NewWriter(config), nil
+	writer, err := cloudhealth.NewWriter(config)
+	return writer, err
 }
 
 func newCloudWatchWriter(reader io.Reader) (interface{}, error) {

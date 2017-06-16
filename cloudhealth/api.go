@@ -120,10 +120,11 @@ func (c *Config) Reset() {
 
 type Writer struct {
 	config Config
+	urlStr string
 }
 
 // NewWriter returns a new Writer instance.
-func NewWriter(config Config) *Writer {
+func NewWriter(config Config) (*Writer, error) {
 	return newWriter(config)
 }
 

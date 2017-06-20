@@ -17,6 +17,8 @@ type Config struct {
 	ApiKey string `yaml:"apiKey"`
 	// Name for metrics
 	Name string `yaml:"name"`
+	//  AWS region
+	Region string `yaml:"region"`
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {

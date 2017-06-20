@@ -9,10 +9,15 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 )
 
+const (
+	kRegion = "region"
+)
+
 type writer struct {
 	endpoint string
 	tenantId string
 	apiKey   string
+	region   string
 	sync     synchttp.JSONWriter
 	async    *queuesender.Sender
 }
@@ -28,6 +33,7 @@ func newWriter(c Config) (
 	awriter.endpoint = c.Endpoint
 	awriter.tenantId = c.TenantId
 	awriter.apiKey = c.ApiKey
+	awriter.region = c.Region
 	if c.Name != "" {
 		awriter.async, err = queuesender.New(
 			awriter.endpoint, 2000, "", nil)
@@ -56,10 +62,12 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 	if w.sync != nil {
 		var jsonStuff []interface{}
 		for i := range records {
-			jsonStuff = append(
-				jsonStuff,
-				kafka.LMMJSONPayload(
-					&records[i], w.tenantId, w.apiKey, false))
+			payload := kafka.LMMJSONPayload(
+				&records[i], w.tenantId, w.apiKey, false)
+			if w.region != "" {
+				payload[kRegion] = w.region
+			}
+			jsonStuff = append(jsonStuff, payload)
 		}
 		if err = w.sync.Write(w.endpoint, jsonStuff); err != nil {
 			return
@@ -67,9 +75,12 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 		return
 	} else {
 		for i := range records {
-			w.async.Send(
-				w.endpoint,
-				kafka.LMMJSONPayload(&records[i], w.tenantId, w.apiKey, false))
+			payload := kafka.LMMJSONPayload(
+				&records[i], w.tenantId, w.apiKey, false)
+			if w.region != "" {
+				payload[kRegion] = w.region
+			}
+			w.async.Send(w.endpoint, payload)
 		}
 	}
 	return

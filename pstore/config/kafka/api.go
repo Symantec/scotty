@@ -106,6 +106,6 @@ func LMMJSONPayload(
 	r *pstore.Record,
 	tenantId,
 	apiKey string,
-	slashesToUnderscores bool) interface{} {
+	slashesToUnderscores bool) map[string]interface{} {
 	return lmmJSONPayload(r, tenantId, apiKey, slashesToUnderscores)
 }

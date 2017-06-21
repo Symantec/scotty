@@ -208,6 +208,11 @@ func Escape(s string) string {
 	return escape(s)
 }
 
+// Unescape unescapes s from open TSDB. "Health_20Metric" -> "Health Metric"
+func Unescape(s string) string {
+	return unescape(s)
+}
+
 // Error represents an open tsdb error
 type Error struct {
 	E errorCodeType `json:"error"`

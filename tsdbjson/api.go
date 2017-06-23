@@ -70,6 +70,8 @@ type Query struct {
 	DownSample string `json:"downsample"`
 	// The filters
 	Filters []*Filter `json:"filters"`
+	// Tags field for cloud health proxy only. Scotty does not support it.
+	Tags map[string]string `json:"tags"`
 }
 
 // QueryRequest represents an an /api/query request

@@ -21,7 +21,7 @@ var (
 	// the TSDB API way.
 	NotFoundHandler = apiutil.NewHandler(
 		func(params url.Values) (interface{}, error) {
-			return nil, newHTTPError(
+			return nil, tsdbjson.NewError(
 				404, errors.New("Endpoint not found"))
 		},
 		kOptions)

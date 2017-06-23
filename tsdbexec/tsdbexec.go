@@ -19,7 +19,7 @@ import (
 var (
 	kOptions = &apiutil.Options{
 		ErrorGenerator: func(status int, err error) interface{} {
-			return newHTTPError(status, err)
+			return tsdbjson.NewError(status, err)
 		},
 	}
 )
@@ -161,28 +161,4 @@ func runSingleParsedQuery(
 
 func newHandler(handler interface{}) http.Handler {
 	return apiutil.NewHandler(handler, kOptions)
-}
-
-func newHTTPError(status int, err error) apiutil.HTTPError {
-	var anError httpErrorType
-	anError.E.Code = status
-	anError.E.Message = err.Error()
-	return &anError
-}
-
-type errorCodeType struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type httpErrorType struct {
-	E errorCodeType `json:"error"`
-}
-
-func (h *httpErrorType) Error() string {
-	return h.E.Message
-}
-
-func (h *httpErrorType) Status() int {
-	return h.E.Code
 }

@@ -207,3 +207,36 @@ func NewTagFilter(filterType, filterValue string) (tsdb.TagFilter, error) {
 func Escape(s string) string {
 	return escape(s)
 }
+
+// Unescape unescapes s from open TSDB. "Health_20Metric" -> "Health Metric"
+func Unescape(s string) string {
+	return unescape(s)
+}
+
+// Error represents an open tsdb error
+type Error struct {
+	E errorCodeType `json:"error"`
+}
+
+type errorCodeType struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// NewError returns a open tsdb error with a particular status
+func NewError(status int, err error) *Error {
+	return &Error{
+		E: errorCodeType{
+			Code:    status,
+			Message: err.Error(),
+		},
+	}
+}
+
+func (e *Error) Error() string {
+	return e.E.Message
+}
+
+func (e *Error) Status() int {
+	return e.E.Code
+}

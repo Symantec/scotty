@@ -19,6 +19,7 @@ const (
 	Total Endpoints: {{.Summary.TotalEndpoints}}<br>
 	Total Active Endpoints: {{.Summary.TotalActiveEndpoints}}<br>
 	Total Failed Endpoints: {{.Summary.TotalFailedEndpoints}}<br>
+	<a href="/showAllApps?up=true">Up only</a>&nbsp;<a href="/showAllApps">All</a>
 	<table border="1" style="width:100%">
 	  <tr>
 	    <th>Machine</th>
@@ -129,21 +130,34 @@ type Handler struct {
 func (h *Handler) ServeHTTP(
 	w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
+	up := r.Form.Get("up") != ""
 	w.Header().Set("Content-Type", "text/html")
 	result := h.AS.All()
 	datastructs.ByHostAndName(result)
-	v := h.newView(result)
+	var summary EndpointSummary
+	summary.Init(result)
+	if up {
+		var toDisplay []*datastructs.ApplicationStatus
+		for _, app := range result {
+			if app.Active && !app.Down {
+				toDisplay = append(toDisplay, app)
+			}
+		}
+		result = toDisplay
+	}
+	v := h.newView(summary, result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
 		fmt.Fprintln(w, "Error in template: %v\n", err)
 	}
 }
 
 func (h *Handler) newView(
-	apps []*datastructs.ApplicationStatus) *view {
+	summary EndpointSummary,
+	toDisplay []*datastructs.ApplicationStatus) *view {
 	result := &view{
-		Apps:    apps,
+		Apps:    toDisplay,
+		Summary: summary,
 		History: "0",
 	}
-	result.Summary.Init(apps)
 	return result
 }

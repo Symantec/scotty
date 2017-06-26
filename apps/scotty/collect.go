@@ -413,6 +413,15 @@ func startCollector(
 			log.Fatal(err)
 		}
 		cloudHealthChannel = make(chan *chpipeline.Snapshot, 10000)
+		if err := tricorder.RegisterMetric(
+			"collector/cloudHealthLen",
+			func() int {
+				return len(cloudHealthChannel)
+			},
+			units.None,
+			"Length of cloud health channel"); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	var cloudHealthLmmChannel chan *chpipeline.Snapshot
@@ -429,6 +438,15 @@ func startCollector(
 			log.Fatal(err)
 		}
 		cloudHealthLmmChannel = make(chan *chpipeline.Snapshot, 10000)
+		if err := tricorder.RegisterMetric(
+			"collector/cloudHealthLmmLen",
+			func() int {
+				return len(cloudHealthLmmChannel)
+			},
+			units.None,
+			"Length of cloud health lmm channel"); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	var cloudWatchChannel chan *chpipeline.Snapshot
@@ -446,6 +464,15 @@ func startCollector(
 			log.Fatal(err)
 		}
 		cloudWatchChannel = make(chan *chpipeline.Snapshot, 10000)
+		if err := tricorder.RegisterMetric(
+			"collector/cloudWatchLen",
+			func() int {
+				return len(cloudWatchChannel)
+			},
+			units.None,
+			"Length of cloud watch channel"); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	var cisClient *cis.Client

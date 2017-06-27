@@ -141,3 +141,37 @@ func (w *Writer) Write(
 	responseCode int, err error) {
 	return w.write(instances, fss)
 }
+
+// Buffer buffers data to add to cloudhealth
+type Buffer struct {
+	instances []InstanceData
+	fss       []FsData
+}
+
+// NewBuffer returns a new, empty buffer
+func NewBuffer() *Buffer {
+	return &Buffer{}
+}
+
+// Add adds an instance and its file systems returning true if the
+// add succeeded. Add returns false if adding the instance and the filesystem
+// would cause the number of data points to exceed the cloudhealth limit.
+func (b *Buffer) Add(instance InstanceData, fss []FsData) bool {
+	return b.add(instance, fss)
+}
+
+// Get returns a defensive copy of what is in this buffer
+func (b *Buffer) Get() ([]InstanceData, []FsData) {
+	return b.get()
+}
+
+// Clear clears this buffer so that IsEmpty returns true
+func (b *Buffer) Clear() {
+	b.instances = b.instances[:0]
+	b.fss = b.fss[:0]
+}
+
+// IsEmpty returns true if this buffer is empty
+func (b *Buffer) IsEmpty() bool {
+	return len(b.instances) == 0 && len(b.fss) == 0
+}

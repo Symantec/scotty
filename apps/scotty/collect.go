@@ -163,7 +163,7 @@ type loggerType struct {
 	TotalCounts           totalCountUpdaterType
 	CisQueue              *keyedqueue.Queue
 	CloudHealthLmmChannel chan *chpipeline.Snapshot
-	CloudHealthChannel    chan *chpipeline.Snapshot
+	CloudHealthChannel    chan []*chpipeline.Snapshot
 	CloudWatchChannel     chan *chpipeline.Snapshot
 	EndpointData          *datastructs.EndpointData
 }
@@ -233,9 +233,7 @@ func (l *loggerType) LogResponse(
 					return err
 				}
 				if l.CloudHealthChannel != nil {
-					for _, s := range chStore.GetAll() {
-						l.CloudHealthChannel <- s
-					}
+					l.CloudHealthChannel <- chStore.GetAll()
 				}
 				if l.CloudHealthLmmChannel != nil {
 					l.CloudHealthLmmChannel <- snapshot
@@ -399,7 +397,7 @@ func startCollector(
 		"json":      jsonCollectionTimesDist,
 	}
 
-	var cloudHealthChannel chan *chpipeline.Snapshot
+	var cloudHealthChannel chan []*chpipeline.Snapshot
 	var cloudHealthConfig *dynconfig.DynConfig
 
 	cloudHealthConfigFile := path.Join(*fConfigDir, "cloudhealth.yaml")
@@ -412,7 +410,7 @@ func startCollector(
 		if err != nil {
 			log.Fatal(err)
 		}
-		cloudHealthChannel = make(chan *chpipeline.Snapshot, 10000)
+		cloudHealthChannel = make(chan []*chpipeline.Snapshot, 10000)
 		if err := tricorder.RegisterMetric(
 			"collector/cloudHealthLen",
 			func() int {
@@ -621,7 +619,7 @@ func startSnapshotLoop(
 
 func startCloudFireLoop(
 	cloudHealthConfig *dynconfig.DynConfig,
-	cloudHealthChannel chan *chpipeline.Snapshot) {
+	cloudHealthChannel chan []*chpipeline.Snapshot) {
 
 	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth")
 	if err != nil {
@@ -630,29 +628,77 @@ func startCloudFireLoop(
 
 	go func() {
 		for {
-			snapshot := <-cloudHealthChannel
+			snapshots := <-cloudHealthChannel
 			writer := cloudHealthConfig.Get().(*cloudhealth.Writer)
-			call := chpipeline.NewCloudHealthInstanceCall(snapshot)
-			newCall, fsCalls := call.Split()
-			writeStartTime := time.Now()
-			if _, err := writer.Write(
-				[]cloudhealth.InstanceData{newCall.Instance},
-				newCall.Fss); err != nil {
-				writerMetrics.LogError(time.Since(writeStartTime), 1, err)
-			} else {
-				writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
-			}
-			for _, fsCall := range fsCalls {
-				writeStartTime := time.Now()
-				if _, err := writer.Write(nil, fsCall); err != nil {
-					writerMetrics.LogError(time.Since(writeStartTime), 1, err)
+			// holds stuff to be sent to writer
+			buffer := cloudhealth.NewBuffer()
+			for _, snapshot := range snapshots {
+				call := chpipeline.NewCloudHealthInstanceCall(snapshot)
+				newCall, fsCalls := call.Split()
+				if len(fsCalls) > 0 {
+					// Current snapshot too big to send to cloudhealth
+
+					// Flush the buffer
+					flushCloudHealthBuffer(buffer, writer, writerMetrics)
+
+					// Write instance data and first part of file system
+					// data
+					cloudHealthWrite(
+						writer,
+						[]cloudhealth.InstanceData{newCall.Instance},
+						newCall.Fss,
+						writerMetrics)
+
+					// Write remaining file system data
+					for _, fsCall := range fsCalls {
+						cloudHealthWrite(
+							writer,
+							nil,
+							fsCall,
+							writerMetrics)
+					}
 				} else {
-					writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
-				}
-			}
+					// Current snapshot small enough to send to cloud health
+					if !buffer.Add(newCall.Instance, newCall.Fss) {
+						// Buffer full. Flush it first.
+						flushCloudHealthBuffer(buffer, writer, writerMetrics)
+
+						// Adding snapshot to empty buffer should succeed
+						if !buffer.Add(newCall.Instance, newCall.Fss) {
+							panic("Oops, cloudhealth write call too big to buffer")
+						}
+					}
+				} // send snapshot
+			} // send all snapshots
+			flushCloudHealthBuffer(buffer, writer, writerMetrics)
 		}
 	}()
+}
 
+func cloudHealthWrite(
+	writer *cloudhealth.Writer,
+	instances []cloudhealth.InstanceData,
+	fss []cloudhealth.FsData,
+	metrics *trimetrics.WriterMetrics) {
+	writeStartTime := time.Now()
+	if _, err := writer.Write(instances, fss); err != nil {
+		metrics.LogError(
+			time.Since(writeStartTime), uint64(len(instances)), err)
+	} else {
+		metrics.LogSuccess(time.Since(writeStartTime), uint64(len(instances)))
+	}
+}
+
+func flushCloudHealthBuffer(
+	buffer *cloudhealth.Buffer,
+	writer *cloudhealth.Writer,
+	metrics *trimetrics.WriterMetrics) {
+	if buffer.IsEmpty() {
+		return
+	}
+	instances, fss := buffer.Get()
+	cloudHealthWrite(writer, instances, fss, metrics)
+	buffer.Clear()
 }
 
 func startCisLoop(

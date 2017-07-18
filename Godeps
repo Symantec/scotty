@@ -1,0 +1,15 @@
+github.com/Symantec/Dominator e4e1b56b0569720899c2aea273e1ed571e2b53e5
+github.com/Symantec/tricorder 1c1c9cf07aed903fb10e57eb5301398ecd1e1e15
+github.com/aws/aws-sdk-go 55d8a8abd3fda7f9802689db8cb0237a6ab28d3b
+github.com/bluebreezecf/opentsdb-goclient 539764bd9a9cae6632dea52b5a587451728a3983
+github.com/gogo/protobuf 30433562cfbf487fe1df7cd26c7bab168d2f14d0
+github.com/golang/snappy d9eb7a3d35ec988b8585d4a0068e462c27d28380
+github.com/google/btree 316fb6d3f031ae8f4d457c6c5186b9e3ded70435
+github.com/hashicorp/consul fe5164026325d49c9a51de56b4be1aa3a00de518
+github.com/influxdata/influxdb 8dfd1f8c7cbc243014459041912684ae6f8d49bf
+github.com/optiopay/kafka 7b7b6a0d49740e36cd39226913b38cecf9ef76cb
+github.com/smartystreets/goconvey 9e8dc3f972df6c8fcc0375ef492c24d0bb204857
+github.com/uber-go/atomic 74ca5ec650841aee9f289dce76e928313a37cbc6
+github.com/uber-go/zap fbae0281ffd546fa6d1959fec6075ac5da7fb577
+gopkg.in/fsnotify.v0 ea925a0a47d225b2ca7f9932b01d2ed4f3ec74f6
+gopkg.in/yaml.v2 3b4ad1db5b2a649883ff3782f5f9f6fb52be71af

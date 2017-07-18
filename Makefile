@@ -1,3 +1,10 @@
+get-deps: ${GOPATH}/bin/gdm
+	go get -t -d ./...
+	${GOPATH}/bin/gdm restore
+
+${GOPATH}/bin/gdm:
+	go get github.com/sparrc/gdm
+
 all:
 	@cd $(GOPATH)/src; go install github.com/Symantec/scotty/...
 
@@ -11,4 +18,3 @@ test:
 	@find * -name '*_test.go' |\
 	sed -e 's@^@github.com/Symantec/scotty/@' -e 's@/[^/]*$$@@' |\
 	sort -u | xargs go test
-

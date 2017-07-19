@@ -19,13 +19,24 @@ func newSyncJSONWriter() (JSONWriter, error) {
 	return kSyncJSONWriter, nil
 }
 
-func (w *syncJSONWriterType) Write(url string, payload interface{}) error {
+func (w *syncJSONWriterType) Write(
+	url string, headers http.Header, payload interface{}) error {
 	buffer, err := encodeJSON(payload)
 	if err != nil {
 		return err
 	}
 	payloadStr := buffer.String()
-	response, err := w.client.Post(url, "application/json", buffer)
+	req, err := http.NewRequest("POST", url, buffer)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
+		}
+	}
+	response, err := w.client.Do(req)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config/kafka"
 	"github.com/Symantec/tricorder/go/tricorder/types"
+	"net/http"
 )
 
 const (
@@ -18,6 +19,7 @@ type writer struct {
 	tenantId string
 	apiKey   string
 	region   string
+	headers  http.Header
 	sync     synchttp.JSONWriter
 	async    *queuesender.Sender
 }
@@ -34,6 +36,9 @@ func newWriter(c Config) (
 	awriter.tenantId = c.TenantId
 	awriter.apiKey = c.ApiKey
 	awriter.region = c.Region
+	awriter.headers = make(http.Header)
+	awriter.headers.Set("tenantid", awriter.tenantId)
+	awriter.headers.Set("apikey", awriter.apiKey)
 	if c.Name != "" {
 		awriter.async, err = queuesender.New(
 			awriter.endpoint, 2000, "", nil)
@@ -69,11 +74,13 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 			}
 			jsonStuff = append(jsonStuff, payload)
 		}
-		if err = w.sync.Write(w.endpoint, jsonStuff); err != nil {
+		if err = w.sync.Write(w.endpoint, w.headers, jsonStuff); err != nil {
 			return
 		}
 		return
 	} else {
+		// TODO: If we go back to async, be sure we can send custom
+		// headers.
 		for i := range records {
 			payload := kafka.LMMJSONPayload(
 				&records[i], w.tenantId, w.apiKey, false)

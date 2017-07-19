@@ -38,7 +38,7 @@ func (c *Client) write(stats *Stats) error {
 	}
 	url := fmt.Sprintf("%s/%s/%s/%s", c.endpoint, kCisPath, c.dataCenter, stats.InstanceId)
 	if c.sync != nil {
-		err := c.sync.Write(url, jsonToEncode)
+		err := c.sync.Write(url, nil, jsonToEncode)
 		if err != nil {
 			return fmt.Errorf("%s: %v", url, err)
 		}

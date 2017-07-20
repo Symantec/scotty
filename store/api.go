@@ -692,6 +692,25 @@ func (f *FloatVar) Add(a FloatVar) {
 	f.Count += a.Count
 }
 
+// IteratorData contains statistics about a newly created iterator
+type IteratorData struct {
+
+	// Approximate maximum timespan of remaining values left to be iterated
+	// once returned iterator is exhausted.
+	// This second value is approximate because of concurrent access to
+	// the store with no exlusive lock.
+	RemainingValueInSeconds float64
+
+	// Where this iterator is located within each time series group.
+	// 0 means at the earliest time within scotty; 100 means at the most
+	// recent time within scotty.
+	PercentCaughtUp FloatVar
+
+	// If true, this iterator starts past where last iterator of same name
+	// was committed because values were evicted.
+	Skipped bool
+}
+
 // NamedIteratorForEndpoint returns an iterator for the given name that
 // iterates over metric values for all known timestamps for the given endpoint.
 // Since the name is used to track progress of iterating over the given
@@ -703,12 +722,6 @@ func (f *FloatVar) Add(a FloatVar) {
 // store.GroupMetricByPathAndNumeric strategy to determine whether or not
 // two metrics are the same.
 //
-// The second value returned is the approximate maximum timespan measured
-// in seconds of the remaining values left to be iterated once returned
-// iterator is exhausted. This second value is approximate because of
-// concurrent access to the store with no exlusive lock. In particular, even
-// if maxFrames = 0, this returned second value may be > 0.
-//
 // If maxFrames = 0, the returned iterator will make best effort to iterate
 // over all the metric values in the endpoint. A positive maxFrames hints to
 // the returned iterator that it should iterate over at most maxFrames values
@@ -719,8 +732,7 @@ func (f *FloatVar) Add(a FloatVar) {
 func (s *Store) NamedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
-	maxFrames uint) (
-	iterator NamedIterator, remainingValuesInSeconds float64, percentCaughtUp FloatVar) {
+	maxFrames uint) (iterator NamedIterator, data IteratorData) {
 	return s.namedIteratorForEndpoint(name, endpointId, int(maxFrames))
 }
 
@@ -778,7 +790,7 @@ func (s *Store) NamedIteratorForEndpointRollUp(
 	dur time.Duration,
 	maxFrames uint,
 	strategy MetricGroupingStrategy) (
-	iterator NamedIterator, remainingValuesInSeconds float64, percentCaughtUp FloatVar) {
+	iterator NamedIterator, data IteratorData) {
 	return s.namedIteratorForEndpointRollUp(
 		name, endpointId, dur, int(maxFrames), strategy)
 }

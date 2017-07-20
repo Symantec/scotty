@@ -95,7 +95,7 @@ func (s *Store) byPrefixAndEndpoint(
 func (s *Store) namedIteratorForEndpoint(
 	name string,
 	endpointId interface{},
-	maxFrames int) (NamedIterator, float64, FloatVar) {
+	maxFrames int) (NamedIterator, IteratorData) {
 	return s.byApplication[endpointId].NewNamedIterator(
 		name, maxFrames, GroupMetricByPathAndNumeric)
 }
@@ -105,7 +105,7 @@ func (s *Store) namedIteratorForEndpointRollUp(
 	endpointId interface{},
 	duration time.Duration,
 	maxFrames int,
-	strategy MetricGroupingStrategy) (NamedIterator, float64, FloatVar) {
+	strategy MetricGroupingStrategy) (NamedIterator, IteratorData) {
 	return s.byApplication[endpointId].NewNamedIteratorRollUp(
 		name,
 		float64(duration)/float64(time.Second),

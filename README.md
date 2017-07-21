@@ -58,3 +58,30 @@ License is distributed on an “AS IS” BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied. See the License for
 the specific language governing permissions and limitations under the
 License.
+
+## Building and Running Tests
+
+When building scotty for the very first time, perform the following steps to
+install the correct dependencies.
+
+```
+go get github.com/Symantec/scotty
+cd $GOPATH/src/github.com/Symantec/scotty
+make getdeps
+```
+
+
+From the top level directory of the scotty project:
+
+To run all the tests
+
+```
+go test -v ./...
+```
+
+To rebuild after doing code changes
+
+```
+go install ./...
+```
+

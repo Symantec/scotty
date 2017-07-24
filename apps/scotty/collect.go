@@ -63,6 +63,14 @@ var (
 		"cloudHealthTest", false, "Whether or not this is testing cloudhealth")
 	fCloudWatchTest = flag.Bool(
 		"cloudWatchTest", false, "Whether or not this is testing cloudwatch")
+	fCisBufferSize = flag.Int(
+		"cisBufferSize",
+		40,
+		"CIS Buffer Size")
+	fCisSleep = flag.Duration(
+		"cisSleep",
+		0,
+		"Sleep time between writes")
 )
 
 func init() {
@@ -473,26 +481,20 @@ func startCollector(
 		}
 	}
 
-	var cisClient *cis.Client
+	var bulkCisClient *cis.Buffered
 	var cisRegex *regexp.Regexp
 	var cisQueue *keyedqueue.Queue
 
 	if *fCisEndpoint != "" && *fDataCenter != "" {
 		var err error
+		var cisClient *cis.Client
 		// TODO: move to config file when ready
-		if strings.HasPrefix(*fCisEndpoint, "debug:") {
-			cisClient, err = cis.NewClient(
-				cis.Config{
-					Endpoint:   (*fCisEndpoint)[6:],
-					DataCenter: *fDataCenter,
-				})
-		} else {
-			cisClient, err = cis.NewClient(cis.Config{
+		cisClient, err = cis.NewClient(
+			cis.Config{
 				Endpoint:   *fCisEndpoint,
-				Name:       "cis",
 				DataCenter: *fDataCenter,
 			})
-		}
+		bulkCisClient = cis.NewBuffered(*fCisBufferSize, cisClient)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -571,8 +573,8 @@ func startCollector(
 		}
 	}()
 
-	if cisQueue != nil && cisClient != nil {
-		startCisLoop(cisQueue, cisClient, programStartTime)
+	if cisQueue != nil && bulkCisClient != nil {
+		startCisLoop(cisQueue, bulkCisClient, programStartTime)
 	}
 
 	if cloudHealthConfig != nil && cloudHealthChannel != nil {
@@ -703,7 +705,7 @@ func flushCloudHealthBuffer(
 
 func startCisLoop(
 	cisQueue *keyedqueue.Queue,
-	cisClient *cis.Client,
+	bulkCisClient *cis.Buffered,
 	programStartTime time.Time) {
 	if err := tricorder.RegisterMetric(
 		"cis/queueSize",
@@ -757,6 +759,17 @@ func startCisLoop(
 	go func() {
 		lastTimeStampByKey := make(map[interface{}]time.Time)
 		for {
+			if cisQueue.Len() == 0 {
+				numWritten, err := bulkCisClient.Flush()
+				if err != nil {
+					lastWriteError = err.Error()
+				} else {
+					successfulWrites += uint64(numWritten)
+				}
+				if *fCisSleep > 0 {
+					time.Sleep(*fCisSleep)
+				}
+			}
 			stat := cisQueue.Remove().(*cis.Stats)
 			key := stat.Key()
 			if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
@@ -768,10 +781,11 @@ func startCisLoop(
 			}
 			lastTimeStampByKey[key] = stat.TimeStamp
 			writeStartTime := time.Now()
-			if err := cisClient.Write(stat); err != nil {
+			numWritten, err := bulkCisClient.Write(*stat)
+			if err != nil {
 				lastWriteError = err.Error()
 			} else {
-				successfulWrites++
+				successfulWrites += uint64(numWritten)
 			}
 			totalWrites++
 			writeTimesDist.Add(time.Since(writeStartTime))

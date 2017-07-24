@@ -707,6 +707,17 @@ func startCisLoop(
 	cisQueue *keyedqueue.Queue,
 	bulkCisClient *cis.Buffered,
 	programStartTime time.Time) {
+	lastSuccessfulWriteTime := time.Now()
+
+	if err := tricorder.RegisterMetric(
+		"cis/timeSinceLastWrite",
+		func() time.Duration {
+			return time.Since(lastSuccessfulWriteTime)
+		},
+		units.Second,
+		"Time since last successful write"); err != nil {
+		log.Fatal(err)
+	}
 	if err := tricorder.RegisterMetric(
 		"cis/queueSize",
 		cisQueue.Len,
@@ -765,6 +776,7 @@ func startCisLoop(
 					lastWriteError = err.Error()
 				} else {
 					successfulWrites += uint64(numWritten)
+					lastSuccessfulWriteTime = time.Now()
 				}
 				if *fCisSleep > 0 {
 					time.Sleep(*fCisSleep)
@@ -786,6 +798,7 @@ func startCisLoop(
 				lastWriteError = err.Error()
 			} else {
 				successfulWrites += uint64(numWritten)
+				lastSuccessfulWriteTime = time.Now()
 			}
 			totalWrites++
 			writeTimesDist.Add(time.Since(writeStartTime))

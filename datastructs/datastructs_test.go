@@ -416,12 +416,13 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	assertDeepEqual(
 		t,
 		map[string]bool{
-			"host1:35": true,
-			"host1:92": true,
-			"host2:35": true,
-			"host2:92": true,
-			"host3:35": true,
-			"host3:92": true,
+			"host1:35":    true,
+			"host1:92":    true,
+			"host2:35":    true,
+			"host2:92":    true,
+			"host3:35":    true,
+			"host3:92":    true,
+			"127.0.0.1:0": true,
 		},
 		visitor.Active)
 	assertDeepEqual(
@@ -431,17 +432,18 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 	appStatus.MarkHostsActiveExclusively(
 		61.7, toMachines([]string{"host2", "host4"}))
 	activeEndpointIds, astore := appStatus.ActiveEndpointIds()
-	assertValueEquals(t, 4, len(activeEndpointIds))
+	assertValueEquals(t, 5, len(activeEndpointIds))
 	activateEndpoints(activeEndpointIds, astore)
 	visitor = newActiveInactiveLists()
 	astore.VisitAllEndpoints(visitor)
 	assertDeepEqual(
 		t,
 		map[string]bool{
-			"host2:35": true,
-			"host2:92": true,
-			"host4:35": true,
-			"host4:92": true,
+			"host2:35":    true,
+			"host2:92":    true,
+			"host4:35":    true,
+			"host4:92":    true,
+			"127.0.0.1:0": true,
 		},
 		visitor.Active)
 	assertDeepEqual(
@@ -466,54 +468,60 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 
 	stats := appStatus.All()
 	ByHostAndName(stats)
-	assertValueEquals(t, 8, len(stats))
-	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(t, 9, len(stats))
+	assertValueEquals(t, "127.0.0.1", stats[0].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[0].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[0].Name)
-	assertValueEquals(t, false, stats[0].Active)
+		t, "self", stats[0].EndpointId.ConnectorName())
+	assertValueEquals(t, "self", stats[0].Name)
+	assertValueEquals(t, true, stats[0].Active)
 
 	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[1].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[1].Name)
+		t, "tricorder", stats[1].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[1].Name)
 	assertValueEquals(t, false, stats[1].Active)
 
-	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(t, "host1", stats[2].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[2].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[2].Name)
-	assertValueEquals(t, true, stats[2].Active)
+		t, "snmp", stats[2].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[2].Name)
+	assertValueEquals(t, false, stats[2].Active)
 
 	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[3].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[3].Name)
+		t, "tricorder", stats[3].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[3].Name)
 	assertValueEquals(t, true, stats[3].Active)
 
-	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(t, "host2", stats[4].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[4].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[4].Name)
-	assertValueEquals(t, false, stats[4].Active)
+		t, "snmp", stats[4].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[4].Name)
+	assertValueEquals(t, true, stats[4].Active)
 
 	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[5].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[5].Name)
+		t, "tricorder", stats[5].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[5].Name)
 	assertValueEquals(t, false, stats[5].Active)
 
-	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(t, "host3", stats[6].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[6].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[6].Name)
-	assertValueEquals(t, true, stats[6].Active)
+		t, "snmp", stats[6].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[6].Name)
+	assertValueEquals(t, false, stats[6].Active)
 
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[7].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[7].Name)
+		t, "tricorder", stats[7].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
+
+	assertValueEquals(t, "host4", stats[8].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[8].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[8].Name)
+	assertValueEquals(t, true, stats[8].Active)
 
 	appStatus.MarkHostsActiveExclusively(
 		61.7, toMachines([]string{"host2", "host3", "host4"}))
@@ -530,55 +538,60 @@ func TestMarkHostsActiveExclusively(t *testing.T) {
 
 	stats = appStatus.All()
 	ByHostAndName(stats)
-	assertValueEquals(t, 8, len(stats))
-	assertValueEquals(t, "host1", stats[0].EndpointId.HostName())
+	assertValueEquals(t, 9, len(stats))
+	assertValueEquals(t, "127.0.0.1", stats[0].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[0].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[0].Name)
-	assertValueEquals(t, false, stats[0].Active)
+		t, "self", stats[0].EndpointId.ConnectorName())
+	assertValueEquals(t, "self", stats[0].Name)
+	assertValueEquals(t, true, stats[0].Active)
 
 	assertValueEquals(t, "host1", stats[1].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[1].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[1].Name)
+		t, "tricorder", stats[1].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[1].Name)
 	assertValueEquals(t, false, stats[1].Active)
 
-	assertValueEquals(t, "host2", stats[2].EndpointId.HostName())
+	assertValueEquals(t, "host1", stats[2].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[2].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[2].Name)
-	assertValueEquals(t, true, stats[2].Active)
+		t, "snmp", stats[2].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[2].Name)
+	assertValueEquals(t, false, stats[2].Active)
 
 	assertValueEquals(t, "host2", stats[3].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[3].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[3].Name)
+		t, "tricorder", stats[3].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[3].Name)
 	assertValueEquals(t, true, stats[3].Active)
 
-	assertValueEquals(t, "host3", stats[4].EndpointId.HostName())
+	assertValueEquals(t, "host2", stats[4].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[4].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[4].Name)
+		t, "snmp", stats[4].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[4].Name)
 	assertValueEquals(t, true, stats[4].Active)
 
 	assertValueEquals(t, "host3", stats[5].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[5].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[5].Name)
+		t, "tricorder", stats[5].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[5].Name)
 	assertValueEquals(t, true, stats[5].Active)
 
-	assertValueEquals(t, "host4", stats[6].EndpointId.HostName())
+	assertValueEquals(t, "host3", stats[6].EndpointId.HostName())
 	assertValueEquals(
-		t, "tricorder", stats[6].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnApp", stats[6].Name)
+		t, "snmp", stats[6].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[6].Name)
 	assertValueEquals(t, true, stats[6].Active)
 
 	assertValueEquals(t, "host4", stats[7].EndpointId.HostName())
 	assertValueEquals(
-		t, "snmp", stats[7].EndpointId.ConnectorName())
-	assertValueEquals(t, "AnotherApp", stats[7].Name)
+		t, "tricorder", stats[7].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnApp", stats[7].Name)
 	assertValueEquals(t, true, stats[7].Active)
 
+	assertValueEquals(t, "host4", stats[8].EndpointId.HostName())
+	assertValueEquals(
+		t, "snmp", stats[8].EndpointId.ConnectorName())
+	assertValueEquals(t, "AnotherApp", stats[8].Name)
+	assertValueEquals(t, true, stats[8].Active)
 }
 
 func TestHighPriorityEviction(t *testing.T) {

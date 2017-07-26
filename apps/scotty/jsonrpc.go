@@ -309,13 +309,19 @@ func sortMetricsByPath(result messages.EndpointMetricList) {
 
 func encodeJson(w io.Writer, data interface{}, pretty bool) {
 	if pretty {
-		content, _ := json.Marshal(data)
+		content, err := json.Marshal(data)
+		if err != nil {
+			fmt.Fprintln(w, err)
+			return
+		}
 		var buffer bytes.Buffer
 		json.Indent(&buffer, content, "", "\t")
 		buffer.WriteTo(w)
 	} else {
 		encoder := json.NewEncoder(w)
-		encoder.Encode(data)
+		if err := encoder.Encode(data); err != nil {
+			fmt.Fprintln(w, err)
+		}
 	}
 }
 
@@ -350,7 +356,6 @@ func httpError(w http.ResponseWriter, status int) {
 		status)
 }
 
-// byEndpointHandler handles serving api/hosts requests
 type latestHandler struct {
 	AS *datastructs.ApplicationStatuses
 }

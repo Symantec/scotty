@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/jsonsource"
 	"github.com/Symantec/scotty/sources/loadsource"
+	"github.com/Symantec/scotty/sources/selfsource"
 	"github.com/Symantec/scotty/sources/snmpsource"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
@@ -171,7 +172,7 @@ func (a *ApplicationStatuses) update(
 	e *scotty.Endpoint, newState *scotty.State) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	record := a.byEndpoint[e]
+	record := a._endpointIdToApplicationStatus(e)
 	if record == nil {
 		panic("Unknown endpoint in Update.")
 	}
@@ -186,7 +187,7 @@ func (a *ApplicationStatuses) reportError(
 	e *scotty.Endpoint, err error, ts time.Time) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	record := a.byEndpoint[e]
+	record := a._endpointIdToApplicationStatus(e)
 	if record == nil {
 		panic("Unknown endpoint in ReportError.")
 	}
@@ -278,11 +279,22 @@ func (a *ApplicationStatuses) markHostsActiveExclusively(
 	}
 }
 
+func (a *ApplicationStatuses) _endpointIdToApplicationStatus(
+	e *scotty.Endpoint) *ApplicationStatus {
+	var record *ApplicationStatus
+	if e == a.selfEndpoint {
+		record = a.selfApplicationStatus
+	} else {
+		record = a.byEndpoint[e]
+	}
+	return record
+}
+
 func (a *ApplicationStatuses) logChangedMetricCount(
 	e *scotty.Endpoint, metricCount uint) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	record := a.byEndpoint[e]
+	record := a._endpointIdToApplicationStatus(e)
 	if record == nil {
 		panic("Unknown endpoint in LogChangedMetricCount.")
 	}
@@ -301,6 +313,10 @@ func (a *ApplicationStatuses) _all(
 			acopy := *val
 			result = append(result, &acopy)
 		}
+	}
+	if filter == nil || filter(a.selfApplicationStatus) {
+		acopy := *a.selfApplicationStatus
+		result = append(result, &acopy)
 	}
 	return
 }
@@ -321,9 +337,12 @@ func (a *ApplicationStatuses) allWithStore(
 
 func (a *ApplicationStatuses) endpointIdByHostAndName(host, name string) (
 	id *scotty.Endpoint, astore *store.Store) {
-	app := a.appList.ByName(name)
 	a.lock.Lock()
 	defer a.lock.Unlock()
+	if host == "127.0.0.1" && name == Self {
+		return a.selfEndpoint, a.currentStore
+	}
+	app := a.appList.ByName(name)
 	if app == nil {
 		return nil, a.currentStore
 	}
@@ -338,7 +357,7 @@ func (a *ApplicationStatuses) byEndpointId(
 	e *scotty.Endpoint) (copyOfStatus *ApplicationStatus) {
 	a.lock.Lock()
 	defer a.lock.Unlock()
-	status := a.byEndpoint[e]
+	status := a._endpointIdToApplicationStatus(e)
 	if status == nil {
 		return
 	}
@@ -351,6 +370,7 @@ func (a *ApplicationStatuses) activeEndpointIds() (
 	a.lock.Lock()
 	defer a.lock.Unlock()
 	astore = a.currentStore
+	activeEndpoints = append(activeEndpoints, a.selfEndpoint)
 	for e, stat := range a.byEndpoint {
 		if stat.Active {
 			activeEndpoints = append(activeEndpoints, e)
@@ -439,4 +459,24 @@ func (a *ApplicationListBuilder) readConfig(r io.Reader) error {
 			connectors)
 	}
 	return nil
+}
+
+func newApplicationStatuses(appList *ApplicationList, astore *store.Store) *ApplicationStatuses {
+	selfEndpoint := scotty.NewEndpointWithConnector(
+		"127.0.0.1", 0, sources.ConnectorList{selfsource.GetConnector()})
+	selfApplicationStatus := &ApplicationStatus{
+		EndpointId: selfEndpoint,
+		Name:       "self",
+		Active:     true,
+	}
+	result := &ApplicationStatuses{
+		appList:               appList,
+		byEndpoint:            make(map[*scotty.Endpoint]*ApplicationStatus),
+		byHostPort:            make(map[hostAndPort]*scotty.Endpoint),
+		currentStore:          astore,
+		selfEndpoint:          selfEndpoint,
+		selfApplicationStatus: selfApplicationStatus,
+	}
+	result.currentStore.RegisterEndpoint(selfEndpoint)
+	return result
 }

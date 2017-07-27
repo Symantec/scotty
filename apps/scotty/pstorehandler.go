@@ -230,7 +230,10 @@ func (p *pstoreHandlerType) Visit(
 
 	hostName := endpointId.(*collector.Endpoint).HostName()
 	port := endpointId.(*collector.Endpoint).Port()
-	appName := p.appList.ByPort(port).Name()
+	appName := datastructs.Self
+	if port != 0 {
+		appName = p.appList.ByPort(port).Name()
+	}
 	iterator, iteratorData := p.namedIterator(theStore, endpointId)
 	if p.maybeNilCoord != nil {
 		// aMetricStore from the consumer exposes the same filtering that

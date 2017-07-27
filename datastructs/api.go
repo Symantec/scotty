@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// Sctty application name
+const Self = "self"
+
 // EndpointData represents data specific to a particular endpoint used when
 // reading metrics from that endpoint.
 // EndpointData instances must be treated as immutable. However, instances
@@ -77,6 +80,10 @@ func (e *EndpointData) UpdateForCloudWatch(
 	defaultFreq time.Duration,
 	bTestRun bool) *EndpointData {
 	return e.updateForCloudWatch(app, defaultFreq, bTestRun)
+}
+
+type Machine struct {
+	Aws *mdb.AwsMetadata
 }
 
 // ApplicationStatus represents the status of a single application.
@@ -176,7 +183,9 @@ func ByHostAndName(list []*ApplicationStatus) {
 
 // ApplicationStatuses is thread safe representation of application statuses
 type ApplicationStatuses struct {
-	appList *ApplicationList
+	// Endpoint for scotty
+	selfEndpoint *scotty.Endpoint
+	appList      *ApplicationList
 	// A function must hold this lock when changing the status
 	// (active vs. inactive) of the endpoints to ensure that when it
 	// returns, the status of each endpoint matches the status of the
@@ -188,10 +197,13 @@ type ApplicationStatuses struct {
 	lock sync.Mutex
 	// The ApplicationStatus objects in the map are mutable to make
 	// updates more memory efficient. lock protects each ApplicationStatus
-	// object as well as the map itself.
-	byEndpoint   map[*scotty.Endpoint]*ApplicationStatus
-	byHostPort   map[hostAndPort]*scotty.Endpoint
-	currentStore *store.Store
+	// object as well as the map itself. byEndpoint and byHostPort do not
+	// include selfEndpoint or selfApplicationStatus.
+	byEndpoint map[*scotty.Endpoint]*ApplicationStatus
+	byHostPort map[hostAndPort]*scotty.Endpoint
+	// Scotty's application status record
+	selfApplicationStatus *ApplicationStatus
+	currentStore          *store.Store
 }
 
 // NewApplicationStatuses creates a new ApplicationStatus instance.
@@ -200,12 +212,7 @@ type ApplicationStatuses struct {
 // whenever active machines change, caller should give up any reference it
 // has to astore and use the Store() method to get the current store.
 func NewApplicationStatuses(appList *ApplicationList, astore *store.Store) *ApplicationStatuses {
-	return &ApplicationStatuses{
-		appList:      appList,
-		byEndpoint:   make(map[*scotty.Endpoint]*ApplicationStatus),
-		byHostPort:   make(map[hostAndPort]*scotty.Endpoint),
-		currentStore: astore,
-	}
+	return newApplicationStatuses(appList, astore)
 }
 
 // Store returns the current store instance.

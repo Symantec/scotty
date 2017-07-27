@@ -16,7 +16,7 @@ func (e *EndpointData) updateForCloudHealth(
 	if app.Aws == nil {
 		return e
 	}
-	needToDoCloudHealth := bTestRun == app.CloudHealthTest()
+	needToDoCloudHealth := app.DoCloudHealth(bTestRun)
 	doingCloudHealth := e.CHRollup != nil
 	if needToDoCloudHealth != doingCloudHealth {
 		result := *e
@@ -46,8 +46,7 @@ func (e *EndpointData) updateForCloudWatch(
 	app *ApplicationStatus,
 	defaultFreq time.Duration,
 	bTestRun bool) *EndpointData {
-	rate, rateOk := app.CloudWatchRefreshRate(defaultFreq)
-	rateOk = rateOk && (bTestRun == app.CloudWatchTest())
+	rate, rateOk := app.DoCloudWatch(defaultFreq, bTestRun)
 	cwExists := e.CWRollup != nil
 
 	// Calling RoundDuration() here is safe because its returned value never

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/messages"
@@ -307,33 +308,39 @@ func sortMetricsByPath(result messages.EndpointMetricList) {
 	sort.Sort(byPath(result))
 }
 
-func encodeJson(w io.Writer, data interface{}, pretty bool) {
+func encodeJson(w io.Writer, data interface{}, pretty bool) error {
 	if pretty {
 		content, err := json.Marshal(data)
 		if err != nil {
-			fmt.Fprintln(w, err)
-			return
+			return err
 		}
 		var buffer bytes.Buffer
 		json.Indent(&buffer, content, "", "\t")
 		buffer.WriteTo(w)
-	} else {
-		encoder := json.NewEncoder(w)
-		if err := encoder.Encode(data); err != nil {
-			fmt.Fprintln(w, err)
-		}
+		return nil
 	}
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(data); err != nil {
+		return err
+	}
+	return nil
 }
 
 // errorHandler provides the api/errors requests.
 type errorHandler struct {
 	ConnectionErrors *connectionErrorsType
+	Logger           log.Logger
 }
 
 func (h errorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
-	encodeJson(w, h.ConnectionErrors.GetErrors(), r.Form.Get("format") == "text")
+	err := encodeJson(
+		w, h.ConnectionErrors.GetErrors(), r.Form.Get("format") == "text")
+	if err != nil {
+		h.Logger.Printf("errorHandler: cannot encode json: %v", err)
+		httpError(w, 500)
+	}
 }
 
 // canonicalisePath removes any trailing slashes from path and ensures it has
@@ -357,7 +364,8 @@ func httpError(w http.ResponseWriter, status int) {
 }
 
 type latestHandler struct {
-	AS *datastructs.ApplicationStatuses
+	AS     *datastructs.ApplicationStatuses
+	Logger log.Logger
 }
 
 func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -372,12 +380,17 @@ func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			data,
 			latestMetricsForEndpoint(metricStore, app, path, true)...)
 	}
-	encodeJson(w, data, r.Form.Get("format") == "text")
+	err := encodeJson(w, data, r.Form.Get("format") == "text")
+	if err != nil {
+		h.Logger.Printf("latestHandler: cannot encode json: %v", err)
+		httpError(w, 500)
+	}
 }
 
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
-	AS *datastructs.ApplicationStatuses
+	AS     *datastructs.ApplicationStatuses
+	Logger log.Logger
 }
 
 func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -407,7 +420,11 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	data := gatherDataForEndpoint(
 		metricStore, endpoint, path, history, isSingleton)
-	encodeJson(w, data, r.Form.Get("format") == "text")
+	err = encodeJson(w, data, r.Form.Get("format") == "text")
+	if err != nil {
+		h.Logger.Printf("byEndpointHandler: cannot encode json: %v", err)
+		httpError(w, 500)
+	}
 }
 
 type rpcType struct {

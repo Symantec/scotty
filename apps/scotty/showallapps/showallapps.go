@@ -36,7 +36,7 @@ const (
 	\ {{with $top := .}} \
 	\ {{range .Apps}} \
 	  <tr>
-	    <td>{{.EndpointId.HostName}}<br>{{.InstanceId}}<br>{{.AccountNumber}}{{if .CloudWatch}}<br>{{.CloudWatch}}{{end}}</td>
+	  <td>{{.EndpointId.HostName}}<br>{{.InstanceId}}<br>{{.AccountNumber}}<br>{{if .DoCloudHealth $top.CloudHealthTest}}CH&nbsp;{{end}}{{if .DoCloudWatchStr $top.DefaultCwRate $top.CloudWatchTest}}CW: {{.DoCloudWatchStr $top.DefaultCwRate $top.CloudWatchTest}}{{end}}</td>
 	    <td>{{.EndpointId.Port}}</td>
 	    <td><a href="{{$top.Link .}}">{{.Name}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
@@ -82,9 +82,12 @@ var (
 )
 
 type view struct {
-	Apps    []*datastructs.ApplicationStatus
-	Summary EndpointSummary
-	History string
+	Apps            []*datastructs.ApplicationStatus
+	Summary         EndpointSummary
+	History         string
+	CloudHealthTest bool
+	CloudWatchTest  bool
+	DefaultCwRate   time.Duration
 }
 
 func (v *view) Float32(x float64) float32 {
@@ -123,8 +126,11 @@ func (e *EndpointSummary) Init(apps []*datastructs.ApplicationStatus) {
 }
 
 type Handler struct {
-	AS             *datastructs.ApplicationStatuses
-	CollectionFreq time.Duration
+	AS              *datastructs.ApplicationStatuses
+	CollectionFreq  time.Duration
+	CloudHealthTest bool
+	CloudWatchTest  bool
+	DefaultCwRate   time.Duration
 }
 
 func (h *Handler) ServeHTTP(
@@ -155,9 +161,12 @@ func (h *Handler) newView(
 	summary EndpointSummary,
 	toDisplay []*datastructs.ApplicationStatus) *view {
 	result := &view{
-		Apps:    toDisplay,
-		Summary: summary,
-		History: "0",
+		Apps:            toDisplay,
+		Summary:         summary,
+		History:         "0",
+		CloudHealthTest: h.CloudHealthTest,
+		CloudWatchTest:  h.CloudWatchTest,
+		DefaultCwRate:   h.DefaultCwRate,
 	}
 	return result
 }

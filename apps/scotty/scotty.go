@@ -444,8 +444,11 @@ func main() {
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
-			AS:             applicationStats,
-			CollectionFreq: *fCollectionFrequency,
+			AS:              applicationStats,
+			CollectionFreq:  *fCollectionFrequency,
+			CloudWatchTest:  *fCloudWatchTest,
+			CloudHealthTest: *fCloudHealthTest,
+			DefaultCwRate:   *fCloudWatchFreq,
 		}})
 	http.Handle(
 		"/api/hosts/",

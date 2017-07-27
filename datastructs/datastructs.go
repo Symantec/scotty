@@ -113,16 +113,21 @@ func (a *ApplicationStatus) forTest(tagName string) bool {
 	return false
 }
 
-func (a *ApplicationStatus) cloudWatch() string {
-	if a.Aws != nil {
-		if result, ok := a.Aws.Tags[kCloudWatchTag]; ok {
-			if _, err := parseDuration(result); err != nil {
-				return "defaultRate"
-			}
-			return result
-		}
+func (a *ApplicationStatus) doCloudWatchStr(
+	defaultRate time.Duration, testing bool) string {
+	dur, ok := a.doCloudWatch(defaultRate, testing)
+	if ok {
+		return dur.String()
 	}
 	return ""
+}
+
+func (a *ApplicationStatus) doCloudWatch(
+	defaultRate time.Duration, testing bool) (time.Duration, bool) {
+	if testing == a.forTest("ScottyCloudWatchTest") {
+		return a.cloudWatchRefreshRate(defaultRate)
+	}
+	return 0, false
 }
 
 func (a *ApplicationStatus) cloudWatchRefreshRate(defaultRate time.Duration) (

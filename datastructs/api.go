@@ -125,24 +125,18 @@ func (a *ApplicationStatus) InstanceId() string {
 	return a.instanceId()
 }
 
-// CloudHealthTest returns true iff the machine of this endpoint is for testing
-// scotty with cloud health
-func (a *ApplicationStatus) CloudHealthTest() bool {
-	return a.forTest("ScottyCloudHealthTest")
+func (a *ApplicationStatus) DoCloudHealth(testing bool) bool {
+	return testing == a.forTest("ScottyCloudHealthTest")
 }
 
-// CloudWatchTest returns true iff the machine of this endpoint is for testing
-// scotty with cloud watch
-func (a *ApplicationStatus) CloudWatchTest() bool {
-	return a.forTest("ScottyCloudWatchTest")
+func (a *ApplicationStatus) DoCloudWatch(
+	defaultRate time.Duration, testing bool) (time.Duration, bool) {
+	return a.doCloudWatch(defaultRate, testing)
 }
 
-// CloudWatch returns how often data for the machine gets written to
-// cloud watch as a string like "5m" If the rate is to be whatever the
-// default rate is, returns "defaultRate". If data not to be written to
-// cloudwatch, returns the empty string.
-func (a *ApplicationStatus) CloudWatch() string {
-	return a.cloudWatch()
+func (a *ApplicationStatus) DoCloudWatchStr(
+	defaultRate time.Duration, testing bool) string {
+	return a.doCloudWatchStr(defaultRate, testing)
 }
 
 // Returns last error time as 2006-01-02T15:04:05

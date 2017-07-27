@@ -82,10 +82,6 @@ func (e *EndpointData) UpdateForCloudWatch(
 	return e.updateForCloudWatch(app, defaultFreq, bTestRun)
 }
 
-type Machine struct {
-	Aws *mdb.AwsMetadata
-}
-
 // ApplicationStatus represents the status of a single application.
 type ApplicationStatus struct {
 	EndpointId *scotty.Endpoint

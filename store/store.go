@@ -193,7 +193,7 @@ func (s *Store) registerMetrics(d *tricorder.DirectorySpec) (err error) {
 			metricCount := metrics.PagesPerMetricDist.Count()
 			extraValueCount := float64(metricValueCount) - float64(metricCount)
 			if pagesInUseCount == 0.0 {
-				return 1.0
+				return 0.0
 			}
 			return extraValueCount / pagesInUseCount / float64(maxValuesPerPage)
 		},

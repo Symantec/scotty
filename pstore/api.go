@@ -112,7 +112,7 @@ type RecordWriterMetrics struct {
 
 func (w *RecordWriterMetrics) SuccessfulWriteRatio() float64 {
 	if w.WriteAttempts == 0 {
-		return 1.0
+		return 0.0
 	}
 	return float64(w.SuccessfulWrites) / float64(w.WriteAttempts)
 }

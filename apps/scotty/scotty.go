@@ -449,26 +449,30 @@ func main() {
 			CloudWatchTest:  *fCloudWatchTest,
 			CloudHealthTest: *fCloudHealthTest,
 			DefaultCwRate:   *fCloudWatchFreq,
+			Logger:          logger,
 		}})
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(
 			"/api/hosts/",
 			gzipHandler{&byEndpointHandler{
-				AS: applicationStats,
+				AS:     applicationStats,
+				Logger: logger,
 			}}))
 	http.Handle(
 		"/api/latest/",
 		http.StripPrefix(
 			"/api/latest/",
 			gzipHandler{&latestHandler{
-				AS: applicationStats,
+				AS:     applicationStats,
+				Logger: logger,
 			}}))
 
 	http.Handle(
 		"/api/errors/",
 		gzipHandler{&errorHandler{
 			ConnectionErrors: connectionErrors,
+			Logger:           logger,
 		}},
 	)
 

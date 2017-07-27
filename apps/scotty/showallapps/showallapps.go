@@ -2,6 +2,7 @@ package showallapps
 
 import (
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/httputil"
 	"html/template"
@@ -131,6 +132,7 @@ type Handler struct {
 	CloudHealthTest bool
 	CloudWatchTest  bool
 	DefaultCwRate   time.Duration
+	Logger          log.Logger
 }
 
 func (h *Handler) ServeHTTP(
@@ -153,7 +155,8 @@ func (h *Handler) ServeHTTP(
 	}
 	v := h.newView(summary, result)
 	if err := htmlTemplate.Execute(w, v); err != nil {
-		fmt.Fprintln(w, "Error in template: %v\n", err)
+		fmt.Fprintf(w, "Error in template: %v\n", err)
+		h.Logger.Printf("Error in template: %v\n", err)
 	}
 }
 

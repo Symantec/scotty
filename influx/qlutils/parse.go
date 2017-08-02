@@ -73,7 +73,7 @@ func parseStatement(stmt influxql.Statement, currentTime time.Time) (
 	}
 
 	// Get min and max time
-	minTime, maxTime, err := influxql.TimeRange(sel.Condition)
+	minTime, maxTime, err := influxql.TimeRange(sel.Condition, time.UTC)
 	if err != nil {
 		return
 	}

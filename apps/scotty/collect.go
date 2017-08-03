@@ -776,7 +776,9 @@ func startCisLoop(
 					lastWriteError = err.Error()
 				} else {
 					successfulWrites += uint64(numWritten)
-					lastSuccessfulWriteTime = time.Now()
+					if numWritten > 0 {
+						lastSuccessfulWriteTime = time.Now()
+					}
 				}
 				if *fCisSleep > 0 {
 					time.Sleep(*fCisSleep)
@@ -798,7 +800,9 @@ func startCisLoop(
 				lastWriteError = err.Error()
 			} else {
 				successfulWrites += uint64(numWritten)
-				lastSuccessfulWriteTime = time.Now()
+				if numWritten > 0 {
+					lastSuccessfulWriteTime = time.Now()
+				}
 			}
 			totalWrites++
 			writeTimesDist.Add(time.Since(writeStartTime))

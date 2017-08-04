@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log"
 	collector "github.com/Symantec/scotty"
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
@@ -191,26 +191,26 @@ func (a *endpointMetricsAppender) Append(r *store.Record) bool {
 
 func latestMetricsForEndpoint(
 	metricStore *store.Store,
-	app *datastructs.ApplicationStatus,
+	ep *collector.Endpoint,
 	canonicalPath string,
 	json bool) (result []*messages.LatestMetric) {
 	var appender store.Appender
 	if json {
 		appender = &latestMetricsAppenderJSON{
 			result:   &result,
-			hostName: app.EndpointId.HostName(),
-			appName:  app.Name,
+			hostName: ep.HostName(),
+			appName:  ep.AppName(),
 		}
 	} else {
 		appender = &latestMetricsAppender{
 			result:   &result,
-			hostName: app.EndpointId.HostName(),
-			appName:  app.Name,
+			hostName: ep.HostName(),
+			appName:  ep.AppName(),
 		}
 	}
 	metricStore.LatestByPrefixAndEndpointStrategy(
 		canonicalPath,
-		app.EndpointId,
+		ep,
 		store.GroupMetricByPathAndNumeric,
 		store.AppenderFilterFunc(
 			appender,
@@ -364,7 +364,7 @@ func httpError(w http.ResponseWriter, status int) {
 }
 
 type latestHandler struct {
-	AS     *datastructs.ApplicationStatuses
+	ES     *machine.EndpointStore
 	Logger log.Logger
 }
 
@@ -372,13 +372,13 @@ func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	w.Header().Set("Content-Type", "application/json")
 	path := canonicalisePath(r.URL.Path)
-	apps, metricStore := h.AS.AllActiveWithStore()
-	datastructs.ByHostAndName(apps)
+	apps, metricStore := h.ES.AllActiveWithStore()
+	machine.ByHostAndName(apps)
 	data := make([]*messages.LatestMetric, 0)
 	for _, app := range apps {
 		data = append(
 			data,
-			latestMetricsForEndpoint(metricStore, app, path, true)...)
+			latestMetricsForEndpoint(metricStore, app.App.EP, path, true)...)
 	}
 	err := encodeJson(w, data, r.Form.Get("format") == "text")
 	if err != nil {
@@ -389,7 +389,7 @@ func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
-	AS     *datastructs.ApplicationStatuses
+	ES     *machine.EndpointStore
 	Logger log.Logger
 }
 
@@ -413,13 +413,13 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		history = 60
 	}
-	endpoint, metricStore := h.AS.EndpointIdByHostAndName(host, name)
+	endpoint, metricStore := h.ES.ByHostAndName(host, name)
 	if endpoint == nil {
 		httpError(w, 404)
 		return
 	}
 	data := gatherDataForEndpoint(
-		metricStore, endpoint, path, history, isSingleton)
+		metricStore, endpoint.App.EP, path, history, isSingleton)
 	err = encodeJson(w, data, r.Form.Get("format") == "text")
 	if err != nil {
 		h.Logger.Printf("byEndpointHandler: cannot encode json: %v", err)
@@ -428,18 +428,18 @@ func (h byEndpointHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type rpcType struct {
-	AS *datastructs.ApplicationStatuses
+	ES *machine.EndpointStore
 }
 
 func (t *rpcType) Latest(
 	path string, response *[]*messages.LatestMetric) error {
-	apps, metricStore := t.AS.AllActiveWithStore()
-	datastructs.ByHostAndName(apps)
+	apps, metricStore := t.ES.AllActiveWithStore()
+	machine.ByHostAndName(apps)
 	path = canonicalisePath(path)
 	for _, app := range apps {
 		*response = append(
 			*response,
-			latestMetricsForEndpoint(metricStore, app, path, false)...)
+			latestMetricsForEndpoint(metricStore, app.App.EP, path, false)...)
 	}
 	return nil
 }

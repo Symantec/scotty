@@ -11,10 +11,10 @@ import (
 func TestPersistence(t *testing.T) {
 	today := time.Date(2017, 5, 1, 0, 0, 0, 0, time.UTC)
 	baseDir := "/tmp/scotty"
-	firstS := chpipeline.NewSnapshotStore(baseDir, "host1", 23, 5*time.Hour)
-	secondS := chpipeline.NewSnapshotStore(baseDir, "host1", 24, 5*time.Hour)
-	thirdS := chpipeline.NewSnapshotStore(baseDir, "host2", 23, 5*time.Hour)
-	fourthS := chpipeline.NewSnapshotStore(baseDir, "host2", 24, 5*time.Hour)
+	firstS := chpipeline.NewSnapshotStore(baseDir, "host1", "app1", 5*time.Hour)
+	secondS := chpipeline.NewSnapshotStore(baseDir, "host1", "app2", 5*time.Hour)
+	thirdS := chpipeline.NewSnapshotStore(baseDir, "host2", "app1", 5*time.Hour)
+	fourthS := chpipeline.NewSnapshotStore(baseDir, "host2", "app2", 5*time.Hour)
 	Convey("With empty directory", t, func() {
 		So(os.RemoveAll("/tmp/scotty"), ShouldBeNil)
 		So(os.Mkdir("/tmp/scotty", 0755), ShouldBeNil)
@@ -38,10 +38,10 @@ func TestPersistence(t *testing.T) {
 			fourthList := fourthS.GetAll()
 
 			Convey("Loading data should preserve persistence", func() {
-				firstS := chpipeline.NewSnapshotStore(baseDir, "host1", 23, 5*time.Hour)
-				secondS := chpipeline.NewSnapshotStore(baseDir, "host1", 24, 5*time.Hour)
-				thirdS := chpipeline.NewSnapshotStore(baseDir, "host2", 23, 5*time.Hour)
-				fourthS := chpipeline.NewSnapshotStore(baseDir, "host2", 24, 5*time.Hour)
+				firstS := chpipeline.NewSnapshotStore(baseDir, "host1", "app1", 5*time.Hour)
+				secondS := chpipeline.NewSnapshotStore(baseDir, "host1", "app2", 5*time.Hour)
+				thirdS := chpipeline.NewSnapshotStore(baseDir, "host2", "app1", 5*time.Hour)
+				fourthS := chpipeline.NewSnapshotStore(baseDir, "host2", "app2", 5*time.Hour)
 				So(firstS.Load(), ShouldBeNil)
 				So(secondS.Load(), ShouldBeNil)
 				So(thirdS.Load(), ShouldBeNil)
@@ -61,7 +61,7 @@ func TestCircularBuffer(t *testing.T) {
 	today := time.Date(2017, 5, 1, 0, 0, 0, 0, time.UTC)
 	Convey("With snapshot store", t, func() {
 		store := chpipeline.NewSnapshotStore(
-			"unusedDirPath", "unusedHostName", 0, 5*time.Hour)
+			"unusedDirPath", "unusedHostName", "unusedAppName", 5*time.Hour)
 		So(store.GetAll(), ShouldHaveLength, 0)
 		store.Add(&chpipeline.Snapshot{Ts: today})
 		So(store.GetAll(), ShouldHaveLength, 1)

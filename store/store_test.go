@@ -4,7 +4,6 @@ import (
 	"errors"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/metrics"
-	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/tsdb"
@@ -21,13 +20,13 @@ import (
 
 var (
 	kEndpoint0 = scotty.NewEndpointWithConnector(
-		"host1", 1001, sources.ConnectorList{trisource.GetConnector()})
+		"host1", "1001", trisource.GetConnector())
 	kEndpoint1 = scotty.NewEndpointWithConnector(
-		"host2", 1002, sources.ConnectorList{trisource.GetConnector()})
+		"host2", "1002", trisource.GetConnector())
 	kEndpoint2 = scotty.NewEndpointWithConnector(
-		"host3", 1001, sources.ConnectorList{trisource.GetConnector()})
+		"host3", "1001", trisource.GetConnector())
 	kEndpoint3 = scotty.NewEndpointWithConnector(
-		"host4", 1002, sources.ConnectorList{trisource.GetConnector()})
+		"host4", "1002", trisource.GetConnector())
 	kError          = errors.New("An error")
 	kUsualTimeStamp = time.Date(2016, 7, 8, 14, 11, 0, 0, time.Local)
 	kNoMetaData     = newExpectedMetaData()

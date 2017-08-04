@@ -6,8 +6,8 @@ package tsdbexec
 
 import (
 	"errors"
-	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/apiutil"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbjson"
@@ -38,7 +38,7 @@ func Suggest(
 // Query corresponds to the /api/query TSDB API call.
 func Query(
 	request *tsdbjson.QueryRequest,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	minDownSampleTime time.Duration) (
 	result []tsdbjson.TimeSeries, err error) {
 	return query(request, endpoints, minDownSampleTime)
@@ -53,7 +53,7 @@ func Query(
 // corresponding element in the requests slice yields no results.
 func RunParsedQueries(
 	requests []tsdbjson.ParsedQuery,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	minDownSampleTime time.Duration) (
 	[]*tsdb.TaggedTimeSeriesSet, error) {
 	return runParsedQueries(requests, endpoints, minDownSampleTime)

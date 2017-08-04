@@ -1,7 +1,6 @@
 package scotty
 
 import (
-	"github.com/Symantec/scotty/lib/preference"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"runtime"
@@ -146,11 +145,6 @@ func asResourceConnector(
 	return &resourceConnector{Connector: connector}
 }
 
-type connectorType struct {
-	conn     sources.ResourceConnector
-	resource sources.Resource
-}
-
 func ignorePastStar(hostName string) string {
 	idx := strings.Index(hostName, "*")
 	if idx == -1 {
@@ -159,45 +153,23 @@ func ignorePastStar(hostName string) string {
 	return hostName[:idx]
 }
 
-func newConnector(
-	connector sources.Connector,
-	host string,
-	port uint) *connectorType {
-	conn := asResourceConnector(connector)
-	resource := conn.NewResource(ignorePastStar(host), port)
-	return &connectorType{conn: conn, resource: resource}
-}
-
-func (c *connectorType) Name() string {
-	return c.conn.Name()
-}
-
-func (c *connectorType) Connect() (sources.Poller, error) {
-	return c.conn.ResourceConnect(c.resource)
-}
-
 func newEndpoint(
-	host string, port uint, connectors []sources.Connector) *Endpoint {
-	conns := make([]*connectorType, len(connectors))
-	for i := range conns {
-		conns[i] = newConnector(connectors[i], host, port)
-	}
+	host string, appName string, connector sources.Connector) *Endpoint {
 	return &Endpoint{
-		host:                host,
-		port:                port,
-		connectors:          conns,
-		onePollAtATime:      make(chan bool, 1),
-		connectorPreference: preference.New(len(conns), kPreferenceMemory),
+		host:           host,
+		name:           appName,
+		conn:           asResourceConnector(connector),
+		onePollAtATime: make(chan bool, 1),
 	}
 }
 
-func (e *Endpoint) pollWithConnectorIndex(
+func (e *Endpoint) pollWithResource(
 	state *State,
 	logger Logger,
-	index int) bool {
-	state = state.goToConnecting(time.Now(), e.connectors[index].Name())
+	resource sources.Resource) bool {
+	state = state.goToConnecting(time.Now(), e.conn.Name())
 	e.logState(state, logger)
-	conn, err := e.connectors[index].Connect()
+	conn, err := e.conn.ResourceConnect(resource)
 	if err != nil {
 		state = state.goToFailedToConnect(time.Now())
 		e.logError(err, state, logger)
@@ -220,12 +192,21 @@ func (e *Endpoint) pollWithConnectorIndex(
 		e.logError(err, state, logger)
 		return false
 	}
-	e.chooseIndex(index)
 	e.logMetrics(metrics, state, logger)
 	return true
 }
 
-func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
+func (e *Endpoint) getResource(port uint) sources.Resource {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	if e.resource == nil || port != e.resourcePort {
+		e.resource = e.conn.NewResource(e.host, port)
+		e.resourcePort = port
+	}
+	return e.resource
+}
+
+func (e *Endpoint) poll(sweepStartTime time.Time, port uint, logger Logger) {
 	select {
 	case e.onePollAtATime <- true:
 		state := waitingToConnect(sweepStartTime)
@@ -238,12 +219,7 @@ func (e *Endpoint) poll(sweepStartTime time.Time, logger Logger) {
 			defer func() {
 				<-connectSemaphore
 			}()
-			indexes := e.connectionIndexes()
-			for _, index := range indexes {
-				if e.pollWithConnectorIndex(state, logger, index) {
-					return
-				}
-			}
+			e.pollWithResource(state, logger, e.getResource(port))
 		}(state)
 	default:
 		return
@@ -302,22 +278,4 @@ func (e *Endpoint) _setError(state *State, hasError bool) (
 	e.state = state
 	e.errored = hasError
 	return
-}
-
-func (e *Endpoint) connectionIndexes() []int {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	return e.connectorPreference.Indexes()
-}
-
-func (e *Endpoint) firstConnectionIndex() int {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	return e.connectorPreference.FirstIndex()
-}
-
-func (e *Endpoint) chooseIndex(i int) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	e.connectorPreference.SetFirstIndex(i)
 }

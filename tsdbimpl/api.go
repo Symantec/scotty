@@ -7,7 +7,7 @@ package tsdbimpl
 
 import (
 	"errors"
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/tsdb"
 )
 
@@ -30,7 +30,7 @@ type QueryOptions struct {
 
 // Query queries scotty for given tsdb query.
 func Query(
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	metricName string,
 	aggregator tsdb.AggregatorGenerator,
 	start, end float64,

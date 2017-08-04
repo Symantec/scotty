@@ -1,7 +1,7 @@
 package tsdbimpl
 
 import (
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/tsdb"
 )
 
@@ -16,7 +16,7 @@ func (o *QueryOptions) isIncluded(hostName, appName string) bool {
 }
 
 func query(
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	metricName string,
 	aggregatorGen tsdb.AggregatorGenerator,
 	start, end float64,
@@ -29,10 +29,10 @@ func query(
 	var metricNameFound bool
 	if options.GroupByHostName && options.GroupByAppName {
 		for i := range apps {
-			if options.isIncluded(apps[i].EndpointId.HostName(), apps[i].Name) {
+			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
 				timeSeries, ok := store.TsdbTimeSeries(
 					metricName,
-					apps[i].EndpointId,
+					apps[i].App.EP,
 					start,
 					end)
 				if ok {
@@ -48,8 +48,8 @@ func query(
 						taggedTimeSeriesSlice = append(
 							taggedTimeSeriesSlice, tsdb.TaggedTimeSeries{
 								Tags: tsdb.TagSet{
-									HostName: apps[i].EndpointId.HostName(),
-									AppName:  apps[i].Name,
+									HostName: apps[i].App.EP.HostName(),
+									AppName:  apps[i].App.EP.AppName(),
 								},
 								Values: aggregatedTimeSeries,
 							})
@@ -60,20 +60,20 @@ func query(
 	} else {
 		aggregatorMap := make(map[tsdb.TagSet]tsdb.Aggregator)
 		for i := range apps {
-			if options.isIncluded(apps[i].EndpointId.HostName(), apps[i].Name) {
+			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
 				timeSeries, ok := store.TsdbTimeSeries(
 					metricName,
-					apps[i].EndpointId,
+					apps[i].App.EP,
 					start,
 					end)
 				if ok {
 					metricNameFound = true
 					var tagSet tsdb.TagSet
 					if options.GroupByHostName {
-						tagSet.HostName = apps[i].EndpointId.HostName()
+						tagSet.HostName = apps[i].App.EP.HostName()
 					}
 					if options.GroupByAppName {
-						tagSet.AppName = apps[i].Name
+						tagSet.AppName = apps[i].App.EP.AppName()
 					}
 					aggregator := aggregatorMap[tagSet]
 					if aggregator == nil {

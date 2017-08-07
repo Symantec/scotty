@@ -452,6 +452,12 @@ func (c *timeSeriesCollectionType) MarkActive() {
 	c.active = true
 }
 
+func (c *timeSeriesCollectionType) IsActive() bool {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	return c.active
+}
+
 func (c *timeSeriesCollectionType) updateTimeStampSeriesAndTimeSeries(
 	newOnes []*timeSeriesType,
 	fetched map[*timeSeriesType]interface{},

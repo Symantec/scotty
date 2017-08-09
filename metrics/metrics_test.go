@@ -225,6 +225,63 @@ func TestFind(t *testing.T) {
 	}
 }
 
+func TestEndpoints(t *testing.T) {
+	list := metrics.SimpleList{
+		{
+			Path: "/health-checks",
+		},
+		{
+			Path:  "/health-checks/bar/has-tricorder-metrics",
+			Value: true,
+		},
+		{
+			Path:  "/health-checks/bar/port-number",
+			Value: uint64(6990),
+		},
+		{
+			Path:  "/health-checks/baz/has-tricorder-metrics",
+			Value: false,
+		},
+		{
+			Path:  "/health-checks/baz/port-number",
+			Value: uint64(7007),
+		},
+		{
+			Path: "/health-checks/charlie",
+		},
+		{
+			Path: "/health-checks/delta/a/b/c",
+		},
+		{
+			Path: "/health-checks/delta/a/e/f",
+		},
+		{
+			Path:  "/health-checks/delta/port-number",
+			Value: uint64(7009),
+		},
+		{
+			Path:  "/health-checks/foo/has-tricorder-metrics",
+			Value: true,
+		},
+		{
+			Path:  "/health-checks/foo/port-number",
+			Value: uint64(6974),
+		},
+		{
+			Path:  "/health-checks/noport/has-tricorder-metrics",
+			Value: true,
+		},
+	}
+	actual := metrics.Endpoints(list)
+	expected := map[string]uint{
+		"bar": 6990,
+		"foo": 6974,
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v; got %v", expected, actual)
+	}
+}
+
 func TestChildren(t *testing.T) {
 	list := metrics.SimpleList{
 		{

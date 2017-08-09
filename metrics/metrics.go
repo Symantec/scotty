@@ -14,7 +14,8 @@ var (
 )
 
 var (
-	kSysFs = pathType{"sys", "fs"}
+	kSysFs        = pathType{"sys", "fs"}
+	kHealthChecks = pathType{"health-checks"}
 )
 
 type pathType []string
@@ -77,6 +78,30 @@ func getPathTypeByIndex(list List, index int) pathType {
 	return newPath(value.Path)
 }
 
+func endpoints(list List) (result map[string]uint) {
+	result = make(map[string]uint)
+	healthChecksLen := len(kHealthChecks)
+	beginning := find(list, kHealthChecks)
+	ending := findNext(list, kHealthChecks)
+	for beginning < ending {
+		current := getPathTypeByIndex(list, beginning)
+		if len(current) == healthChecksLen {
+			beginning++
+			continue
+		}
+		name := current[healthChecksLen]
+		base := current.Truncate(healthChecksLen + 1)
+		if istri, _ := getBool(list, base.String()+"/has-tricorder-metrics"); istri {
+			port, ok := getUint64(list, base.String()+"/port-number")
+			if ok {
+				result[name] = uint(port)
+			}
+		}
+		beginning = findNext(list, base)
+	}
+	return
+}
+
 func fileSystems(list List) (result []string) {
 	sysFsLen := len(kSysFs)
 	beginning := find(list, kSysFs)
@@ -124,6 +149,15 @@ func get(list List, path string) (interface{}, bool) {
 		return nil, false
 	}
 	return value.Value, true
+}
+
+func getBool(list List, path string) (bool, bool) {
+	val, ok := get(list, path)
+	if !ok {
+		return false, false
+	}
+	v, k := val.(bool)
+	return v, k
 }
 
 func getFloat64(list List, path string) (float64, bool) {

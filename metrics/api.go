@@ -59,6 +59,14 @@ func FileSystems(list List) []string {
 	return fileSystems(list)
 }
 
+// Endpoints returns the name and port of each reported application.
+// The key of the returned map is the application name; the value is
+// the port number. The applications are listed under /health-checks
+// metrics tree.
+func Endpoints(list List) map[string]uint {
+	return endpoints(list)
+}
+
 // GetFloat64 gets the float64 value at path.
 // GetFloat64 returns false if path doesn't exist or if value is not float64.
 func GetFloat64(list List, path string) (float64, bool) {

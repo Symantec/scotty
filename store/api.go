@@ -518,6 +518,11 @@ func (s *Store) RegisterEndpoint(endpointId interface{}) {
 	s.registerEndpoint(endpointId)
 }
 
+// IsRegistered returns true if given endpoint is registered.
+func (s *Store) IsRegistered(endpointId interface{}) bool {
+	return s.isRegistered(endpointId)
+}
+
 // AddBatch adds metric values.
 // AddBatch returns the total number of metric values added including any
 // inactive flags. If endpoint is inactive, AddBatch returns err = ErrInactive.
@@ -859,6 +864,11 @@ func (s *Store) MarkEndpointInactive(
 // MarkEndpointActive marks given endpoint as active.
 func (s *Store) MarkEndpointActive(endpointId interface{}) {
 	s.markEndpointActive(endpointId)
+}
+
+// IsEndpointActive returns true if given endpoint is active.
+func (s *Store) IsEndpointActive(endpointId interface{}) bool {
+	return s.isEndpointActive(endpointId)
 }
 
 // Coordinator coordinates writes to persistent stores across multiple scotty

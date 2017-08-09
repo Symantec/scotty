@@ -43,6 +43,11 @@ func (s *Store) registerEndpoint(endpointId interface{}) {
 		endpointId, s.metrics)
 }
 
+func (s *Store) isRegistered(endpointId interface{}) bool {
+	_, ok := s.byApplication[endpointId]
+	return ok
+}
+
 func (s *Store) shallowCopy() *Store {
 	byApplicationCopy := make(
 		map[interface{}]*timeSeriesCollectionType,
@@ -138,6 +143,10 @@ func (s *Store) markEndpointInactive(
 
 func (s *Store) markEndpointActive(endpointId interface{}) {
 	s.byApplication[endpointId].MarkActive()
+}
+
+func (s *Store) isEndpointActive(endpointId interface{}) bool {
+	return s.byApplication[endpointId].IsActive()
 }
 
 func (s *Store) latestByPrefixAndEndpoint(

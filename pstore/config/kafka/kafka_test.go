@@ -174,6 +174,32 @@ func TestSerializeLeaveSlashes(t *testing.T) {
 		"Heal")
 }
 
+func TestSerializeString(t *testing.T) {
+	r := pstore.Record{
+		Kind:      types.String,
+		Timestamp: time.Date(2014, 5, 14, 9, 53, 20, 0, time.UTC),
+		Value:     "foo bar",
+		Path:      "/a/string/value",
+		HostName:  "ash2",
+		Tags:      pstore.TagGroup{pstore.TagAppName: "big"}}
+	payload := LMMJSONPayload(&r, "aTenant", "akey", false)
+	expected := map[string]interface{}{
+		kVersion:          kVersionNum,
+		kTenantId:         "aTenant",
+		kApiKey:           "akey",
+		kTimestamp:        "2014-05-14T09:53:20.000Z",
+		kName:             "/a/string/value",
+		kHost:             "ash2",
+		kValue:            0.0,
+		"stringValue":     "foo bar",
+		pstore.TagAppName: "big",
+	}
+	if !reflect.DeepEqual(expected, payload) {
+		t.Errorf("Expected %v, got %v", expected, payload)
+	}
+
+}
+
 func quickVerify(
 	t *testing.T,
 	kind types.Type,

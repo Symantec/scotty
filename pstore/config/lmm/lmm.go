@@ -57,7 +57,7 @@ func newWriter(c Config) (
 }
 
 func (w *writer) IsTypeSupported(t types.Type) bool {
-	return kafka.IsTypeSupported(t)
+	return kafka.IsTypeSupported(t) || t == types.String
 }
 
 func (w *writer) Write(records []pstore.Record) (err error) {

@@ -305,10 +305,15 @@ func lmmJSONPayload(
 		kApiKey:    apiKey,
 		kTimestamp: r.Timestamp.Format(kTimeFormat),
 		kName:      r.Path,
-		kHost:      r.HostName,
-		kValue:     ToFloat64(r)}
+		kHost:      r.HostName}
 	if slashesToUnderscores {
 		record[kName] = strings.Replace(r.Path, "/", "_", -1)
+	}
+	if r.Kind == types.String {
+		record[kValue] = 0.0
+		record["stringValue"] = r.Value.(string)
+	} else {
+		record[kValue] = ToFloat64(r)
 	}
 	for k, v := range r.Tags {
 		record[k] = v

@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"github.com/Symantec/scotty/namesandports"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"sort"
 	"strings"
@@ -78,8 +79,7 @@ func getPathTypeByIndex(list List, index int) pathType {
 	return newPath(value.Path)
 }
 
-func endpoints(list List) (result map[string]uint) {
-	result = make(map[string]uint)
+func endpoints(list List) (result namesandports.NamesAndPorts) {
 	healthChecksLen := len(kHealthChecks)
 	beginning := find(list, kHealthChecks)
 	ending := findNext(list, kHealthChecks)
@@ -94,7 +94,7 @@ func endpoints(list List) (result map[string]uint) {
 		if istri, _ := getBool(list, base.String()+"/has-tricorder-metrics"); istri {
 			port, ok := getUint64(list, base.String()+"/port-number")
 			if ok {
-				result[name] = uint(port)
+				result.Add(name, uint(port))
 			}
 		}
 		beginning = findNext(list, base)

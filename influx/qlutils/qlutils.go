@@ -12,10 +12,16 @@ func statementTimeRange(stmt influxql.Statement, currentTime time.Time) (
 		err = ErrNonSelectStatement
 		return
 	}
-	min, max, err = influxql.TimeRange(sel.Condition, time.UTC)
+	valuer := &influxql.NowValuer{
+		Now:      currentTime.UTC(),
+		Location: time.UTC,
+	}
+	_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
 	if err != nil {
 		return
 	}
+	min = tr.Min
+	max = tr.Max
 	if max.IsZero() {
 		max = currentTime.UTC()
 	} else {

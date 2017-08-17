@@ -2,6 +2,7 @@
 package metrics
 
 import (
+	"github.com/Symantec/scotty/namesandports"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"sort"
 	"time"
@@ -60,10 +61,8 @@ func FileSystems(list List) []string {
 }
 
 // Endpoints returns the name and port of each reported application.
-// The key of the returned map is the application name; the value is
-// the port number. The applications are listed under /health-checks
-// metrics tree.
-func Endpoints(list List) map[string]uint {
+// The applications are listed under /health-checks metrics tree.
+func Endpoints(list List) namesandports.NamesAndPorts {
 	return endpoints(list)
 }
 

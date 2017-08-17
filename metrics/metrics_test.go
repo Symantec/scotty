@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/namesandports"
 	"reflect"
 	"testing"
 	"time"
@@ -273,12 +274,20 @@ func TestEndpoints(t *testing.T) {
 		},
 	}
 	actual := metrics.Endpoints(list)
-	expected := map[string]uint{
+	expected := namesandports.NamesAndPorts{
 		"bar": 6990,
 		"foo": 6974,
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v; got %v", expected, actual)
+	}
+}
+
+func TestNoEndpoints(t *testing.T) {
+	list := metrics.SimpleList{}
+	actual := metrics.Endpoints(list)
+	if actual != nil {
+		t.Errorf("Expected nil; got %v", actual)
 	}
 }
 

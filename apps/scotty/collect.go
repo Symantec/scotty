@@ -159,6 +159,7 @@ type loggerType struct {
 	CloudHealthChannel    chan []*chpipeline.Snapshot
 	CloudWatchChannel     chan *chpipeline.Snapshot
 	EndpointData          *endpointdata.EndpointData
+	EndpointObservations  *machine.EndpointObservations
 }
 
 func (l *loggerType) LogStateChange(
@@ -201,6 +202,7 @@ func (l *loggerType) LogResponse(
 		l.ChangedMetricsDist.Add(float64(added))
 		l.TotalCounts.Update(l.Store, e)
 		if e.AppName() == application.HealthAgentName {
+			l.EndpointObservations.Save(e.HostName(), metrics.Endpoints(list))
 			if l.CisQueue != nil && l.App.M.Aws != nil {
 				stats := cis.GetStats(list, l.App.M.Aws.InstanceId)
 				if stats != nil {
@@ -514,6 +516,7 @@ func startCollector(
 					CloudHealthLmmChannel: cloudHealthLmmChannel,
 					CloudWatchChannel:     cloudWatchChannel,
 					EndpointData:          endpointData,
+					EndpointObservations:  endpointObservations,
 				}
 
 				portNum := endpoint.App.Port
@@ -526,7 +529,6 @@ func startCollector(
 				time.Sleep((*fCollectionFrequency) - sweepDuration)
 			}
 			if myHostNameStr := myHostName.String(); myHostNameStr != "" {
-				endpointObservations.Save(myHostNameStr, nil)
 				endpointObservations.MaybeAddApp(myHostNameStr, *fName, *fPort)
 			}
 			endpointStore.UpdateEndpoints(

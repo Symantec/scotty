@@ -78,12 +78,6 @@ func GetUint64(list List, path string) (uint64, bool) {
 	return getUint64(list, path)
 }
 
-// GetInt gets the int8, int16, int32, or int64 value at path.
-// GetInt returns false if path doesn't exist or if value is not an int type.
-func GetInt(list List, path string) (int64, bool) {
-	return getInt(list, path)
-}
-
 // VerifyList verifies that the given list adheres to the specification.
 func VerifyList(list List) error {
 	return verifyList(list)

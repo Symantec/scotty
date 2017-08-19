@@ -92,9 +92,9 @@ func endpoints(list List) (result namesandports.NamesAndPorts) {
 		name := current[healthChecksLen]
 		base := current.Truncate(healthChecksLen + 1)
 		if istri, _ := getBool(list, base.String()+"/has-tricorder-metrics"); istri {
-			port, ok := getUint64(list, base.String()+"/port-number")
+			port, ok := getAsUint(list, base.String()+"/port-number")
 			if ok {
-				result.Add(name, uint(port))
+				result.Add(name, port)
 			}
 		}
 		beginning = findNext(list, base)
@@ -176,6 +176,37 @@ func getUint64(list List, path string) (uint64, bool) {
 	}
 	v, k := val.(uint64)
 	return v, k
+}
+
+func getAsUint(list List, path string) (uint, bool) {
+	val, ok := get(list, path)
+	if !ok {
+		return 0, false
+	}
+	switch i := val.(type) {
+	case int64:
+		return uint(i), true
+	case int32:
+		return uint(i), true
+	case int16:
+		return uint(i), true
+	case int8:
+		return uint(i), true
+	case int:
+		return uint(i), true
+	case uint64:
+		return uint(i), true
+	case uint32:
+		return uint(i), true
+	case uint16:
+		return uint(i), true
+	case uint8:
+		return uint(i), true
+	case uint:
+		return i, true
+	default:
+		return 0, false
+	}
 }
 
 func verifyList(list List) error {

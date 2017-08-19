@@ -237,7 +237,7 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			Path:  "/health-checks/bar/port-number",
-			Value: uint64(6990),
+			Value: int64(6990),
 		},
 		{
 			Path:  "/health-checks/baz/has-tricorder-metrics",
@@ -245,7 +245,7 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			Path:  "/health-checks/baz/port-number",
-			Value: uint64(7007),
+			Value: int64(7007),
 		},
 		{
 			Path: "/health-checks/charlie",
@@ -258,7 +258,7 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			Path:  "/health-checks/delta/port-number",
-			Value: uint64(7009),
+			Value: int64(7009),
 		},
 		{
 			Path:  "/health-checks/foo/has-tricorder-metrics",
@@ -266,17 +266,26 @@ func TestEndpoints(t *testing.T) {
 		},
 		{
 			Path:  "/health-checks/foo/port-number",
-			Value: uint64(6974),
+			Value: int32(6974),
 		},
 		{
-			Path:  "/health-checks/noport/has-tricorder-metrics",
+			Path:  "/health-checks/scotty/has-tricorder-metrics",
+			Value: true,
+		},
+		{
+			Path:  "/health-checks/scotty/port-number",
+			Value: uint32(6980),
+		},
+		{
+			Path:  "/health-checks/znoport/has-tricorder-metrics",
 			Value: true,
 		},
 	}
 	actual := metrics.Endpoints(list)
 	expected := namesandports.NamesAndPorts{
-		"bar": 6990,
-		"foo": 6974,
+		"bar":    6990,
+		"foo":    6974,
+		"scotty": 6980,
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v; got %v", expected, actual)

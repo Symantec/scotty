@@ -26,6 +26,7 @@ const (
 	kHost      = "host"
 	kTenantId  = "tenant_id"
 	kApiKey    = "apikey"
+	kMaxStrLen = 100
 )
 
 const (
@@ -311,7 +312,11 @@ func lmmJSONPayload(
 	}
 	if r.Kind == types.String {
 		record[kValue] = 0.0
-		record["stringValue"] = r.Value.(string)
+		str := r.Value.(string)
+		if len(str) > kMaxStrLen {
+			str = str[:kMaxStrLen]
+		}
+		record["stringValue"] = str
 	} else {
 		record[kValue] = ToFloat64(r)
 	}

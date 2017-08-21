@@ -28,13 +28,26 @@ type Resource interface{}
 // ResourceConnector is implemented by Connector instances that support
 // amortizing the cost of connecting. Clients should check at runtime if a
 // Connector instance implements this interface. If it does they should use
-// use the instance with this interface instead of the Connector interface.
-// Like Connector, ResourceConnector instances must be safe to use with
-// multiple goroutines.
+// the NewResource and ResourceConnect methods instead of the Connect method.
 type ResourceConnector interface {
+	Connector
+
+	// Creates a long lived resource from host and port. Returned resource
+	// can be passed to ResourceConnect again and again amortizing the cost
+	// of connecting.
 	NewResource(host string, port uint) Resource
+
 	ResourceConnect(resource Resource) (Poller, error)
-	Name() string
+}
+
+// MultiResourceConnector makes a ResourceConnector out of a ConnectorList.
+// consecutiveCallsForReset is how many times an alternate Connector must
+// be used through a Resource created from this instance before the first
+// Connector is tried again. See preference.New in
+// github.com/Symantec/scotty/lib/preference.
+func MultiResourceConnector(
+	conns ConnectorList, consecutiveCallsForReset int) ResourceConnector {
+	return multiResourceConnector(conns, consecutiveCallsForReset)
 }
 
 // Poller polls metrics from a particular source. Generally, a Poller

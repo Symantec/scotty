@@ -25,7 +25,6 @@ func (w *syncJSONWriterType) Write(
 	if err != nil {
 		return err
 	}
-	payloadStr := buffer.String()
 	req, err := http.NewRequest("POST", url, buffer)
 	if err != nil {
 		return err
@@ -42,7 +41,7 @@ func (w *syncJSONWriterType) Write(
 	}
 	defer response.Body.Close()
 	if response.StatusCode/100 != 2 {
-		return errors.New(response.Status + ": " + payloadStr)
+		return errors.New(response.Status)
 	}
 	return nil
 }

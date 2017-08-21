@@ -3,11 +3,18 @@ package application
 import (
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/namesandports"
+	"github.com/Symantec/scotty/sources"
+	"github.com/Symantec/scotty/sources/jsonsource"
 	"github.com/Symantec/scotty/sources/trisource"
 )
 
 var (
-	kConnector = trisource.GetConnector()
+	kConnector = sources.MultiResourceConnector(
+		sources.ConnectorList{
+			trisource.GetConnector(),
+			jsonsource.GetConnector(),
+		},
+		100)
 )
 
 type applicationDataType struct {

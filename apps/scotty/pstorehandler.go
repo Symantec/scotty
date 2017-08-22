@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/fsutil"
+	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/gate"
@@ -520,6 +521,7 @@ func newPStoreRunner(
 		perMetricWriteTimes = kBucketer.NewCumulativeDistribution()
 		totalTimeSpentDist = kBucketer.NewCumulativeDistribution()
 	}
+	consumer.SetLogger(prefixlogger.New(consumer.Name()+": ", logger))
 	handler := newPStoreHandler(
 		stats.ApplicationList(),
 		consumer,

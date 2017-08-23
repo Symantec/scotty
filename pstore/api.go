@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/nulllogger"
 	"github.com/Symantec/scotty/lib/gate"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
@@ -125,6 +127,7 @@ type RecordWriterWithMetrics struct {
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
 	// Client populates this to collect batch sizes
 	BatchSizes      *tricorder.CumulativeDistribution
+	Logger          log.Logger
 	criticalSection *gate.Gate
 	lock            sync.Mutex
 	metrics         RecordWriterMetrics
@@ -135,6 +138,7 @@ type RecordWriterWithMetrics struct {
 func NewRecordWriterWithMetrics(writer RecordWriter) *RecordWriterWithMetrics {
 	return &RecordWriterWithMetrics{
 		W:               writer,
+		Logger:          nulllogger.New(),
 		criticalSection: gate.New(),
 	}
 }
@@ -456,6 +460,7 @@ type ConsumerWithMetricsBuilder struct {
 	metrics ConsumerMetrics
 	filter  func(*store.MetricInfo) bool
 	paused  bool
+	logger  log.Logger
 }
 
 // NewConsumerWithMetricsBuilder creates a new instance that will
@@ -463,6 +468,11 @@ type ConsumerWithMetricsBuilder struct {
 func NewConsumerWithMetricsBuilder(
 	w LimitedRecordWriter) *ConsumerWithMetricsBuilder {
 	return newConsumerWithMetricsBuilder(w)
+}
+
+// SetLogger sets the logger that built instance is to use
+func (b *ConsumerWithMetricsBuilder) SetLogger(logger log.Logger) {
+	b.logger = logger
 }
 
 // SetConsumerMetrics ensures that built instance with have metrics equal

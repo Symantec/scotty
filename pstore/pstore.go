@@ -56,7 +56,7 @@ func (w *RecordWriterWithMetrics) write(records []Record) error {
 		w.logWrite(uint(len(records)), timeTaken)
 	} else {
 		w.logWriteError(
-			uint(len(records)), result.Error(), timeTaken)
+			uint(len(records)), result, timeTaken)
 	}
 	return result
 }
@@ -85,11 +85,12 @@ func (w *RecordWriterWithMetrics) logWrite(
 }
 
 func (w *RecordWriterWithMetrics) logWriteError(
-	batchSize uint, err string, timeTaken time.Duration) {
+	batchSize uint, err error, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
+	w.Logger.Printf("Error writing to persistent store: %v", err)
 	w.lock.Lock()
 	defer w.lock.Unlock()
-	w.metrics.logWriteError(err, timeTaken)
+	w.metrics.logWriteError(err.Error(), timeTaken)
 }
 
 func (w *RecordWriterWithMetrics) setPauseMetric(paused bool) {
@@ -419,6 +420,8 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	// fix up metrics
 	result.metricsStore.w.BatchSizes = result.attributes.BatchSizes
 	result.metricsStore.w.PerMetricWriteTimes = result.attributes.PerMetricWriteTimes
+	result.metricsStore.w.Logger = b.logger
+
 	result.metricsStore.SetMetrics(&b.metrics)
 
 	// Set up consumer
@@ -438,5 +441,6 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	b.c = nil
 	b.hooks = nil
 	b.filter = nil
+	b.logger = nil
 	return result
 }

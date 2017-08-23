@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/nulllogger"
 	"github.com/Symantec/scotty/lib/gate"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
@@ -137,6 +138,7 @@ type RecordWriterWithMetrics struct {
 func NewRecordWriterWithMetrics(writer RecordWriter) *RecordWriterWithMetrics {
 	return &RecordWriterWithMetrics{
 		W:               writer,
+		Logger:          nulllogger.New(),
 		criticalSection: gate.New(),
 	}
 }

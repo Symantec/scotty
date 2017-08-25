@@ -7,8 +7,8 @@ import (
 	"github.com/Symantec/Dominator/lib/fsutil"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	collector "github.com/Symantec/scotty"
-	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/gate"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
 	"github.com/Symantec/scotty/store"
@@ -149,7 +149,6 @@ func (v *visitorMetricsStoreType) SetBlocked(b bool) {
 // pstoreHandlerType is NOT threadsafe.
 type pstoreHandlerType struct {
 	consumer            *pstore.ConsumerWithMetrics
-	appList             *datastructs.ApplicationList
 	startTime           time.Time
 	secondsBehind       float64
 	percentCaughtUp     store.FloatVar
@@ -178,7 +177,6 @@ type coordinatorBuilderType interface {
 // maybeNilCoordBuilder is not nil, it arranges to acquire a lease from
 // consul before any writing happens.
 func newPStoreHandler(
-	appList *datastructs.ApplicationList,
 	consumer *pstore.ConsumerWithMetricsBuilder,
 	perMetricWriteTimes *tricorder.CumulativeDistribution,
 	totalTimeSpentDist *tricorder.CumulativeDistribution,
@@ -192,7 +190,6 @@ func newPStoreHandler(
 	}
 	return &pstoreHandlerType{
 		consumer:            consumer.Build(),
-		appList:             appList,
 		totalTimeSpentDist:  totalTimeSpentDist,
 		perMetricWriteTimes: perMetricWriteTimes,
 		visitorMetricsStore: visitorMetricsStore,
@@ -230,11 +227,7 @@ func (p *pstoreHandlerType) Visit(
 	theStore *store.Store, endpointId interface{}) error {
 
 	hostName := endpointId.(*collector.Endpoint).HostName()
-	port := endpointId.(*collector.Endpoint).Port()
-	appName := datastructs.Self
-	if port != 0 {
-		appName = p.appList.ByPort(port).Name()
-	}
+	appName := endpointId.(*collector.Endpoint).AppName()
 	iterator, iteratorData := p.namedIterator(theStore, endpointId)
 	if p.maybeNilCoord != nil {
 		// aMetricStore from the consumer exposes the same filtering that
@@ -489,7 +482,7 @@ type pstoreRunnerAttributesType struct {
 // pstoreRunnerType represents a single goroutine writing metrics to a
 // particular data store
 type pstoreRunnerType struct {
-	stats              *datastructs.ApplicationStatuses
+	stats              *machine.EndpointStore
 	metrics            *pstore.ConsumerMetricsStore
 	attrs              pstore.ConsumerAttributes
 	count              *totalCountType
@@ -506,7 +499,7 @@ type pstoreRunnerType struct {
 // If maybeNilCoordBuilder is not nil, it arranges for the pstore runner
 // to obtain a lease from consul before writing any data.
 func newPStoreRunner(
-	stats *datastructs.ApplicationStatuses,
+	stats *machine.EndpointStore,
 	consumer *pstore.ConsumerWithMetricsBuilder,
 	maybeNilInAttrs *pstoreRunnerAttributesType,
 	maybeNilCoordBuilder coordinatorBuilderType,
@@ -523,7 +516,6 @@ func newPStoreRunner(
 	}
 	consumer.SetLogger(prefixlogger.New(consumer.Name()+": ", logger))
 	handler := newPStoreHandler(
-		stats.ApplicationList(),
 		consumer,
 		perMetricWriteTimes,
 		totalTimeSpentDist,
@@ -689,7 +681,7 @@ type pstoreRunnersByNameType map[string]*pstoreRunnerType
 // common state that doesn't change so that they don't have to be passed as
 // parameters to UpdateFromConfigFile.
 type pstoreContextType struct {
-	Stats                 *datastructs.ApplicationStatuses
+	Stats                 *machine.EndpointStore
 	MaybeNilMemoryManager *memoryManagerType
 	Logger                *log.Logger
 	MaybeNilCoordBuilder  coordinatorBuilderType
@@ -872,7 +864,7 @@ func stringToReadCloserStream(strings <-chan string) <-chan io.ReadCloser {
 
 // startPStoreLoops starts up the writing to pstores.
 func startPStoreLoops(
-	stats *datastructs.ApplicationStatuses,
+	stats *machine.EndpointStore,
 	maybeNilMemoryManager *memoryManagerType,
 	logger *log.Logger,
 	maybeNilCoordBuilder coordinatorBuilderType) *totalCountCollectionType {

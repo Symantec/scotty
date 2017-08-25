@@ -7,13 +7,15 @@ import (
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/Dominator/lib/mdb/mdbd"
+	"github.com/Symantec/scotty/application"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
 	"github.com/Symantec/scotty/apps/scotty/splash"
+	"github.com/Symantec/scotty/awsinfo"
 	"github.com/Symantec/scotty/consul"
-	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/influx/qlutils"
 	"github.com/Symantec/scotty/influx/responses"
 	"github.com/Symantec/scotty/lib/apiutil"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb/aggregators"
@@ -27,13 +29,14 @@ import (
 	"github.com/influxdata/influxdb/uuid"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/rpc"
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -54,10 +57,14 @@ var (
 		"mdbLoadTesting",
 		0,
 		"Number of hosts to use for load testing")
-	fPort = flag.Int(
+	fPort = flag.Uint(
 		"portNum",
 		6980,
 		"Port number for scotty.")
+	fName = flag.String(
+		"name",
+		"scotty",
+		"Name of application")
 	fInfluxPort = flag.Int(
 		"influxPortNum",
 		8086,
@@ -92,7 +99,32 @@ var (
 		"configDir", "/etc/scotty", "Directory for scotty config files.")
 	fCoord = flag.String(
 		"coordinator", "", "Leadership election specifications")
+	fCloudWatchFreq = flag.Duration(
+		"cloudWatchFreq",
+		5*time.Minute,
+		"Rollup time for cloudwatch")
+	fCloudHealthTest = flag.Bool(
+		"cloudHealthTest", false, "Whether or not this is testing cloudhealth")
+	fCloudWatchTest = flag.Bool(
+		"cloudWatchTest", false, "Whether or not this is testing cloudwatch")
 )
+
+type stringType struct {
+	mu  sync.Mutex
+	str string
+}
+
+func (s *stringType) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.str
+}
+
+func (s *stringType) SetString(str string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.str = str
+}
 
 type gzipResponseWriter struct {
 	http.ResponseWriter
@@ -119,19 +151,6 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.H.ServeHTTP(gzr, r)
 }
 
-func createApplicationList() *datastructs.ApplicationList {
-	f, err := os.Open(path.Join(*fConfigDir, "apps.yaml"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-	builder := datastructs.NewApplicationListBuilder()
-	if err := builder.ReadConfig(f); err != nil {
-		log.Fatal(err)
-	}
-	return builder.Build()
-}
-
 func hostNames(machines []mdb.Machine) (result []string) {
 	result = make([]string, len(machines))
 	for i := range machines {
@@ -151,11 +170,24 @@ func loadTestMdbChannel(count int) <-chan *mdb.Mdb {
 	return result
 }
 
-func createApplicationStats(
-	appList *datastructs.ApplicationList,
+func getMyHostName(machines []mdb.Machine, myIpAddrs []string) string {
+	for _, machine := range machines {
+		for _, ipaddr := range myIpAddrs {
+			if ipaddr == machine.IpAddress {
+				return machine.Hostname
+			}
+		}
+	}
+	return ""
+}
+
+func createEndpointStore(
 	logger *log.Logger,
 	tagvAdder suggest.Adder,
-	maybeNilMemoryManager *memoryManagerType) *datastructs.ApplicationStatuses {
+	maybeNilMemoryManager *memoryManagerType,
+	myIpAddrs []string) (
+	*machine.EndpointStore, *stringType) {
+	myHostName := &stringType{}
 	var astore *store.Store
 	fmt.Println("Initialization started.")
 	if maybeNilMemoryManager != nil {
@@ -181,7 +213,14 @@ func createApplicationStats(
 	if err := astore.RegisterMetrics(dirSpec); err != nil {
 		log.Fatal(err)
 	}
-	stats := datastructs.NewApplicationStatuses(appList, astore)
+	stats := machine.NewEndpointStore(
+		astore,
+		awsinfo.Config{
+			CloudHealthTest:   *fCloudHealthTest,
+			CloudWatchTest:    *fCloudWatchTest,
+			CloudWatchRefresh: *fCloudWatchFreq,
+		},
+		3)
 	var mdbChannel <-chan *mdb.Mdb
 	if *fMdbLoadTesting > 0 {
 		mdbChannel = loadTestMdbChannel(*fMdbLoadTesting)
@@ -198,19 +237,24 @@ func createApplicationStats(
 	for _, aName := range hostNames(machines.Machines) {
 		tagvAdder.Add(aName)
 	}
-	stats.MarkHostsActiveExclusively(
+	myHostNameStr := getMyHostName(machines.Machines, myIpAddrs)
+	myHostName.SetString(myHostNameStr)
+	fmt.Println("My host name", myHostNameStr)
+
+	stats.UpdateMachines(
 		duration.TimeToFloat(time.Now()), machines.Machines)
 	fmt.Println("Initialization complete.")
 	// Endpoint refresher goroutine
 	go func() {
 		for {
 			machines := <-mdbChannel
-			stats.MarkHostsActiveExclusively(
+			myHostName.SetString(getMyHostName(machines.Machines, myIpAddrs))
+			stats.UpdateMachines(
 				duration.TimeToFloat(time.Now()),
 				machines.Machines)
 		}
 	}()
-	return stats
+	return stats, myHostName
 }
 
 func gracefulCleanup() {
@@ -300,7 +344,7 @@ func (m *maybeNilMemoryManagerWrapperType) Check() {
 func performInfluxQuery(
 	queryStr string,
 	epoch string,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	freq time.Duration) (interface{}, error) {
 	// Special case for show databases. Influx client issues this
 	// when user types "use scotty"
@@ -387,12 +431,27 @@ func dateHandler() http.Handler {
 
 }
 
+func toAddrs(ips []net.Addr) []string {
+	result := make([]string, len(ips))
+	for i, x := range ips {
+		result[i] = x.String()
+		index := strings.LastIndexByte(result[i], '/')
+		if index != -1 {
+			result[i] = result[i][:index]
+		}
+	}
+	return result
+}
+
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
 	circularBuffer := logbuf.New()
 	logger := log.New(circularBuffer, "", log.LstdFlags)
 	handleSignals(logger)
+	myIPs, _ := net.InterfaceAddrs()
+	myIPAddrs := toAddrs(myIPs)
+	logger.Println("My IP Addresses: ", myIPAddrs)
 	// Read configs early so that we will fail fast.
 	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
 	metricNameEngine := suggest.NewEngine()
@@ -400,16 +459,14 @@ func main() {
 	tagkEngine := suggest.NewSuggester("appname", "HostName")
 	tagvEngine := suggest.NewEngine()
 	tagvAdder := newTsdbAdder(tagvEngine)
+	// TODO: Fix this somehow to include all apps
+	tagvAdder.Add(application.HealthAgentName)
 
-	appList := createApplicationList()
-	for _, app := range appList.All() {
-		tagvAdder.Add(app.Name())
-	}
-	applicationStats := createApplicationStats(
-		appList, logger, tagvAdder, maybeNilMemoryManager)
+	endpointStore, myHostName := createEndpointStore(
+		logger, tagvAdder, maybeNilMemoryManager, myIPAddrs)
 	rpc.RegisterName(
 		"Scotty",
-		&rpcType{AS: applicationStats},
+		&rpcType{ES: endpointStore},
 	)
 	rpc.HandleHTTP()
 	connectionErrors := newConnectionErrorsType()
@@ -423,40 +480,37 @@ func main() {
 		}
 	}
 	totalCounts := startPStoreLoops(
-		applicationStats,
+		endpointStore,
 		maybeNilMemoryManager,
 		logger,
 		coord)
 	startCollector(
-		applicationStats,
+		endpointStore,
 		connectionErrors,
 		totalCounts,
 		metricNameAdder,
 		&maybeNilMemoryManagerWrapperType{maybeNilMemoryManager},
+		myHostName,
 		logger)
 
 	http.Handle(
 		"/",
 		gzipHandler{&splash.Handler{
-			AS:  applicationStats,
+			ES:  endpointStore,
 			Log: circularBuffer,
 		}})
 	http.Handle(
 		"/showAllApps",
 		gzipHandler{&showallapps.Handler{
-			AS:              applicationStats,
-			CollectionFreq:  *fCollectionFrequency,
-			CloudWatchTest:  *fCloudWatchTest,
-			CloudHealthTest: *fCloudHealthTest,
-			DefaultCwRate:   *fCloudWatchFreq,
-			Logger:          logger,
+			ES:     endpointStore,
+			Logger: logger,
 		}})
 	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(
 			"/api/hosts/",
 			gzipHandler{&byEndpointHandler{
-				AS:     applicationStats,
+				ES:     endpointStore,
 				Logger: logger,
 			}}))
 	http.Handle(
@@ -464,7 +518,7 @@ func main() {
 		http.StripPrefix(
 			"/api/latest/",
 			gzipHandler{&latestHandler{
-				AS:     applicationStats,
+				ES:     endpointStore,
 				Logger: logger,
 			}}))
 
@@ -486,7 +540,7 @@ func main() {
 					return performInfluxQuery(
 						req.Get("q"),
 						req.Get("epoch"),
-						applicationStats,
+						endpointStore,
 						*fCollectionFrequency)
 				},
 				nil,
@@ -506,7 +560,7 @@ func main() {
 		tsdbexec.NewHandler(
 			func(r *tsdbjson.QueryRequest) ([]tsdbjson.TimeSeries, error) {
 				return tsdbexec.Query(
-					r, applicationStats, *fCollectionFrequency)
+					r, endpointStore, *fCollectionFrequency)
 			}))
 	tsdbServeMux.Handle(
 		"/api/suggest",

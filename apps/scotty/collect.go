@@ -2,18 +2,19 @@ package main
 
 import (
 	"flag"
-	"github.com/Symantec/Dominator/lib/flagutil"
 	collector "github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/application"
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/cis"
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/cloudhealthlmm"
 	"github.com/Symantec/scotty/cloudwatch"
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/endpointdata"
 	"github.com/Symantec/scotty/lib/dynconfig"
 	"github.com/Symantec/scotty/lib/keyedqueue"
 	"github.com/Symantec/scotty/lib/trimetrics"
 	"github.com/Symantec/scotty/lib/yamlutil"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/messages"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/store"
@@ -54,15 +55,6 @@ var (
 		"dataCenter",
 		"",
 		"Required for CIS writing: The data center name")
-	fCombineFileSystemIds = flagutil.StringList{"ALL"}
-	fCloudWatchFreq       = flag.Duration(
-		"cloudWatchFreq",
-		5*time.Minute,
-		"Rollup time for cloudwatch")
-	fCloudHealthTest = flag.Bool(
-		"cloudHealthTest", false, "Whether or not this is testing cloudhealth")
-	fCloudWatchTest = flag.Bool(
-		"cloudWatchTest", false, "Whether or not this is testing cloudwatch")
 	fCisBufferSize = flag.Int(
 		"cisBufferSize",
 		40,
@@ -72,13 +64,6 @@ var (
 		0,
 		"Sleep time between writes")
 )
-
-func init() {
-	flag.Var(
-		&fCombineFileSystemIds,
-		"combineFileSystemIds",
-		"comma separated aws instance Ids on which file system cloudhealth stats must be combined. 'all' means all instances")
-}
 
 // toInstanceMap converts a slice of instanceIds to a map of instanceIds.
 // An empty map means no instanceIds; the nil map means all instance Ids.
@@ -161,8 +146,8 @@ type totalCountUpdaterType interface {
 // keeping track of collection statistics
 type loggerType struct {
 	Store                 *store.Store
-	AppStats              *datastructs.ApplicationStatuses
-	App                   *datastructs.ApplicationStatus
+	AppStats              *machine.EndpointStore
+	App                   *machine.Endpoint
 	ConnectionErrors      *connectionErrorsType
 	CollectionTimesDist   *tricorder.CumulativeDistribution
 	ByProtocolDist        map[string]*tricorder.CumulativeDistribution
@@ -173,7 +158,7 @@ type loggerType struct {
 	CloudHealthLmmChannel chan *chpipeline.Snapshot
 	CloudHealthChannel    chan []*chpipeline.Snapshot
 	CloudWatchChannel     chan *chpipeline.Snapshot
-	EndpointData          *datastructs.EndpointData
+	EndpointData          *endpointdata.EndpointData
 }
 
 func (l *loggerType) LogStateChange(
@@ -189,7 +174,7 @@ func (l *loggerType) LogStateChange(
 			dist.Add(timeTaken)
 		}
 	}
-	l.AppStats.Update(e, newS)
+	l.AppStats.UpdateState(e, newS)
 }
 
 func (l *loggerType) LogError(e *collector.Endpoint, err error, state *collector.State) {
@@ -215,23 +200,22 @@ func (l *loggerType) LogResponse(
 		l.AppStats.LogChangedMetricCount(e, added)
 		l.ChangedMetricsDist.Add(float64(added))
 		l.TotalCounts.Update(l.Store, e)
-		if e.Port() == 6910 {
-			if l.CisQueue != nil {
-				stats := cis.GetStats(list, l.App.InstanceId())
+		if e.AppName() == application.HealthAgentName {
+			if l.CisQueue != nil && l.App.M.Aws != nil {
+				stats := cis.GetStats(list, l.App.M.Aws.InstanceId)
 				if stats != nil {
 					l.CisQueue.Add(stats)
 				}
 			}
 		}
 		var stats chpipeline.InstanceStats
-		var combinedFsStats chpipeline.InstanceStats
 		var statsOk bool
 		chRollup := l.EndpointData.CHRollup
 		chStore := l.EndpointData.CHStore
 		if (l.CloudHealthChannel != nil || l.CloudHealthLmmChannel != nil) && chRollup != nil && chStore != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
-				combinedFsStats = stats.WithCombinedFsStats()
+				stats.CombineFsStats()
 				statsOk = true
 			}
 			if !chRollup.TimeOk(stats.Ts) {
@@ -248,24 +232,20 @@ func (l *loggerType) LogResponse(
 				}
 				chRollup.Clear()
 			}
-			if l.EndpointData.CHCombineFS {
-				chRollup.Add(combinedFsStats)
-			} else {
-				chRollup.Add(stats)
-			}
+			chRollup.Add(stats)
 		}
 		cwRollup := l.EndpointData.CWRollup
 		if l.CloudWatchChannel != nil && cwRollup != nil {
 			if !statsOk {
 				stats = chpipeline.GetStats(list)
-				combinedFsStats = stats.WithCombinedFsStats()
+				stats.CombineFsStats()
 				statsOk = true
 			}
 			if !cwRollup.TimeOk(stats.Ts) {
 				l.CloudWatchChannel <- cwRollup.TakeSnapshot()
 				cwRollup.Clear()
 			}
-			cwRollup.Add(combinedFsStats)
+			cwRollup.Add(stats)
 		}
 	}
 	// This error just means that the endpoint was marked inactive
@@ -329,11 +309,12 @@ func newCloudWatchWriter(reader io.Reader) (interface{}, error) {
 }
 
 func startCollector(
-	appStats *datastructs.ApplicationStatuses,
+	endpointStore *machine.EndpointStore,
 	connectionErrors *connectionErrorsType,
 	totalCounts totalCountUpdaterType,
 	metricNameAdder suggest.Adder,
 	memoryChecker memoryCheckerType,
+	myHostName *stringType,
 	logger *log.Logger) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
@@ -342,8 +323,6 @@ func startCollector(
 	collectionBucketer := tricorder.NewGeometricBucketer(1e-4, 100.0)
 	collectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	tricorderCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
-	snmpCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
-	jsonCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	changedMetricsPerEndpointDist := tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()
 
 	if err := tricorder.RegisterMetric(
@@ -358,20 +337,6 @@ func startCollector(
 		tricorderCollectionTimesDist,
 		units.Second,
 		"Tricorder Collection Times"); err != nil {
-		log.Fatal(err)
-	}
-	if err := tricorder.RegisterMetric(
-		"collector/collectionTimes_snmp",
-		snmpCollectionTimesDist,
-		units.Second,
-		"SNMP Collection Times"); err != nil {
-		log.Fatal(err)
-	}
-	if err := tricorder.RegisterMetric(
-		"collector/collectionTimes_json",
-		jsonCollectionTimesDist,
-		units.Second,
-		"JSON Collection Times"); err != nil {
 		log.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
@@ -401,8 +366,6 @@ func startCollector(
 
 	byProtocolDist := map[string]*tricorder.CumulativeDistribution{
 		"tricorder": tricorderCollectionTimesDist,
-		"snmp":      snmpCollectionTimesDist,
-		"json":      jsonCollectionTimesDist,
 	}
 
 	var cloudHealthChannel chan []*chpipeline.Snapshot
@@ -507,48 +470,39 @@ func startCollector(
 			}
 		}
 	}
-	combineFsMap := toInstanceIdMap(fCombineFileSystemIds)
 
 	// Metric collection goroutine. Collect metrics periodically.
 	go func() {
 		endpointToData := make(
-			map[*collector.Endpoint]*datastructs.EndpointData)
+			map[*collector.Endpoint]*endpointdata.EndpointData)
+		endpointObservations := machine.NewEndpointObservations()
 		for {
-			endpoints, metricStore := appStats.ActiveEndpointIds()
+			endpoints, metricStore := endpointStore.AllActiveWithStore()
 			sweepTime := time.Now()
 			for _, endpoint := range endpoints {
-				app := appStats.ByEndpointId(endpoint)
-				// app shouldn't be nil, but just in case.
-				if app == nil {
-					continue
-				}
-				endpointData := endpointToData[endpoint]
+				endpointData := endpointToData[endpoint.App.EP]
 				if endpointData == nil {
-					endpointData = datastructs.NewEndpointData()
+					endpointData = endpointdata.NewEndpointData()
 				}
-				if endpoint.Port() == 6910 {
-					if cloudHealthChannel != nil || cloudHealthLmmChannel != nil {
-						endpointData = endpointData.UpdateForCloudHealth(
-							app, combineFsMap, *fCloudHealthTest)
-					}
-					if cloudWatchChannel != nil {
-						endpointData = endpointData.UpdateForCloudWatch(
-							app, *fCloudWatchFreq, *fCloudWatchTest)
-					}
+				if cloudHealthChannel != nil || cloudHealthLmmChannel != nil {
+					endpointData = endpointData.UpdateForCloudHealth(endpoint)
 				}
-				endpointToData[endpoint] = endpointData
+				if cloudWatchChannel != nil {
+					endpointData = endpointData.UpdateForCloudWatch(endpoint)
+				}
+				endpointToData[endpoint.App.EP] = endpointData
 
 				maybeCisQueue := cisQueue
 				// If there is a regex filter and our machine doesn't match
 				// nil out the cisQueue so that we don't send to CIS.
-				if cisRegex != nil && !cisRegex.MatchString(endpoint.HostName()) {
+				if cisRegex != nil && !cisRegex.MatchString(endpoint.App.EP.HostName()) {
 					maybeCisQueue = nil
 				}
 
 				pollLogger := &loggerType{
 					Store:                 metricStore,
-					AppStats:              appStats,
-					App:                   app,
+					AppStats:              endpointStore,
+					App:                   endpoint,
 					ConnectionErrors:      connectionErrors,
 					CollectionTimesDist:   collectionTimesDist,
 					ByProtocolDist:        byProtocolDist,
@@ -562,7 +516,8 @@ func startCollector(
 					EndpointData:          endpointData,
 				}
 
-				endpoint.Poll(sweepTime, pollLogger)
+				portNum := endpoint.App.Port
+				endpoint.App.EP.Poll(sweepTime, portNum, pollLogger)
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)
@@ -570,6 +525,13 @@ func startCollector(
 			if sweepDuration < *fCollectionFrequency {
 				time.Sleep((*fCollectionFrequency) - sweepDuration)
 			}
+			if myHostNameStr := myHostName.String(); myHostNameStr != "" {
+				endpointObservations.Save(myHostNameStr, nil)
+				endpointObservations.MaybeAddApp(myHostNameStr, *fName, *fPort)
+			}
+			endpointStore.UpdateEndpoints(
+				duration.TimeToFloat(time.Now()),
+				endpointObservations.GetAll())
 		}
 	}()
 

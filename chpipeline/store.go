@@ -34,9 +34,9 @@ func (s *SnapshotStore) getAll() []*Snapshot {
 	return result
 }
 
-func computeId(hostName string, port uint) string {
+func computeId(hostName, appName string) string {
 	hash := sha256.New()
-	fmt.Fprintf(hash, "%s:%d", hostName, port)
+	fmt.Fprintf(hash, "%s:%s", hostName, appName)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

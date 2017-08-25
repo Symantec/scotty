@@ -60,8 +60,14 @@ type InstanceStats struct {
 // WithCombinedFsStats returns an instance like this one but with the file
 // system stats combined using the CombineFsStats() function.
 func (s InstanceStats) WithCombinedFsStats() InstanceStats {
-	s.Fss = []FsStats{CombineFsStats(s.Fss)}
+	s.CombineFsStats()
 	return s
+}
+
+// CombineFsStats combines the file system stats of this instance in
+// place using the CombineFsStats() function.
+func (s *InstanceStats) CombineFsStats() {
+	s.Fss = []FsStats{CombineFsStats(s.Fss)}
 }
 
 // CPUUsedPercent returns CPU usage between 0.0 and 100.0. Returns false
@@ -193,7 +199,7 @@ func (r *RollUpStats) Clear() {
 type SnapshotStore struct {
 	dirPath   string
 	hostName  string
-	port      uint
+	appName   string
 	span      time.Duration
 	id        string
 	snapshots list.List
@@ -207,20 +213,20 @@ type SnapshotStore struct {
 // in newly created instance. The difference between the oldest and newest
 // snapshot will never exceed span.
 func NewSnapshotStore(
-	dirPath string, hostName string, port uint, span time.Duration) *SnapshotStore {
+	dirPath string, hostName string, appName string, span time.Duration) *SnapshotStore {
 	result := &SnapshotStore{
 		dirPath:  dirPath,
 		hostName: hostName,
-		port:     port,
+		appName:  appName,
 		span:     span,
-		id:       computeId(hostName, port)}
+		id:       computeId(hostName, appName)}
 	result.snapshots.Init()
 	return result
 }
 
 func (s *SnapshotStore) HostName() string { return s.hostName }
 
-func (s *SnapshotStore) Port() uint { return s.port }
+func (s *SnapshotStore) AppName() string { return s.appName }
 
 // Load loads this instance's data from the file system into this instance.
 func (s *SnapshotStore) Load() error {

@@ -2,7 +2,6 @@
 package scotty
 
 import (
-	"github.com/Symantec/scotty/lib/preference"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"sync"
@@ -131,23 +130,23 @@ type Logger interface {
 type Endpoint struct {
 	// These fields are immutable
 	host           string
-	port           uint
-	connectors     []*connectorType
+	name           string
+	conn           sources.ResourceConnector
 	onePollAtATime chan bool
 	// These fields read and changed only by goroutine that has the
 	// onePollAtATime semaphore
-	state   *State
-	errored bool
-	lock    sync.Mutex
-	// These fields ready and changed by multiple goroutines
-	connectorPreference *preference.Preference
+	state        *State
+	errored      bool
+	lock         sync.Mutex
+	resourcePort uint
+	resource     sources.Resource
 }
 
 // NewEndpointWithConnector creates a new endpoint for given host, port
 // and connector.
 func NewEndpointWithConnector(
-	hostname string, port uint, connectors []sources.Connector) *Endpoint {
-	return newEndpoint(hostname, port, connectors)
+	hostname, appName string, connector sources.Connector) *Endpoint {
+	return newEndpoint(hostname, appName, connector)
 }
 
 // HostName returns the host name of the endpoint.
@@ -155,14 +154,14 @@ func (e *Endpoint) HostName() string {
 	return e.host
 }
 
-// Port returns the port to collect metrics.
-func (e *Endpoint) Port() uint {
-	return e.port
+// AppName returns the app name of the endpoint.
+func (e *Endpoint) AppName() string {
+	return e.name
 }
 
 // ConnectorName returns the name of the underlying connector in this endpoint.
 func (e *Endpoint) ConnectorName() string {
-	return e.connectors[e.firstConnectionIndex()].Name()
+	return e.conn.Name()
 }
 
 // Poll polls for metrics for this endpoint asynchronously.
@@ -170,9 +169,10 @@ func (e *Endpoint) ConnectorName() string {
 // requests for metrics are in progress. Poll returns immediately if this
 // instance is already in the process of collecting metrics.
 // sweepStartTime is the start time of the current collection of metrics.
+// port is the port to use to connect.
 // logger logs collection events for this polling
-func (e *Endpoint) Poll(sweepStartTime time.Time, logger Logger) {
-	e.poll(sweepStartTime, logger)
+func (e *Endpoint) Poll(sweepStartTime time.Time, port uint, logger Logger) {
+	e.poll(sweepStartTime, port, logger)
 }
 
 // SetConcurrentPolls sets the maximum number of concurrent polls.

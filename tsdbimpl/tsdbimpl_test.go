@@ -2,10 +2,10 @@ package tsdbimpl_test
 
 import (
 	"github.com/Symantec/Dominator/lib/mdb"
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/application"
+	"github.com/Symantec/scotty/awsinfo"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/metrics"
-	"github.com/Symantec/scotty/sources"
-	"github.com/Symantec/scotty/sources/trisource"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdb/aggregators"
@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 )
 
 func addValues(
@@ -51,46 +52,64 @@ func toMachines(hostNames []string) []mdb.Machine {
 }
 
 func TestAPI(t *testing.T) {
-	alBuilder := datastructs.NewApplicationListBuilder()
-	alBuilder.Add(
-		37, "AnApp", sources.ConnectorList{trisource.GetConnector()})
-	alBuilder.Add(
-		97, "AnotherApp", sources.ConnectorList{trisource.GetConnector()})
-	appList := alBuilder.Build()
-	appStatus := datastructs.NewApplicationStatuses(
-		appList,
-		newStore(
-			t, "TestAPI", 2, 100, 1.0, 10))
-	appStatus.MarkHostsActiveExclusively(
+	appStatus := machine.NewEndpointStore(
+		newStore(t, "TestAPI", 2, 100, 1.0, 10),
+		awsinfo.Config{CloudWatchRefresh: 5 * time.Minute},
+		3)
+	appStatus.UpdateMachines(
 		100.0,
 		toMachines([]string{"host1", "host2", "host3", "host4", "host5"}))
-	endpointId, aStore := appStatus.EndpointIdByHostAndName(
-		"host1", "AnApp")
-	addValues(t, aStore, endpointId, "/foo",
+	appStatus.UpdateEndpoints(
+		100.0,
+		map[string]machine.EndpointObservation{
+			"host1": {
+				SeqNo:     1,
+				Endpoints: map[string]uint{"AnotherApp": 6997},
+			},
+			"host2": {
+				SeqNo:     1,
+				Endpoints: map[string]uint{"AnotherApp": 6997},
+			},
+			"host3": {
+				SeqNo:     1,
+				Endpoints: map[string]uint{"AnotherApp": 6997},
+			},
+			"host4": {
+				SeqNo:     1,
+				Endpoints: map[string]uint{"AnotherApp": 6997},
+			},
+			"host5": {
+				SeqNo:     1,
+				Endpoints: map[string]uint{"AnotherApp": 6997},
+			},
+		})
+	endpointId, aStore := appStatus.ByHostAndName(
+		"host1", application.HealthAgentName)
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 30.0, 500.0, 31.0, 510.0, 32.0, 520.0, 33.0, 530.0, 34.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+	endpointId, aStore = appStatus.ByHostAndName(
 		"host1", "AnotherApp")
-	addValues(t, aStore, endpointId, "/foo",
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 40.0, 500.0, 41.0, 510.0, 42.0, 520.0, 43.0, 530.0, 44.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
-		"host2", "AnApp")
-	addValues(t, aStore, endpointId, "/foo",
+	endpointId, aStore = appStatus.ByHostAndName(
+		"host2", application.HealthAgentName)
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 50.0, 500.0, 51.0, 510.0, 52.0, 520.0, 53.0, 530.0, 54.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+	endpointId, aStore = appStatus.ByHostAndName(
 		"host2", "AnotherApp")
-	addValues(t, aStore, endpointId, "/foo",
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 60.0, 500.0, 61.0, 510.0, 62.0, 520.0, 63.0, 530.0, 64.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
-		"host3", "AnApp")
-	addValues(t, aStore, endpointId, "/foo",
+	endpointId, aStore = appStatus.ByHostAndName(
+		"host3", application.HealthAgentName)
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 70.0, 500.0, 71.0, 510.0, 72.0, 520.0, 73.0, 530.0, 74.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
+	endpointId, aStore = appStatus.ByHostAndName(
 		"host3", "AnotherApp")
-	addValues(t, aStore, endpointId, "/foo",
+	addValues(t, aStore, endpointId.App.EP, "/foo",
 		490.0, 80.0, 500.0, 81.0, 510.0, 82.0, 520.0, 83.0, 530.0, 84.0)
-	endpointId, aStore = appStatus.EndpointIdByHostAndName(
-		"host5", "AnApp")
-	addValues(t, aStore, endpointId, "/bar",
+	endpointId, aStore = appStatus.ByHostAndName(
+		"host5", application.HealthAgentName)
+	addValues(t, aStore, endpointId.App.EP, "/bar",
 		700.0, 80.0, 800.0, 100.0)
 	var taggedTimeSeriesSet *tsdb.TaggedTimeSeriesSet
 	var err error
@@ -315,18 +334,18 @@ func TestAPI(t *testing.T) {
 		Data: []tsdb.TaggedTimeSeries{
 			{
 				Tags: tsdb.TagSet{
-					AppName: "AnApp",
-				},
-				Values: tsdb.TimeSeries{
-					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
-				},
-			},
-			{
-				Tags: tsdb.TagSet{
 					AppName: "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
 					{500.0, 60.5}, {520.0, 62.5}, {540.0, 64},
+				},
+			},
+			{
+				Tags: tsdb.TagSet{
+					AppName: application.HealthAgentName,
+				},
+				Values: tsdb.TimeSeries{
+					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
 				},
 			},
 		},
@@ -365,15 +384,6 @@ func TestAPI(t *testing.T) {
 			{
 				Tags: tsdb.TagSet{
 					HostName: "host1",
-					AppName:  "AnApp",
-				},
-				Values: tsdb.TimeSeries{
-					{500.0, 30.5}, {520.0, 32.5}, {540.0, 34.0},
-				},
-			},
-			{
-				Tags: tsdb.TagSet{
-					HostName: "host1",
 					AppName:  "AnotherApp",
 				},
 				Values: tsdb.TimeSeries{
@@ -382,11 +392,11 @@ func TestAPI(t *testing.T) {
 			},
 			{
 				Tags: tsdb.TagSet{
-					HostName: "host2",
-					AppName:  "AnApp",
+					HostName: "host1",
+					AppName:  application.HealthAgentName,
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
+					{500.0, 30.5}, {520.0, 32.5}, {540.0, 34.0},
 				},
 			},
 			{
@@ -400,11 +410,11 @@ func TestAPI(t *testing.T) {
 			},
 			{
 				Tags: tsdb.TagSet{
-					HostName: "host3",
-					AppName:  "AnApp",
+					HostName: "host2",
+					AppName:  application.HealthAgentName,
 				},
 				Values: tsdb.TimeSeries{
-					{500.0, 70.5}, {520.0, 72.5}, {540.0, 74.0},
+					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
 				},
 			},
 			{
@@ -414,6 +424,15 @@ func TestAPI(t *testing.T) {
 				},
 				Values: tsdb.TimeSeries{
 					{500.0, 80.5}, {520.0, 82.5}, {540.0, 84.0},
+				},
+			},
+			{
+				Tags: tsdb.TagSet{
+					HostName: "host3",
+					AppName:  application.HealthAgentName,
+				},
+				Values: tsdb.TimeSeries{
+					{500.0, 70.5}, {520.0, 72.5}, {540.0, 74.0},
 				},
 			},
 		},
@@ -463,7 +482,7 @@ func TestAPI(t *testing.T) {
 			return s == "host2" || s == "host3"
 		}),
 		AppNameFilter: tagFilter(func(s string) bool {
-			return s == "AnApp"
+			return s == application.HealthAgentName
 		}),
 		GroupByHostName: true,
 		GroupByAppName:  true,
@@ -491,7 +510,7 @@ func TestAPI(t *testing.T) {
 			{
 				Tags: tsdb.TagSet{
 					HostName: "host2",
-					AppName:  "AnApp",
+					AppName:  application.HealthAgentName,
 				},
 				Values: tsdb.TimeSeries{
 					{500.0, 50.5}, {520.0, 52.5}, {540.0, 54.0},
@@ -500,7 +519,7 @@ func TestAPI(t *testing.T) {
 			{
 				Tags: tsdb.TagSet{
 					HostName: "host3",
-					AppName:  "AnApp",
+					AppName:  application.HealthAgentName,
 				},
 				Values: tsdb.TimeSeries{
 					{500.0, 70.5}, {520.0, 72.5}, {540.0, 74.0},
@@ -521,7 +540,7 @@ func TestAPI(t *testing.T) {
 			return s == "host2" || s == "host3"
 		}),
 		AppNameFilter: tagFilter(func(s string) bool {
-			return s == "AnApp"
+			return s == application.HealthAgentName
 		}),
 	}
 	if taggedTimeSeriesSet, err = tsdbimpl.Query(

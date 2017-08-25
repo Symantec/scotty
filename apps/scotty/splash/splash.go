@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/Symantec/Dominator/lib/html"
 	"github.com/Symantec/scotty/apps/scotty/showallapps"
-	"github.com/Symantec/scotty/datastructs"
+	"github.com/Symantec/scotty/machine"
 	"html/template"
 	"io"
 	"net/http"
@@ -44,7 +44,7 @@ type view struct {
 }
 
 func newView(
-	apps []*datastructs.ApplicationStatus) *view {
+	apps []*machine.Endpoint) *view {
 	var result = &view{}
 	result.Summary.Init(apps)
 	return result
@@ -55,7 +55,7 @@ type HtmlWriter interface {
 }
 
 type Handler struct {
-	AS  *datastructs.ApplicationStatuses
+	ES  *machine.EndpointStore
 	Log HtmlWriter
 }
 
@@ -64,7 +64,7 @@ func (h *Handler) ServeHTTP(
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
 	w.Header().Set("Content-Type", "text/html")
-	result := h.AS.All()
+	result, _ := h.ES.AllWithStore()
 	fmt.Fprintln(writer, "<html>")
 	fmt.Fprintln(writer, "<title>Scotty status page</title>")
 	fmt.Fprintln(writer, "<body>")

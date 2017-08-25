@@ -3,8 +3,8 @@ package showallapps
 import (
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/httputil"
+	"github.com/Symantec/scotty/machine"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -37,25 +37,25 @@ const (
 	\ {{with $top := .}} \
 	\ {{range .Apps}} \
 	  <tr>
-	  <td>{{.EndpointId.HostName}}<br>{{.InstanceId}}<br>{{.AccountNumber}}<br>{{if .DoCloudHealth $top.CloudHealthTest}}CH&nbsp;{{end}}{{if .DoCloudWatchStr $top.DefaultCwRate $top.CloudWatchTest}}CW: {{.DoCloudWatchStr $top.DefaultCwRate $top.CloudWatchTest}}{{end}}</td>
-	    <td>{{.EndpointId.Port}}</td>
-	    <td><a href="{{$top.Link .}}">{{.Name}}</a></td>
+	  <td>{{.App.EP.HostName}}<br>{{.M.InstanceId}}<br>{{.M.AccountId}}<br>{{if .M.CloudHealth}}CH&nbsp;{{end}}{{if .M.CloudWatchStr}}CW: {{.M.CloudWatchStr}}{{end}}</td>
+	    <td>{{.App.Port}}</td>
+	    <td><a href="{{$top.Link .}}">{{.App.EP.AppName}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
-	    \ {{if .Down}} \
+	    \ {{if .App.Down}} \
 	      <td>Yes</td>
 	      <td>
-	        {{.Status}}<br>
-                {{.LastErrorTimeStr}}<br>
-		{{.LastError}}
+	        {{.App.Status}}<br>
+                {{.App.LastErrorTimeStr}}<br>
+		{{.App.LastError}}
               </td>
 	    \ {{else}} \
 	      <td>No</td>
-	      <td>{{.Status}} {{.EndpointId.ConnectorName}}</td>
+	      <td>{{.App.Status}} {{.App.EP.ConnectorName}}</td>
 	    \ {{end}} \
-	    <td>{{if .Staleness}}{{.Staleness}}{{else}}&nbsp;{{end}}</td>
-	    <td>{{with .InitialMetricCount}}{{.}}{{else}}&nbsp;{{end}}</td>
-	    <td>{{with .AverageChangedMetrics}}{{$top.Float32 .}}{{else}}&nbsp;{{end}}</td>
-	    <td>{{if .PollTime}}{{.PollTime}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{if .App.Staleness}}{{.App.Staleness}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{with .App.InitialMetricCount}}{{.}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{with .App.AverageChangedMetrics}}{{$top.Float32 .}}{{else}}&nbsp;{{end}}</td>
+	    <td>{{with .App.PollTime}}{{.}}{{else}}&nbsp;{{end}}</td>
 	  </tr>
 	\ {{end}} \
 	\ {{end}} \
@@ -83,24 +83,22 @@ var (
 )
 
 type view struct {
-	Apps            []*datastructs.ApplicationStatus
-	Summary         EndpointSummary
-	History         string
-	CloudHealthTest bool
-	CloudWatchTest  bool
-	DefaultCwRate   time.Duration
+	Apps          []*machine.Endpoint
+	Summary       EndpointSummary
+	History       string
+	DefaultCwRate time.Duration
 }
 
 func (v *view) Float32(x float64) float32 {
 	return float32(x)
 }
 
-func (v *view) Link(app *datastructs.ApplicationStatus) *url.URL {
+func (v *view) Link(app *machine.Endpoint) *url.URL {
 	return httputil.NewUrl(
 		fmt.Sprintf(
 			"/api/hosts/%s/%s",
-			app.EndpointId.HostName(),
-			app.Name),
+			app.App.EP.HostName(),
+			app.App.EP.AppName()),
 		"format", "text",
 		"history", v.History)
 }
@@ -111,15 +109,15 @@ type EndpointSummary struct {
 	TotalFailedEndpoints int
 }
 
-func (e *EndpointSummary) Init(apps []*datastructs.ApplicationStatus) {
-	e.TotalEndpoints = len(apps)
+func (e *EndpointSummary) Init(endpoints []*machine.Endpoint) {
+	e.TotalEndpoints = len(endpoints)
 	e.TotalActiveEndpoints = 0
 	e.TotalFailedEndpoints = 0
-	for _, app := range apps {
-		if !app.Active {
+	for _, endpoint := range endpoints {
+		if !endpoint.Active() {
 			continue
 		}
-		if app.Down {
+		if endpoint.App.Down {
 			e.TotalFailedEndpoints++
 		}
 		e.TotalActiveEndpoints++
@@ -127,12 +125,8 @@ func (e *EndpointSummary) Init(apps []*datastructs.ApplicationStatus) {
 }
 
 type Handler struct {
-	AS              *datastructs.ApplicationStatuses
-	CollectionFreq  time.Duration
-	CloudHealthTest bool
-	CloudWatchTest  bool
-	DefaultCwRate   time.Duration
-	Logger          log.Logger
+	ES     *machine.EndpointStore
+	Logger log.Logger
 }
 
 func (h *Handler) ServeHTTP(
@@ -140,14 +134,14 @@ func (h *Handler) ServeHTTP(
 	r.ParseForm()
 	up := r.Form.Get("up") != ""
 	w.Header().Set("Content-Type", "text/html")
-	result := h.AS.All()
-	datastructs.ByHostAndName(result)
+	result, _ := h.ES.AllWithStore()
+	machine.ByHostAndName(result)
 	var summary EndpointSummary
 	summary.Init(result)
 	if up {
-		var toDisplay []*datastructs.ApplicationStatus
+		var toDisplay []*machine.Endpoint
 		for _, app := range result {
-			if app.Active && !app.Down {
+			if app.Active() && !app.App.Down {
 				toDisplay = append(toDisplay, app)
 			}
 		}
@@ -162,14 +156,11 @@ func (h *Handler) ServeHTTP(
 
 func (h *Handler) newView(
 	summary EndpointSummary,
-	toDisplay []*datastructs.ApplicationStatus) *view {
+	toDisplay []*machine.Endpoint) *view {
 	result := &view{
-		Apps:            toDisplay,
-		Summary:         summary,
-		History:         "0",
-		CloudHealthTest: h.CloudHealthTest,
-		CloudWatchTest:  h.CloudWatchTest,
-		DefaultCwRate:   h.DefaultCwRate,
+		Apps:    toDisplay,
+		Summary: summary,
+		History: "0",
 	}
 	return result
 }

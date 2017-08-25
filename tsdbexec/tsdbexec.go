@@ -3,8 +3,8 @@ package tsdbexec
 import (
 	"errors"
 	"fmt"
-	"github.com/Symantec/scotty/datastructs"
 	"github.com/Symantec/scotty/lib/apiutil"
+	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/suggest"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdbimpl"
@@ -72,7 +72,7 @@ func ensureDurationAtLeast(
 
 func query(
 	request *tsdbjson.QueryRequest,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	minDownSampleTime time.Duration) (
 	result []tsdbjson.TimeSeries, err error) {
 	parsedQueries, err := tsdbjson.ParseQueryRequest(request)
@@ -97,7 +97,7 @@ func query(
 
 func runParsedQueries(
 	requests []tsdbjson.ParsedQuery,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	minDownSampleTime time.Duration) (
 	[]*tsdb.TaggedTimeSeriesSet, error) {
 	results := make([]*tsdb.TaggedTimeSeriesSet, len(requests))
@@ -118,7 +118,7 @@ func runParsedQueries(
 
 func runSingleParsedQuery(
 	request tsdbjson.ParsedQuery,
-	endpoints *datastructs.ApplicationStatuses,
+	endpoints *machine.EndpointStore,
 	minDownSampleTime time.Duration) (
 	result *tsdb.TaggedTimeSeriesSet, err error) {
 	var options tsdbimpl.QueryOptions

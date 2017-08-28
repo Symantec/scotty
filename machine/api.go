@@ -48,8 +48,9 @@ func (e *EndpointObservations) GetAll() map[string]EndpointObservation {
 }
 
 // MaybeAddApp atomically adds an application for hostName if its port
-// isn't there already. If nothing has been previously stored for hostName,
-// MaybeAddApp does nothing.
+// isn't there already without incrementing the sequence number. If nothing
+// has been previously stored for hostName, MaybeAddApp adds scotty and sets
+// the sequence number to 1.
 func (e *EndpointObservations) MaybeAddApp(hostName, appName string, port uint) {
 	e.maybeAddApp(hostName, appName, port)
 }

@@ -29,7 +29,10 @@ func (e *EndpointObservations) maybeAddApp(
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	eo := e.data[hostName]
-	if eo.SeqNo > 0 && !eo.Endpoints.HasPort(port) {
+	if !eo.Endpoints.HasPort(port) {
+		if eo.SeqNo == 0 {
+			eo.SeqNo = 1
+		}
 		endpointsCopy := eo.Endpoints.Copy()
 		endpointsCopy.Add(appName, port)
 		eo.Endpoints = endpointsCopy

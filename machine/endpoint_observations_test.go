@@ -46,6 +46,7 @@ func TestEndpointObservations(t *testing.T) {
 			},
 		})
 		eos.MaybeAddApp("host1", "scotty", 6980)
+		eos.MaybeAddApp("host1", "scotty", 6980)
 		So(eos.GetAll(), ShouldResemble, map[string]machine.EndpointObservation{
 			"host1": machine.EndpointObservation{
 				SeqNo: 1,
@@ -75,6 +76,10 @@ func TestEndpointObservations(t *testing.T) {
 			"host2": machine.EndpointObservation{
 				SeqNo:     2,
 				Endpoints: namesandports.NamesAndPorts{"scotty": 6980},
+			},
+			"host3": machine.EndpointObservation{
+				SeqNo:     1,
+				Endpoints: namesandports.NamesAndPorts{"mi": 6980},
 			},
 		})
 	})

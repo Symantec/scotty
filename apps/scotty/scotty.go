@@ -171,11 +171,13 @@ func loadTestMdbChannel(count int) <-chan *mdb.Mdb {
 }
 
 func getMyHostName(machines []mdb.Machine, myIpAddrs []string) string {
+	myIpAddrsMap := make(map[string]struct{}, len(myIpAddrs))
+	for _, addr := range myIpAddrs {
+		myIpAddrsMap[addr] = struct{}{}
+	}
 	for _, machine := range machines {
-		for _, ipaddr := range myIpAddrs {
-			if ipaddr == machine.IpAddress {
-				return machine.Hostname
-			}
+		if _, ok := myIpAddrsMap[machine.IpAddress]; ok {
+			return machine.Hostname
 		}
 	}
 	return ""

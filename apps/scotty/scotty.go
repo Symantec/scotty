@@ -52,6 +52,10 @@ var (
 	}
 )
 
+const (
+	kHostNotFoundMsg = "The host on which this instance of scotty is running is not in mdb."
+)
+
 var (
 	fMdbLoadTesting = flag.Int(
 		"mdbLoadTesting",
@@ -240,6 +244,9 @@ func createEndpointStore(
 		tagvAdder.Add(aName)
 	}
 	myHostNameStr := getMyHostName(machines.Machines, myIpAddrs)
+	if myHostNameStr == "" {
+		logger.Println(kHostNotFoundMsg)
+	}
 	myHostName.SetString(myHostNameStr)
 	fmt.Println("My host name", myHostNameStr)
 
@@ -250,7 +257,11 @@ func createEndpointStore(
 	go func() {
 		for {
 			machines := <-mdbChannel
-			myHostName.SetString(getMyHostName(machines.Machines, myIpAddrs))
+			myHostNameStr := getMyHostName(machines.Machines, myIpAddrs)
+			if myHostNameStr == "" {
+				logger.Println(kHostNotFoundMsg)
+			}
+			myHostName.SetString(myHostNameStr)
 			stats.UpdateMachines(
 				duration.TimeToFloat(time.Now()),
 				machines.Machines)

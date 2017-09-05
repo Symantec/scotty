@@ -1,10 +1,10 @@
 package scotty
 
 import (
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"runtime"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -145,18 +145,12 @@ func asResourceConnector(
 	return &resourceConnector{Connector: connector}
 }
 
-func ignorePastStar(hostName string) string {
-	idx := strings.Index(hostName, "*")
-	if idx == -1 {
-		return hostName
-	}
-	return hostName[:idx]
-}
-
 func newEndpoint(
-	host string, appName string, connector sources.Connector) *Endpoint {
+	hostId *hostid.HostID,
+	appName string,
+	connector sources.Connector) *Endpoint {
 	return &Endpoint{
-		host:           host,
+		hostId:         hostId,
 		name:           appName,
 		conn:           asResourceConnector(connector),
 		onePollAtATime: make(chan bool, 1),
@@ -200,7 +194,7 @@ func (e *Endpoint) getResource(port uint) sources.Resource {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	if e.resource == nil || port != e.resourcePort {
-		e.resource = e.conn.NewResource(e.host, port)
+		e.resource = e.conn.NewResource(e.hostId.ConnectID(), port)
 		e.resourcePort = port
 	}
 	return e.resource

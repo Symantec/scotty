@@ -2,6 +2,7 @@ package application
 
 import (
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/namesandports"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/jsonsource"
@@ -22,7 +23,7 @@ type applicationDataType struct {
 	InactiveCount int
 }
 
-func newGroup(host string, countToInactivate int) (*Group, *scotty.Endpoint) {
+func newGroup(host *hostid.HostID, countToInactivate int) (*Group, *scotty.Endpoint) {
 	ep := scotty.NewEndpointWithConnector(
 		host, HealthAgentName, kConnector)
 	appData := &applicationDataType{

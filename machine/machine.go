@@ -4,6 +4,7 @@ import (
 	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/application"
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/store"
 	"time"
 )
@@ -69,7 +70,11 @@ func (e *EndpointStore) _updateMachines(
 			m.M.Active = true
 			m.M.Aws = e.config.GetAwsInfo(ahost.AwsMetadata)
 			var ep *scotty.Endpoint
-			m.Group, ep = application.NewGroup(ahost.Hostname, e.countToInactivate)
+			m.Group, ep = application.NewGroup(
+				&hostid.HostID{
+					HostName:  ahost.Hostname,
+					IPAddress: ahost.IpAddress},
+				e.countToInactivate)
 			if storeCopy == e.astore {
 				storeCopy = e.astore.ShallowCopy()
 			}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/application"
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/namesandports"
 	. "github.com/smartystreets/goconvey/convey"
 	"testing"
@@ -11,7 +12,7 @@ import (
 
 func TestApi(t *testing.T) {
 	Convey("Api testing", t, func() {
-		group, healthAgentEp := application.NewGroup("ahost", 3)
+		group, healthAgentEp := application.NewGroup(&hostid.HostID{HostName: "ahost"}, 3)
 		So(healthAgentEp.HostName(), ShouldEqual, "ahost")
 		So(healthAgentEp.AppName(), ShouldEqual, application.HealthAgentName)
 		newapps, active, inactive := group.SetApplications(

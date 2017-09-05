@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/Symantec/Dominator/lib/log"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/application"
 	"github.com/Symantec/scotty/chpipeline"
@@ -24,7 +25,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
-	"log"
 	"os"
 	"path"
 	"regexp"
@@ -317,7 +317,7 @@ func startCollector(
 	metricNameAdder suggest.Adder,
 	memoryChecker memoryCheckerType,
 	myHostName *stringType,
-	logger *log.Logger) {
+	logger log.Logger) {
 	collector.SetConcurrentPolls(*fPollCount)
 	collector.SetConcurrentConnects(*fConnectionCount)
 
@@ -332,28 +332,28 @@ func startCollector(
 		collectionTimesDist,
 		units.Second,
 		"Collection Times"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
 		"collector/collectionTimes_tricorder",
 		tricorderCollectionTimesDist,
 		units.Second,
 		"Tricorder Collection Times"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
 		"collector/changedMetricsPerEndpoint",
 		changedMetricsPerEndpointDist,
 		units.None,
 		"Changed metrics per sweep"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
 		"collector/sweepDuration",
 		sweepDurationDist,
 		units.Millisecond,
 		"Sweep duration"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	programStartTime := time.Now()
 	if err := tricorder.RegisterMetric(
@@ -363,7 +363,7 @@ func startCollector(
 		},
 		units.Second,
 		"elapsed time"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	byProtocolDist := map[string]*tricorder.CumulativeDistribution{
@@ -381,7 +381,7 @@ func startCollector(
 			"cloudHealth",
 			logger)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		cloudHealthChannel = make(chan []*chpipeline.Snapshot, 10000)
 		if err := tricorder.RegisterMetric(
@@ -391,7 +391,7 @@ func startCollector(
 			},
 			units.None,
 			"Length of cloud health channel"); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}
 
@@ -406,7 +406,7 @@ func startCollector(
 			"cloudHealthLmm",
 			logger)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		cloudHealthLmmChannel = make(chan *chpipeline.Snapshot, 10000)
 		if err := tricorder.RegisterMetric(
@@ -416,7 +416,7 @@ func startCollector(
 			},
 			units.None,
 			"Length of cloud health lmm channel"); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}
 
@@ -432,7 +432,7 @@ func startCollector(
 			"cloudwatch",
 			logger)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		cloudWatchChannel = make(chan *chpipeline.Snapshot, 10000)
 		if err := tricorder.RegisterMetric(
@@ -442,7 +442,7 @@ func startCollector(
 			},
 			units.None,
 			"Length of cloud watch channel"); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}
 
@@ -461,14 +461,14 @@ func startCollector(
 			})
 		bulkCisClient = cis.NewBuffered(*fCisBufferSize, cisClient)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		cisQueue = keyedqueue.New()
 		if *fCisRegex != "" {
 			var err error
 			cisRegex, err = regexp.Compile(*fCisRegex)
 			if err != nil {
-				log.Fatal(err)
+				logger.Fatal(err)
 			}
 		}
 	}
@@ -538,34 +538,36 @@ func startCollector(
 	}()
 
 	if cisQueue != nil && bulkCisClient != nil {
-		startCisLoop(cisQueue, bulkCisClient, programStartTime)
+		startCisLoop(cisQueue, bulkCisClient, programStartTime, logger)
 	}
 
 	if cloudHealthConfig != nil && cloudHealthChannel != nil {
-		startCloudFireLoop(cloudHealthConfig, cloudHealthChannel)
+		startCloudHealthLoop(cloudHealthConfig, cloudHealthChannel, logger)
 	}
 
 	if cloudHealthLmmConfig != nil && cloudHealthLmmChannel != nil {
 		startSnapshotLoop(
 			"cloudhealthlmm",
 			cloudHealthLmmConfig,
-			cloudHealthLmmChannel)
+			cloudHealthLmmChannel,
+			logger)
 	}
 
 	if cloudWatchConfig != nil && cloudWatchChannel != nil {
 		startSnapshotLoop(
-			"cloudwatch", cloudWatchConfig, cloudWatchChannel)
+			"cloudwatch", cloudWatchConfig, cloudWatchChannel, logger)
 	}
 }
 
 func startSnapshotLoop(
 	parentDir string,
 	config *dynconfig.DynConfig,
-	channel chan *chpipeline.Snapshot) {
+	channel chan *chpipeline.Snapshot,
+	logger log.Logger) {
 
 	writerMetrics, err := trimetrics.NewWriterMetrics(parentDir)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	go func() {
@@ -574,6 +576,7 @@ func startSnapshotLoop(
 			writer := config.Get().(snapshotWriterType)
 			writeStartTime := time.Now()
 			if err := writer.Write(snapshot); err != nil {
+				logger.Printf("%s: %v", parentDir, err)
 				writerMetrics.LogError(time.Since(writeStartTime), 1, err)
 			} else {
 				writerMetrics.LogSuccess(time.Since(writeStartTime), 1)
@@ -583,13 +586,14 @@ func startSnapshotLoop(
 
 }
 
-func startCloudFireLoop(
+func startCloudHealthLoop(
 	cloudHealthConfig *dynconfig.DynConfig,
-	cloudHealthChannel chan []*chpipeline.Snapshot) {
+	cloudHealthChannel chan []*chpipeline.Snapshot,
+	logger log.Logger) {
 
 	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	go func() {
@@ -605,7 +609,8 @@ func startCloudFireLoop(
 					// Current snapshot too big to send to cloudhealth
 
 					// Flush the buffer
-					flushCloudHealthBuffer(buffer, writer, writerMetrics)
+					flushCloudHealthBuffer(
+						buffer, writer, writerMetrics, logger)
 
 					// Write instance data and first part of file system
 					// data
@@ -613,7 +618,8 @@ func startCloudFireLoop(
 						writer,
 						[]cloudhealth.InstanceData{newCall.Instance},
 						newCall.Fss,
-						writerMetrics)
+						writerMetrics,
+						logger)
 
 					// Write remaining file system data
 					for _, fsCall := range fsCalls {
@@ -621,13 +627,15 @@ func startCloudFireLoop(
 							writer,
 							nil,
 							fsCall,
-							writerMetrics)
+							writerMetrics,
+							logger)
 					}
 				} else {
 					// Current snapshot small enough to send to cloud health
 					if !buffer.Add(newCall.Instance, newCall.Fss) {
 						// Buffer full. Flush it first.
-						flushCloudHealthBuffer(buffer, writer, writerMetrics)
+						flushCloudHealthBuffer(
+							buffer, writer, writerMetrics, logger)
 
 						// Adding snapshot to empty buffer should succeed
 						if !buffer.Add(newCall.Instance, newCall.Fss) {
@@ -636,7 +644,7 @@ func startCloudFireLoop(
 					}
 				} // send snapshot
 			} // send all snapshots
-			flushCloudHealthBuffer(buffer, writer, writerMetrics)
+			flushCloudHealthBuffer(buffer, writer, writerMetrics, logger)
 		}
 	}()
 }
@@ -645,9 +653,11 @@ func cloudHealthWrite(
 	writer *cloudhealth.Writer,
 	instances []cloudhealth.InstanceData,
 	fss []cloudhealth.FsData,
-	metrics *trimetrics.WriterMetrics) {
+	metrics *trimetrics.WriterMetrics,
+	logger log.Logger) {
 	writeStartTime := time.Now()
 	if _, err := writer.Write(instances, fss); err != nil {
+		logger.Printf("Error writing to cloud health: %s", err)
 		metrics.LogError(
 			time.Since(writeStartTime), uint64(len(instances)), err)
 	} else {
@@ -658,19 +668,21 @@ func cloudHealthWrite(
 func flushCloudHealthBuffer(
 	buffer *cloudhealth.Buffer,
 	writer *cloudhealth.Writer,
-	metrics *trimetrics.WriterMetrics) {
+	metrics *trimetrics.WriterMetrics,
+	logger log.Logger) {
 	if buffer.IsEmpty() {
 		return
 	}
 	instances, fss := buffer.Get()
-	cloudHealthWrite(writer, instances, fss, metrics)
+	cloudHealthWrite(writer, instances, fss, metrics, logger)
 	buffer.Clear()
 }
 
 func startCisLoop(
 	cisQueue *keyedqueue.Queue,
 	bulkCisClient *cis.Buffered,
-	programStartTime time.Time) {
+	programStartTime time.Time,
+	logger log.Logger) {
 	lastSuccessfulWriteTime := time.Now()
 
 	if err := tricorder.RegisterMetric(
@@ -680,14 +692,14 @@ func startCisLoop(
 		},
 		units.Second,
 		"Time since last successful write"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if err := tricorder.RegisterMetric(
 		"cis/queueSize",
 		cisQueue.Len,
 		units.None,
 		"Length of queue"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	if err := tricorder.RegisterMetric(
@@ -695,7 +707,7 @@ func startCisLoop(
 		timeBetweenWritesDist,
 		units.Second,
 		"elapsed time between CIS updates"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	if err := tricorder.RegisterMetric(
@@ -703,7 +715,7 @@ func startCisLoop(
 		writeTimesDist,
 		units.Millisecond,
 		"elapsed time between CIS updates"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	var lastWriteError string
 	if err := tricorder.RegisterMetric(
@@ -711,7 +723,7 @@ func startCisLoop(
 		&lastWriteError,
 		units.None,
 		"Last CIS write error"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	var successfulWrites uint64
 	if err := tricorder.RegisterMetric(
@@ -719,7 +731,7 @@ func startCisLoop(
 		&successfulWrites,
 		units.None,
 		"Successful write count"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	var totalWrites uint64
 	if err := tricorder.RegisterMetric(
@@ -727,7 +739,7 @@ func startCisLoop(
 		&totalWrites,
 		units.None,
 		"total write count"); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	// CIS loop
@@ -737,6 +749,7 @@ func startCisLoop(
 			if cisQueue.Len() == 0 {
 				numWritten, err := bulkCisClient.Flush()
 				if err != nil {
+					logger.Printf("Error writing to CIS: %v", err)
 					lastWriteError = err.Error()
 				} else {
 					successfulWrites += uint64(numWritten)
@@ -761,6 +774,7 @@ func startCisLoop(
 			writeStartTime := time.Now()
 			numWritten, err := bulkCisClient.Write(*stat)
 			if err != nil {
+				logger.Printf("Error writing to CIS: %v", err)
 				lastWriteError = err.Error()
 			} else {
 				successfulWrites += uint64(numWritten)

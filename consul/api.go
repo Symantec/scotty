@@ -3,9 +3,9 @@ package consul
 
 import (
 	"errors"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/scotty/lib/retry"
 	"github.com/Symantec/scotty/store"
-	"log"
 	"strings"
 )
 
@@ -45,7 +45,7 @@ var (
 // The Consul agent runs on the local machine at port 8500 so no other
 // configuration is needed.
 func GetCoordinator(
-	namespace string, logger *log.Logger) (*Coordinator, error) {
+	namespace string, logger log.Logger) (*Coordinator, error) {
 	if strings.Contains(namespace, "/") {
 		panic("namespace cannot contain slashes")
 	}

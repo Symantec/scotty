@@ -1,11 +1,11 @@
 package main
 
 import (
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/sysmemory"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
-	"log"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -72,7 +72,7 @@ type memoryManagerType struct {
 	hardLimit     uint64
 	highWaterMark uint64
 	lowWaterMark  uint64
-	logger        *log.Logger
+	logger        log.Logger
 	gcPercent     int
 	gcCh          chan bool
 	memoryCh      chan memoryType
@@ -100,15 +100,15 @@ func getGcPercent() (result int) {
 
 // Creates the memory manager if command line args request it. Otherwise
 // returns nil.
-func maybeCreateMemoryManager(logger *log.Logger) *memoryManagerType {
+func maybeCreateMemoryManager(logger log.Logger) *memoryManagerType {
 	totalMemoryToUse, err := sysmemory.TotalMemoryToUse()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if totalMemoryToUse > 0 {
 		gcPercent := getGcPercent()
 		if gcPercent <= 0 {
-			log.Fatal("To use dynamic memory management, GC must be enabled")
+			logger.Fatal("To use dynamic memory management, GC must be enabled")
 		}
 		allocatedMemory := allocateMemory(totalMemoryToUse)
 		// Adjust totalMemoryToUse with actual memory used at

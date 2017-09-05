@@ -4,7 +4,8 @@ import (
 	"compress/gzip"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/Dominator/lib/mdb"
 	"github.com/Symantec/Dominator/lib/mdb/mdbd"
 	"github.com/Symantec/scotty/application"
@@ -28,7 +29,6 @@ import (
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/uuid"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -188,7 +188,7 @@ func getMyHostName(machines []mdb.Machine, myIpAddrs []string) string {
 }
 
 func createEndpointStore(
-	logger *log.Logger,
+	logger log.Logger,
 	tagvAdder suggest.Adder,
 	maybeNilMemoryManager *memoryManagerType,
 	myIpAddrs []string) (
@@ -206,7 +206,7 @@ func createEndpointStore(
 		astore.SetExpanding(true)
 		memoryManager.SetMemory(astore)
 		if err := memoryManager.RegisterMetrics(); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	} else {
 		astore = store.NewStoreBytesPerPage(
@@ -214,10 +214,10 @@ func createEndpointStore(
 	}
 	dirSpec, err := tricorder.RegisterDirectory("/store")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if err := astore.RegisterMetrics(dirSpec); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	stats := machine.NewEndpointStore(
 		astore,
@@ -284,7 +284,7 @@ func writePidfile() {
 	fmt.Fprintln(file, os.Getpid())
 }
 
-func handleSignals(logger *log.Logger) {
+func handleSignals(logger log.Logger) {
 	if *fPidFile == "" {
 		return
 	}
@@ -459,8 +459,7 @@ func toAddrs(ips []net.Addr) []string {
 func main() {
 	tricorder.RegisterFlags()
 	flag.Parse()
-	circularBuffer := logbuf.New()
-	logger := log.New(circularBuffer, "", log.LstdFlags)
+	logger := serverlogger.New("")
 	handleSignals(logger)
 	myIPs, _ := net.InterfaceAddrs()
 	myIPAddrs := toAddrs(myIPs)
@@ -510,7 +509,7 @@ func main() {
 		"/",
 		gzipHandler{&splash.Handler{
 			ES:  endpointStore,
-			Log: circularBuffer,
+			Log: logger,
 		}})
 	http.Handle(
 		"/showAllApps",
@@ -639,19 +638,19 @@ func main() {
 
 	go func() {
 		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fTsdbPort), tsdbServeMux); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}()
 
 	go func() {
 		if err := http.ListenAndServe(fmt.Sprintf(":%d", *fInfluxPort), influxServeMux); err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}()
 
 	healthserver.SetReady()
 
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", *fPort), nil); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	liblog "github.com/Symantec/Dominator/lib/log"
 	"github.com/hashicorp/consul/api"
-	syslog "log"
+	stdlog "log"
 	"math"
 	"strconv"
 	"sync"
@@ -32,7 +32,7 @@ type connectionType struct {
 
 func (c *connectionType) printf(format string, v ...interface{}) {
 	if c.logger == nil {
-		syslog.Printf(format, v...)
+		stdlog.Printf(format, v...)
 	} else {
 		c.logger.Printf(format, v...)
 	}

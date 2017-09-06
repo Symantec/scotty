@@ -2,8 +2,9 @@ package consul
 
 import (
 	"fmt"
+	liblog "github.com/Symantec/Dominator/lib/log"
 	"github.com/hashicorp/consul/api"
-	"log"
+	stdlog "log"
 	"math"
 	"strconv"
 	"sync"
@@ -26,12 +27,12 @@ type connectionType struct {
 	keys   keyCollectionType
 	lock   *api.Lock
 	kv     *api.KV
-	logger *log.Logger
+	logger liblog.Logger
 }
 
 func (c *connectionType) printf(format string, v ...interface{}) {
 	if c.logger == nil {
-		log.Printf(format, v...)
+		stdlog.Printf(format, v...)
 	} else {
 		c.logger.Printf(format, v...)
 	}
@@ -341,7 +342,7 @@ func (c *coordinator) Lease(
 	return
 }
 
-func newCoordinator(namespace string, logger *log.Logger) (
+func newCoordinator(namespace string, logger liblog.Logger) (
 	result *coordinator, err error) {
 	coord := &coordinator{}
 

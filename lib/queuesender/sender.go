@@ -2,13 +2,13 @@ package queuesender
 
 import (
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
-	"log"
 	"time"
 )
 
-func _new(endpoint string, size int, name string, logger *log.Logger) (
+func _new(endpoint string, size int, name string, logger log.Logger) (
 	*Sender, error) {
 	if size < 1 {
 		panic("Size must be at least 1")

@@ -1,12 +1,12 @@
 package queuesender
 
 import (
-	"log"
+	"github.com/Symantec/Dominator/lib/log"
 )
 
 // loggerType logs errors.
 type loggerType struct {
-	logger *log.Logger
+	logger log.Logger
 	// the prefix for each log
 	name string
 }

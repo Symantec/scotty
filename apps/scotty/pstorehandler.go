@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/fsutil"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lib/gate"
@@ -17,7 +18,6 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
 	"io/ioutil"
-	"log"
 	"path"
 	"sync"
 	"time"
@@ -503,7 +503,7 @@ func newPStoreRunner(
 	consumer *pstore.ConsumerWithMetricsBuilder,
 	maybeNilInAttrs *pstoreRunnerAttributesType,
 	maybeNilCoordBuilder coordinatorBuilderType,
-	logger *log.Logger) *pstoreRunnerType {
+	logger log.Logger) *pstoreRunnerType {
 	var perMetricWriteTimes *tricorder.CumulativeDistribution
 	var totalTimeSpentDist *tricorder.CumulativeDistribution
 	if maybeNilInAttrs != nil {
@@ -683,7 +683,7 @@ type pstoreRunnersByNameType map[string]*pstoreRunnerType
 type pstoreContextType struct {
 	Stats                 *machine.EndpointStore
 	MaybeNilMemoryManager *memoryManagerType
-	Logger                *log.Logger
+	Logger                log.Logger
 	MaybeNilCoordBuilder  coordinatorBuilderType
 }
 
@@ -866,7 +866,7 @@ func stringToReadCloserStream(strings <-chan string) <-chan io.ReadCloser {
 func startPStoreLoops(
 	stats *machine.EndpointStore,
 	maybeNilMemoryManager *memoryManagerType,
-	logger *log.Logger,
+	logger log.Logger,
 	maybeNilCoordBuilder coordinatorBuilderType) *totalCountCollectionType {
 	result := newTotalCountCollectionType()
 	var changeCh <-chan io.ReadCloser

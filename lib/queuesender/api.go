@@ -2,7 +2,7 @@
 package queuesender
 
 import (
-	"log"
+	"github.com/Symantec/Dominator/lib/log"
 	"sync"
 )
 
@@ -24,7 +24,7 @@ type Sender struct {
 // size is the size of the queue.
 // name is the name of queue. Used strictly for logging.
 // logger is the logger to receive the logs.
-func New(endpoint string, size int, name string, logger *log.Logger) (
+func New(endpoint string, size int, name string, logger log.Logger) (
 	*Sender, error) {
 	return _new(endpoint, size, name, logger)
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/Symantec/scotty/application"
 	"github.com/Symantec/scotty/awsinfo"
 	"github.com/Symantec/scotty/endpointdata"
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/scotty/sources/trisource"
@@ -37,7 +38,8 @@ func TestNonHealthAgent(t *testing.T) {
 			Aws: &awsinfo.AwsInfo{},
 		},
 		App: &application.Application{
-			EP: scotty.NewEndpointWithConnector("host", "not health agent", nil),
+			EP: scotty.NewEndpointWithConnector(
+				&hostid.HostID{HostName: "host"}, "not health agent", nil),
 		},
 	}
 	Convey("Non health agent endpoints skipped", t, func() {
@@ -59,7 +61,9 @@ func TestCloudHealth(t *testing.T) {
 					CloudHealth: true},
 			},
 			App: &application.Application{
-				EP: scotty.NewEndpointWithConnector("host", application.HealthAgentName, nil),
+				EP: scotty.NewEndpointWithConnector(
+					&hostid.HostID{HostName: "host"},
+					application.HealthAgentName, nil),
 			},
 		}
 		data := endpointdata.NewEndpointData()
@@ -97,7 +101,10 @@ func TestCloudWatch(t *testing.T) {
 					CloudWatch: 4 * time.Minute},
 			},
 			App: &application.Application{
-				EP: scotty.NewEndpointWithConnector("host", application.HealthAgentName, nil),
+				EP: scotty.NewEndpointWithConnector(
+					&hostid.HostID{HostName: "host"},
+					application.HealthAgentName,
+					nil),
 			},
 		}
 		data := endpointdata.NewEndpointData()

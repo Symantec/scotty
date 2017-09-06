@@ -3,6 +3,7 @@ package application
 
 import (
 	"github.com/Symantec/scotty"
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/namesandports"
 	"time"
 )
@@ -87,17 +88,17 @@ type Application struct {
 
 // Group contains applications running on a particular machine
 type Group struct {
-	host              string
+	host              *hostid.HostID
 	apps              map[string]*applicationDataType
 	countToInactivate int
 }
 
-// NewGroup returns a new group instance. host is the name of the machine;
+// NewGroup returns a new group instance. host identifies the machine;
 // countToInactive is the number of times an application must be reported
 // missing before it is marked inactive. Each new group always contains
 // the health agent running on port 6910. In addition to the newly created
 // instance, NewGroup returns the scotty.Endpoint for the health agent.
-func NewGroup(host string, countToInactivate int) (
+func NewGroup(host *hostid.HostID, countToInactivate int) (
 	*Group, *scotty.Endpoint) {
 	return newGroup(host, countToInactivate)
 }

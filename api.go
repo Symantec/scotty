@@ -2,6 +2,7 @@
 package scotty
 
 import (
+	"github.com/Symantec/scotty/hostid"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"sync"
@@ -129,7 +130,7 @@ type Logger interface {
 // Endpoint instances are safe to use with multiple goroutines.
 type Endpoint struct {
 	// These fields are immutable
-	host           string
+	hostId         *hostid.HostID
 	name           string
 	conn           sources.ResourceConnector
 	onePollAtATime chan bool
@@ -145,13 +146,18 @@ type Endpoint struct {
 // NewEndpointWithConnector creates a new endpoint for given host, port
 // and connector.
 func NewEndpointWithConnector(
-	hostname, appName string, connector sources.Connector) *Endpoint {
-	return newEndpoint(hostname, appName, connector)
+	hostId *hostid.HostID, appName string, connector sources.Connector) *Endpoint {
+	return newEndpoint(hostId, appName, connector)
 }
 
 // HostName returns the host name of the endpoint.
 func (e *Endpoint) HostName() string {
-	return e.host
+	return e.hostId.HostName
+}
+
+// IpAddress returns the IP Address if known or the empty string if not known.
+func (e *Endpoint) IpAddress() string {
+	return e.hostId.IPAddress
 }
 
 // AppName returns the app name of the endpoint.

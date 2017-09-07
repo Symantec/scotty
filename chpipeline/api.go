@@ -177,7 +177,7 @@ func (r *RollUpStats) TimeOk(t time.Time) bool {
 
 // Add adds s to this instance. Add panics if the timestamp for s is not
 // for the same time period as times already in this instance.
-func (r *RollUpStats) Add(s InstanceStats) {
+func (r *RollUpStats) Add(s *InstanceStats) {
 	r.add(s)
 }
 

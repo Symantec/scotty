@@ -108,7 +108,7 @@ func (r *RollUpStats) timeOk(t time.Time) bool {
 	return r.roundTime(t).Equal(r.ts)
 }
 
-func (r *RollUpStats) add(s InstanceStats) {
+func (r *RollUpStats) add(s *InstanceStats) {
 	if !r.timeOk(s.Ts) {
 		panic("Time not ok")
 	}

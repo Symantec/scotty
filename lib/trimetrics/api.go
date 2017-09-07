@@ -8,6 +8,26 @@ import (
 	"time"
 )
 
+// Duration stores a time.Duration behind a mutex
+type Duration struct {
+	mu    sync.Mutex
+	value time.Duration
+}
+
+// Set sets the duration
+func (d *Duration) Set(x time.Duration) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.value = x
+}
+
+// Get retrieves the duration.
+func (d *Duration) Get() time.Duration {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.value
+}
+
 // Counter represents a single counter metric.
 type Counter struct {
 	mu    sync.Mutex

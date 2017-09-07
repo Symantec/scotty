@@ -134,6 +134,30 @@ type FsSnapshot struct {
 	UsedPercent cloudhealth.FVariable
 }
 
+// AgedSnapshot is a Snapshot that knows its age.
+// When creating, set Ts to time.Now()
+type AgedSnapshot struct {
+	Ts       time.Time
+	Snapshot *Snapshot
+}
+
+// Age returns the age of the snapshot.
+func (a AgedSnapshot) Age() time.Duration {
+	return time.Since(a.Ts)
+}
+
+// AgeSnapshotList is a slice of snapshots with an age.
+// When creating, set Ts to time.Now()
+type AgedSnapshotList struct {
+	Ts           time.Time
+	SnapshotList []*Snapshot
+}
+
+// Age returns the age of this slice of snapshots.
+func (a AgedSnapshotList) Age() time.Duration {
+	return time.Since(a.Ts)
+}
+
 // RollUpStats represents rolled up statistics for a machine by some time
 // period.
 type RollUpStats struct {

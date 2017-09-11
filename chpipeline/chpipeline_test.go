@@ -274,13 +274,13 @@ func TestRollUp(t *testing.T) {
 			},
 		}
 		So(rollup.TimeOk(stats1.Ts), ShouldBeTrue)
-		rollup.Add(stats1)
+		rollup.Add(&stats1)
 		So(rollup.TimeOk(stats2.Ts), ShouldBeTrue)
-		rollup.Add(stats2)
+		rollup.Add(&stats2)
 		So(rollup.TimeOk(stats3.Ts), ShouldBeTrue)
-		rollup.Add(stats3)
+		rollup.Add(&stats3)
 		So(rollup.TimeOk(kToday.Add(15*time.Hour)), ShouldBeFalse)
-		So(func() { rollup.Add(stats4) }, ShouldPanic)
+		So(func() { rollup.Add(&stats4) }, ShouldPanic)
 		Convey("Rollup successful", func() {
 			chInstanceCall := chpipeline.NewCloudHealthInstanceCall(
 				rollup.TakeSnapshot())
@@ -344,7 +344,7 @@ func TestRollUp(t *testing.T) {
 					Ok:    true,
 				},
 			}
-			rollup.Add(stats4)
+			rollup.Add(&stats4)
 			chInstanceCall := chpipeline.NewCloudHealthInstanceCall(
 				rollup.TakeSnapshot())
 			instance := chInstanceCall.Instance

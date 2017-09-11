@@ -234,7 +234,7 @@ func (l *loggerType) LogResponse(
 				}
 				chRollup.Clear()
 			}
-			chRollup.Add(stats)
+			chRollup.Add(&stats)
 		}
 		cwRollup := l.EndpointData.CWRollup
 		if l.CloudWatchChannel != nil && cwRollup != nil {
@@ -247,7 +247,7 @@ func (l *loggerType) LogResponse(
 				l.CloudWatchChannel <- cwRollup.TakeSnapshot()
 				cwRollup.Clear()
 			}
-			cwRollup.Add(stats)
+			cwRollup.Add(&stats)
 		}
 	}
 	// This error just means that the endpoint was marked inactive

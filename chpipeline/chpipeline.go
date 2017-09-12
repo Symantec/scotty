@@ -264,3 +264,35 @@ func combineFsStats(stats []FsStats) (result FsStats) {
 	}
 	return
 }
+
+func (a *AgedSnapshotChannel) send(s AgedSnapshot) {
+	select {
+	case a.Channel <- s:
+	default:
+		a.mu.Lock()
+		a.overflows++
+		a.mu.Unlock()
+	}
+}
+
+func (a *AgedSnapshotChannel) _overflows() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.overflows
+}
+
+func (a *AgedSnapshotListChannel) send(s AgedSnapshotList) {
+	select {
+	case a.Channel <- s:
+	default:
+		a.mu.Lock()
+		a.overflows++
+		a.mu.Unlock()
+	}
+}
+
+func (a *AgedSnapshotListChannel) _overflows() uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.overflows
+}

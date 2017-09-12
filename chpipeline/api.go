@@ -5,6 +5,7 @@ import (
 	"container/list"
 	"github.com/Symantec/scotty/cloudhealth"
 	"github.com/Symantec/scotty/metrics"
+	"sync"
 	"time"
 )
 
@@ -156,6 +157,62 @@ type AgedSnapshotList struct {
 // Age returns the age of this slice of snapshots.
 func (a AgedSnapshotList) Age() time.Duration {
 	return time.Since(a.Ts)
+}
+
+// AgedSnapshotChannel is a channel of AgedSnapshot that keeps track of how
+// many times the channel overflows.
+type AgedSnapshotChannel struct {
+	Channel   chan AgedSnapshot
+	mu        sync.Mutex
+	overflows uint64
+}
+
+// NewAgedSnapshotChannel creates an AgedSnapshotChannel with specified
+// length.
+func NewAgedSnapshotChannel(length int) *AgedSnapshotChannel {
+	return &AgedSnapshotChannel{
+		Channel: make(chan AgedSnapshot, length),
+	}
+}
+
+// Send sends the specified AgedSnapshot on the channel. If sending on the
+// channel would block, Send returns immediately incrementing the overflow
+// count.
+func (a *AgedSnapshotChannel) Send(s AgedSnapshot) {
+	a.send(s)
+}
+
+// Overflows returns the overflow count.
+func (a *AgedSnapshotChannel) Overflows() uint64 {
+	return a._overflows()
+}
+
+// AgedSnapshotListChannel is a channel of AgedSnapshotList that keeps track
+// of how many times the channel overflows.
+type AgedSnapshotListChannel struct {
+	Channel   chan AgedSnapshotList
+	mu        sync.Mutex
+	overflows uint64
+}
+
+// NewAgedSnapshotListChannel creates an AgedSnapshotListChannel with specified
+// length.
+func NewAgedSnapshotListChannel(length int) *AgedSnapshotListChannel {
+	return &AgedSnapshotListChannel{
+		Channel: make(chan AgedSnapshotList, length),
+	}
+}
+
+// Send sends the specified AgedSnapshotList on the channel. If sending on the
+// channel would block, Send returns immediately incrementing the overflow
+// count.
+func (a *AgedSnapshotListChannel) Send(s AgedSnapshotList) {
+	a.send(s)
+}
+
+// Overflows returns the overflow count.
+func (a *AgedSnapshotListChannel) Overflows() uint64 {
+	return a._overflows()
 }
 
 // RollUpStats represents rolled up statistics for a machine by some time

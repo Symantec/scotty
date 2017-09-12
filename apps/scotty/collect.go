@@ -155,9 +155,9 @@ type loggerType struct {
 	MetricNameAdder       suggest.Adder
 	TotalCounts           totalCountUpdaterType
 	CisQueue              *keyedqueue.Queue
-	CloudHealthLmmChannel chan chpipeline.AgedSnapshot
-	CloudHealthChannel    chan chpipeline.AgedSnapshotList
-	CloudWatchChannel     chan chpipeline.AgedSnapshot
+	CloudHealthLmmChannel *chpipeline.AgedSnapshotChannel
+	CloudHealthChannel    *chpipeline.AgedSnapshotListChannel
+	CloudWatchChannel     *chpipeline.AgedSnapshotChannel
 	EndpointData          *endpointdata.EndpointData
 	EndpointObservations  *machine.EndpointObservations
 }
@@ -227,14 +227,14 @@ func (l *loggerType) LogResponse(
 					return err
 				}
 				if l.CloudHealthChannel != nil {
-					l.CloudHealthChannel <- chpipeline.AgedSnapshotList{
+					l.CloudHealthChannel.Send(chpipeline.AgedSnapshotList{
 						Ts:           time.Now(),
-						SnapshotList: chStore.GetAll()}
+						SnapshotList: chStore.GetAll()})
 				}
 				if l.CloudHealthLmmChannel != nil {
-					l.CloudHealthLmmChannel <- chpipeline.AgedSnapshot{
+					l.CloudHealthLmmChannel.Send(chpipeline.AgedSnapshot{
 						Ts:       time.Now(),
-						Snapshot: snapshot}
+						Snapshot: snapshot})
 				}
 				chRollup.Clear()
 			}
@@ -248,9 +248,9 @@ func (l *loggerType) LogResponse(
 				statsOk = true
 			}
 			if !cwRollup.TimeOk(stats.Ts) {
-				l.CloudWatchChannel <- chpipeline.AgedSnapshot{
+				l.CloudWatchChannel.Send(chpipeline.AgedSnapshot{
 					Ts:       time.Now(),
-					Snapshot: cwRollup.TakeSnapshot()}
+					Snapshot: cwRollup.TakeSnapshot()})
 				cwRollup.Clear()
 			}
 			cwRollup.Add(&stats)
@@ -376,7 +376,7 @@ func startCollector(
 		"tricorder": tricorderCollectionTimesDist,
 	}
 
-	var cloudHealthChannel chan chpipeline.AgedSnapshotList
+	var cloudHealthChannel *chpipeline.AgedSnapshotListChannel
 	var cloudHealthConfig *dynconfig.DynConfig
 
 	cloudHealthConfigFile := path.Join(*fConfigDir, "cloudhealth.yaml")
@@ -389,10 +389,10 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudHealthChannel = make(chan chpipeline.AgedSnapshotList, 10000)
+		cloudHealthChannel = chpipeline.NewAgedSnapshotListChannel(10000)
 	}
 
-	var cloudHealthLmmChannel chan chpipeline.AgedSnapshot
+	var cloudHealthLmmChannel *chpipeline.AgedSnapshotChannel
 	var cloudHealthLmmConfig *dynconfig.DynConfig
 
 	cloudHealthLmmConfigFile := path.Join(*fConfigDir, "cloudhealthlmm.yaml")
@@ -405,10 +405,10 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudHealthLmmChannel = make(chan chpipeline.AgedSnapshot, 10000)
+		cloudHealthLmmChannel = chpipeline.NewAgedSnapshotChannel(10000)
 	}
 
-	var cloudWatchChannel chan chpipeline.AgedSnapshot
+	var cloudWatchChannel *chpipeline.AgedSnapshotChannel
 	var cloudWatchConfig *dynconfig.DynConfig
 
 	cloudWatchConfigFile := path.Join(*fConfigDir, "cloudwatch.yaml")
@@ -422,7 +422,7 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudWatchChannel = make(chan chpipeline.AgedSnapshot, 10000)
+		cloudWatchChannel = chpipeline.NewAgedSnapshotChannel(10000)
 	}
 
 	var bulkCisClient *cis.Buffered
@@ -541,19 +541,19 @@ func startCollector(
 func startSnapshotLoop(
 	parentDir string,
 	config *dynconfig.DynConfig,
-	channel chan chpipeline.AgedSnapshot,
+	channel *chpipeline.AgedSnapshotChannel,
 	logger log.Logger) {
 
 	if err := tricorder.RegisterMetric(
 		parentDir+"/channelLen",
 		func() int {
-			return len(channel)
+			return len(channel.Channel)
 		},
 		units.None,
 		"Length of channel"); err != nil {
 		logger.Fatal(err)
 	}
-	channelCap := cap(channel)
+	channelCap := cap(channel.Channel)
 	if err := tricorder.RegisterMetric(
 		parentDir+"/channelCap",
 		&channelCap,
@@ -569,6 +569,13 @@ func startSnapshotLoop(
 		"latency of last write"); err != nil {
 		logger.Fatal(err)
 	}
+	if err := tricorder.RegisterMetric(
+		parentDir+"/overflows",
+		channel.Overflows,
+		units.None,
+		"number of channel overflows"); err != nil {
+		logger.Fatal(err)
+	}
 
 	writerMetrics, err := trimetrics.NewWriterMetrics(parentDir + "/writer")
 	if err != nil {
@@ -577,7 +584,7 @@ func startSnapshotLoop(
 
 	go func() {
 		for {
-			agedSnapshot := <-channel
+			agedSnapshot := <-channel.Channel
 			snapshot := agedSnapshot.Snapshot
 			latency.Set(agedSnapshot.Age())
 			writer := config.Get().(snapshotWriterType)
@@ -595,19 +602,19 @@ func startSnapshotLoop(
 
 func startCloudHealthLoop(
 	cloudHealthConfig *dynconfig.DynConfig,
-	cloudHealthChannel chan chpipeline.AgedSnapshotList,
+	cloudHealthChannel *chpipeline.AgedSnapshotListChannel,
 	logger log.Logger) {
 
 	if err := tricorder.RegisterMetric(
 		"cloudhealth/channelLen",
 		func() int {
-			return len(cloudHealthChannel)
+			return len(cloudHealthChannel.Channel)
 		},
 		units.None,
 		"Length of channel"); err != nil {
 		logger.Fatal(err)
 	}
-	channelCap := cap(cloudHealthChannel)
+	channelCap := cap(cloudHealthChannel.Channel)
 	if err := tricorder.RegisterMetric(
 		"cloudhealth/channelCap",
 		&channelCap,
@@ -623,6 +630,13 @@ func startCloudHealthLoop(
 		"latency of last write"); err != nil {
 		logger.Fatal(err)
 	}
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/overflows",
+		cloudHealthChannel.Overflows,
+		units.None,
+		"number of channel overflows"); err != nil {
+		logger.Fatal(err)
+	}
 
 	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth/writer")
 	if err != nil {
@@ -631,7 +645,7 @@ func startCloudHealthLoop(
 
 	go func() {
 		for {
-			agedSnapshots := <-cloudHealthChannel
+			agedSnapshots := <-cloudHealthChannel.Channel
 			snapshots := agedSnapshots.SnapshotList
 			latency.Set(agedSnapshots.Age())
 			writer := cloudHealthConfig.Get().(*cloudhealth.Writer)

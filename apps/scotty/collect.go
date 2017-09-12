@@ -155,9 +155,9 @@ type loggerType struct {
 	MetricNameAdder       suggest.Adder
 	TotalCounts           totalCountUpdaterType
 	CisQueue              *keyedqueue.Queue
-	CloudHealthLmmChannel chan *chpipeline.Snapshot
-	CloudHealthChannel    chan []*chpipeline.Snapshot
-	CloudWatchChannel     chan *chpipeline.Snapshot
+	CloudHealthLmmChannel chan chpipeline.AgedSnapshot
+	CloudHealthChannel    chan chpipeline.AgedSnapshotList
+	CloudWatchChannel     chan chpipeline.AgedSnapshot
 	EndpointData          *endpointdata.EndpointData
 	EndpointObservations  *machine.EndpointObservations
 }
@@ -227,10 +227,14 @@ func (l *loggerType) LogResponse(
 					return err
 				}
 				if l.CloudHealthChannel != nil {
-					l.CloudHealthChannel <- chStore.GetAll()
+					l.CloudHealthChannel <- chpipeline.AgedSnapshotList{
+						Ts:           time.Now(),
+						SnapshotList: chStore.GetAll()}
 				}
 				if l.CloudHealthLmmChannel != nil {
-					l.CloudHealthLmmChannel <- snapshot
+					l.CloudHealthLmmChannel <- chpipeline.AgedSnapshot{
+						Ts:       time.Now(),
+						Snapshot: snapshot}
 				}
 				chRollup.Clear()
 			}
@@ -244,7 +248,9 @@ func (l *loggerType) LogResponse(
 				statsOk = true
 			}
 			if !cwRollup.TimeOk(stats.Ts) {
-				l.CloudWatchChannel <- cwRollup.TakeSnapshot()
+				l.CloudWatchChannel <- chpipeline.AgedSnapshot{
+					Ts:       time.Now(),
+					Snapshot: cwRollup.TakeSnapshot()}
 				cwRollup.Clear()
 			}
 			cwRollup.Add(&stats)
@@ -370,7 +376,7 @@ func startCollector(
 		"tricorder": tricorderCollectionTimesDist,
 	}
 
-	var cloudHealthChannel chan []*chpipeline.Snapshot
+	var cloudHealthChannel chan chpipeline.AgedSnapshotList
 	var cloudHealthConfig *dynconfig.DynConfig
 
 	cloudHealthConfigFile := path.Join(*fConfigDir, "cloudhealth.yaml")
@@ -383,19 +389,10 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudHealthChannel = make(chan []*chpipeline.Snapshot, 10000)
-		if err := tricorder.RegisterMetric(
-			"collector/cloudHealthLen",
-			func() int {
-				return len(cloudHealthChannel)
-			},
-			units.None,
-			"Length of cloud health channel"); err != nil {
-			logger.Fatal(err)
-		}
+		cloudHealthChannel = make(chan chpipeline.AgedSnapshotList, 10000)
 	}
 
-	var cloudHealthLmmChannel chan *chpipeline.Snapshot
+	var cloudHealthLmmChannel chan chpipeline.AgedSnapshot
 	var cloudHealthLmmConfig *dynconfig.DynConfig
 
 	cloudHealthLmmConfigFile := path.Join(*fConfigDir, "cloudhealthlmm.yaml")
@@ -408,19 +405,10 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudHealthLmmChannel = make(chan *chpipeline.Snapshot, 10000)
-		if err := tricorder.RegisterMetric(
-			"collector/cloudHealthLmmLen",
-			func() int {
-				return len(cloudHealthLmmChannel)
-			},
-			units.None,
-			"Length of cloud health lmm channel"); err != nil {
-			logger.Fatal(err)
-		}
+		cloudHealthLmmChannel = make(chan chpipeline.AgedSnapshot, 10000)
 	}
 
-	var cloudWatchChannel chan *chpipeline.Snapshot
+	var cloudWatchChannel chan chpipeline.AgedSnapshot
 	var cloudWatchConfig *dynconfig.DynConfig
 
 	cloudWatchConfigFile := path.Join(*fConfigDir, "cloudwatch.yaml")
@@ -434,16 +422,7 @@ func startCollector(
 		if err != nil {
 			logger.Fatal(err)
 		}
-		cloudWatchChannel = make(chan *chpipeline.Snapshot, 10000)
-		if err := tricorder.RegisterMetric(
-			"collector/cloudWatchLen",
-			func() int {
-				return len(cloudWatchChannel)
-			},
-			units.None,
-			"Length of cloud watch channel"); err != nil {
-			logger.Fatal(err)
-		}
+		cloudWatchChannel = make(chan chpipeline.AgedSnapshot, 10000)
 	}
 
 	var bulkCisClient *cis.Buffered
@@ -562,17 +541,45 @@ func startCollector(
 func startSnapshotLoop(
 	parentDir string,
 	config *dynconfig.DynConfig,
-	channel chan *chpipeline.Snapshot,
+	channel chan chpipeline.AgedSnapshot,
 	logger log.Logger) {
 
-	writerMetrics, err := trimetrics.NewWriterMetrics(parentDir)
+	if err := tricorder.RegisterMetric(
+		parentDir+"/channelLen",
+		func() int {
+			return len(channel)
+		},
+		units.None,
+		"Length of channel"); err != nil {
+		logger.Fatal(err)
+	}
+	channelCap := cap(channel)
+	if err := tricorder.RegisterMetric(
+		parentDir+"/channelCap",
+		&channelCap,
+		units.None,
+		"Capacity of channel"); err != nil {
+		logger.Fatal(err)
+	}
+	var latency trimetrics.Duration
+	if err := tricorder.RegisterMetric(
+		parentDir+"/latency",
+		latency.Get,
+		units.Second,
+		"latency of last write"); err != nil {
+		logger.Fatal(err)
+	}
+
+	writerMetrics, err := trimetrics.NewWriterMetrics(parentDir + "/writer")
 	if err != nil {
 		logger.Fatal(err)
 	}
 
 	go func() {
 		for {
-			snapshot := <-channel
+			agedSnapshot := <-channel
+			snapshot := agedSnapshot.Snapshot
+			latency.Set(agedSnapshot.Age())
 			writer := config.Get().(snapshotWriterType)
 			writeStartTime := time.Now()
 			if err := writer.Write(snapshot); err != nil {
@@ -588,17 +595,45 @@ func startSnapshotLoop(
 
 func startCloudHealthLoop(
 	cloudHealthConfig *dynconfig.DynConfig,
-	cloudHealthChannel chan []*chpipeline.Snapshot,
+	cloudHealthChannel chan chpipeline.AgedSnapshotList,
 	logger log.Logger) {
 
-	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth")
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/channelLen",
+		func() int {
+			return len(cloudHealthChannel)
+		},
+		units.None,
+		"Length of channel"); err != nil {
+		logger.Fatal(err)
+	}
+	channelCap := cap(cloudHealthChannel)
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/channelCap",
+		&channelCap,
+		units.None,
+		"Capacity of channel"); err != nil {
+		logger.Fatal(err)
+	}
+	var latency trimetrics.Duration
+	if err := tricorder.RegisterMetric(
+		"cloudhealth/latency",
+		latency.Get,
+		units.Second,
+		"latency of last write"); err != nil {
+		logger.Fatal(err)
+	}
+
+	writerMetrics, err := trimetrics.NewWriterMetrics("cloudhealth/writer")
 	if err != nil {
 		logger.Fatal(err)
 	}
 
 	go func() {
 		for {
-			snapshots := <-cloudHealthChannel
+			agedSnapshots := <-cloudHealthChannel
+			snapshots := agedSnapshots.SnapshotList
+			latency.Set(agedSnapshots.Age())
 			writer := cloudHealthConfig.Get().(*cloudhealth.Writer)
 			// holds stuff to be sent to writer
 			buffer := cloudhealth.NewBuffer()

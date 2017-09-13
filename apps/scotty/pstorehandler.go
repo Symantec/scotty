@@ -7,7 +7,6 @@ import (
 	"github.com/Symantec/Dominator/lib/fsutil"
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
-	collector "github.com/Symantec/scotty"
 	"github.com/Symantec/scotty/lib/gate"
 	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/pstore"
@@ -222,13 +221,13 @@ func (p *pstoreHandlerType) EndVisit(theStore *store.Store) {
 
 }
 
-// visit a single scotty endpoint
-func (p *pstoreHandlerType) Visit(
-	theStore *store.Store, endpointId interface{}) error {
+func (p *pstoreHandlerType) VisitEndpoint(
+	theStore *store.Store, endpoint *machine.Endpoint) {
 
-	hostName := endpointId.(*collector.Endpoint).HostName()
-	appName := endpointId.(*collector.Endpoint).AppName()
-	iterator, iteratorData := p.namedIterator(theStore, endpointId)
+	hostName := endpoint.App.EP.HostName()
+	appName := endpoint.App.EP.AppName()
+	region := endpoint.M.Region
+	iterator, iteratorData := p.namedIterator(theStore, endpoint.App.EP)
 	if p.maybeNilCoord != nil {
 		// aMetricStore from the consumer exposes the same filtering that
 		// the consumer does internally.
@@ -246,7 +245,11 @@ func (p *pstoreHandlerType) Visit(
 			kLeaseSpan,
 			aMetricStore.RemoveFromRecordCount)
 	}
-	p.consumer.Write(iterator, hostName, appName)
+	tagGroup := pstore.TagGroup{pstore.TagAppName: appName}
+	if region != "" {
+		tagGroup[pstore.TagRegionName] = region
+	}
+	p.consumer.Write(iterator, hostName, tagGroup)
 	if iteratorData.RemainingValueInSeconds > p.secondsBehind {
 		p.secondsBehind = iteratorData.RemainingValueInSeconds
 	}
@@ -256,7 +259,6 @@ func (p *pstoreHandlerType) Visit(
 	if iteratorData.Skipped {
 		p.visitorMetricsStore.SetValuesSkipped(true)
 	}
-	return nil
 }
 
 // store consumer attributes at attribute.
@@ -568,10 +570,12 @@ func (r *pstoreRunnerType) Close() {
 // knows how to visit the scotty metric store and does the writing.
 func (r *pstoreRunnerType) loop(handler *pstoreHandlerType) {
 	for {
-		metricStore := r.stats.Store()
+		endpoints, metricStore := r.stats.AllWithStore()
 		writeTime := time.Now()
 		handler.StartVisit()
-		metricStore.VisitAllEndpoints(handler)
+		for _, e := range endpoints {
+			handler.VisitEndpoint(metricStore, e)
+		}
 		handler.EndVisit(metricStore)
 		writeDuration := time.Now().Sub(writeTime)
 		// Check to see if Close was called to shut down this runner.

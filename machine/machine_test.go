@@ -50,6 +50,7 @@ func TestAPI(t *testing.T) {
 			"host1", application.HealthAgentName)
 		So(healthAgent1.M.Host, ShouldEqual, "host1")
 		So(healthAgent1.M.Active, ShouldBeTrue)
+		So(healthAgent1.M.Region, ShouldEqual, "us-east-1")
 		So(healthAgent1.M.Aws.AccountId, ShouldEqual, "12345")
 		So(healthAgent1.App.EP.HostName(), ShouldEqual, "host1")
 		So(healthAgent1.App.EP.AppName(), ShouldEqual, application.HealthAgentName)
@@ -62,6 +63,7 @@ func TestAPI(t *testing.T) {
 			"host2", application.HealthAgentName)
 		So(healthAgent2.M.Host, ShouldEqual, "host2")
 		So(healthAgent2.M.Active, ShouldBeTrue)
+		So(healthAgent2.M.Region, ShouldEqual, "us-west-2")
 		So(healthAgent2.M.Aws.AccountId, ShouldEqual, "67890")
 		So(healthAgent2.App.EP.HostName(), ShouldEqual, "host2")
 		So(healthAgent2.App.EP.AppName(), ShouldEqual, application.HealthAgentName)
@@ -123,7 +125,7 @@ func TestAPI(t *testing.T) {
 						AccountId:   "12345",
 						AccountName: "prod",
 						InstanceId:  "i-2468",
-						Region:      "us-east-1",
+						Region:      "us-east-2",
 					},
 				},
 				{
@@ -155,6 +157,10 @@ func TestAPI(t *testing.T) {
 		So(healthAgent3.M.Active, ShouldBeTrue)
 		So(healthAgent3.App.Active, ShouldBeTrue)
 		So(store.IsEndpointActive(healthAgent3.App.EP), ShouldBeTrue)
+
+		healthAgent1, store = endpointStore.ByHostAndName(
+			"host1", application.HealthAgentName)
+		So(healthAgent1.M.Region, ShouldEqual, "us-east-2")
 
 		endpointStore.UpdateEndpoints(
 			100.0,

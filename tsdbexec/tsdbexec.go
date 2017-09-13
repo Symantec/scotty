@@ -132,8 +132,14 @@ func runSingleParsedQuery(
 	if err != nil {
 		return
 	}
+	options.RegionFilter, err = newTagFilter(
+		request.Options.RegionFilter)
+	if err != nil {
+		return
+	}
 	options.GroupByAppName = request.Options.GroupByAppName
 	options.GroupByHostName = request.Options.GroupByHostName
+	options.GroupByRegion = request.Options.GroupByRegion
 	if request.Aggregator.DownSample == nil {
 		return nil, tsdbjson.ErrUnsupportedAggregator
 	}

@@ -250,7 +250,13 @@ func parseQueryRequest(request *QueryRequest) (
 		parsedQueries[i].Start = float64(request.StartInMillis) / 1000.0
 		parsedQueries[i].End = float64(endInMillis) / 1000.0
 		for _, filter := range request.Queries[i].Filters {
-			if filter.Tagk == HostName {
+			if filter.Tagk == Region {
+				parsedQueries[i].Options.RegionFilter = &FilterSpec{
+					Type:  filter.Type,
+					Value: filter.Filter,
+				}
+				parsedQueries[i].Options.GroupByRegion = filter.GroupBy
+			} else if filter.Tagk == HostName {
 				parsedQueries[i].Options.HostNameFilter = &FilterSpec{
 					Type:  filter.Type,
 					Value: filter.Filter,

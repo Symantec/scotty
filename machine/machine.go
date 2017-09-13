@@ -69,6 +69,9 @@ func (e *EndpointStore) _updateMachines(
 			m.M.Host = ahost.Hostname
 			m.M.Active = true
 			m.M.Aws = e.config.GetAwsInfo(ahost.AwsMetadata)
+			if ahost.AwsMetadata != nil {
+				m.M.Region = ahost.AwsMetadata.Region
+			}
 			var ep *scotty.Endpoint
 			m.Group, ep = application.NewGroup(
 				&hostid.HostID{
@@ -82,6 +85,9 @@ func (e *EndpointStore) _updateMachines(
 			e.byHost[ahost.Hostname] = &m
 		} else {
 			lookedUpHost.M.Aws = e.config.GetAwsInfo(ahost.AwsMetadata)
+			if ahost.AwsMetadata != nil {
+				lookedUpHost.M.Region = ahost.AwsMetadata.Region
+			}
 			if !lookedUpHost.M.Active {
 				lookedUpHost.M.Active = true
 				for _, app := range lookedUpHost.Group.Applications() {

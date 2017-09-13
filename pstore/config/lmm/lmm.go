@@ -18,7 +18,6 @@ type writer struct {
 	endpoint string
 	tenantId string
 	apiKey   string
-	region   string
 	headers  http.Header
 	sync     synchttp.JSONWriter
 	async    *queuesender.Sender
@@ -35,7 +34,6 @@ func newWriter(c Config) (
 	awriter.endpoint = c.Endpoint
 	awriter.tenantId = c.TenantId
 	awriter.apiKey = c.ApiKey
-	awriter.region = c.Region
 	awriter.headers = make(http.Header)
 	awriter.headers.Set("tenantid", awriter.tenantId)
 	awriter.headers.Set("apikey", awriter.apiKey)
@@ -69,9 +67,6 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 		for i := range records {
 			payload := kafka.LMMJSONPayload(
 				&records[i], w.tenantId, w.apiKey, false)
-			if w.region != "" {
-				payload[kRegion] = w.region
-			}
 			jsonStuff = append(jsonStuff, payload)
 		}
 		if err = w.sync.Write(w.endpoint, w.headers, jsonStuff); err != nil {
@@ -84,9 +79,6 @@ func (w *writer) Write(records []pstore.Record) (err error) {
 		for i := range records {
 			payload := kafka.LMMJSONPayload(
 				&records[i], w.tenantId, w.apiKey, false)
-			if w.region != "" {
-				payload[kRegion] = w.region
-			}
 			w.async.Send(w.endpoint, payload)
 		}
 	}

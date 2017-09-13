@@ -19,7 +19,8 @@ import (
 
 // Commonly used keys in TagGroup instances
 const (
-	TagAppName = "appname"
+	TagAppName    = "appname"
+	TagRegionName = "region"
 )
 
 var (
@@ -210,8 +211,8 @@ func NewAsyncConsumer(
 // NamedIterator instance with the same name iterating over the same values
 // until it has called Flush on this instance.
 func (a *AsyncConsumer) WriteAsync(
-	n store.NamedIterator, host, appName string) {
-	a.writeAsync(n, host, appName)
+	n store.NamedIterator, host string, tagGroup TagGroup) {
+	a.writeAsync(n, host, tagGroup)
 }
 
 // Flush works like Consumer.Flush waiting until previous calls to WriteAsync
@@ -257,7 +258,7 @@ func NewConsumer(w RecordWriter, bufferSize uint) *Consumer {
 // but does not commit progress on any of the NamedIterator instances
 // corresponding to the values that were in the buffer.
 
-// host and appName are the host and application name for the values in n.
+// host and tagGroup are the host and tag group for the values in n.
 //
 // When the caller passes a NamedIterator instance to Write, this instance
 // holds onto that NamedIterator until either its values are written out to
@@ -265,8 +266,8 @@ func NewConsumer(w RecordWriter, bufferSize uint) *Consumer {
 // avoid creating and using another NamedIterator instance with the same name
 // iterating over the same values until it has called Flush on this instance.
 func (c *Consumer) Write(
-	n store.NamedIterator, host, appName string) error {
-	return c.write(n, host, appName)
+	n store.NamedIterator, host string, tagGroup TagGroup) error {
+	return c.write(n, host, tagGroup)
 }
 
 // Flush writes any pending values out to the underlying writer committing
@@ -429,11 +430,11 @@ func (c *ConsumerWithMetrics) MetricsStore() *ConsumerMetricsStore {
 
 // Write works like Consumer.Write but does not return an error.
 func (c *ConsumerWithMetrics) Write(
-	n store.NamedIterator, host, appName string) {
+	n store.NamedIterator, host string, tagGroup TagGroup) {
 	c.consumer.Write(
 		store.NamedIteratorFilter(n, c.metricsStore.filterer),
 		host,
-		appName)
+		tagGroup)
 }
 
 // Flush works like Consumer.Flush but does not return an error.

@@ -13,6 +13,30 @@ var (
 	kNow = time.Date(2016, 12, 1, 0, 1, 0, 0, time.UTC)
 )
 
+func TestAggregationType(t *testing.T) {
+	now := kNow
+	Convey("With simple query", t, func() {
+		ql := "select mean(value) from \"a/metric\" WHERE time > now() - 1h group by time(10m)"
+		query, err := qlutils.NewQuery(ql, now)
+		So(err, ShouldBeNil)
+		aggType, err := qlutils.AggregationType(query.Statements[0])
+		So(err, ShouldBeNil)
+		So(aggType, ShouldEqual, "mean")
+		newStmt, err := qlutils.WithAggregationType(query.Statements[0], "sum")
+		So(err, ShouldBeNil)
+		So(
+			qlutils.SingleQuery(newStmt).String(),
+			ShouldEqual,
+			"SELECT sum(value) FROM \"a/metric\" WHERE time > '2016-11-30T23:01:00Z' GROUP BY time(10m)",
+		)
+		So(
+			query.String(),
+			ShouldEqual,
+			"SELECT mean(value) FROM \"a/metric\" WHERE time > '2016-11-30T23:01:00Z' GROUP BY time(10m)",
+		)
+	})
+}
+
 func TestConvert(t *testing.T) {
 	now := kNow
 

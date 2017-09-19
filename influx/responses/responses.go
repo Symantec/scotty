@@ -1,6 +1,8 @@
 package responses
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"github.com/influxdata/influxdb/models"
 	"reflect"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -548,4 +552,273 @@ func tagKeys(m map[string]string) (result []string) {
 	}
 	sort.Strings(result)
 	return
+}
+
+// divideBy computes lhs / rhs. lhs and rhs are either json.Number values or
+// nil. nil / nil = nil; x / nil = nil; nil / x = nil, and x / 0 = nil.
+// divideBy returns an error if lhs and rhs are neither nil nor
+// json.Number instances
+func divideBy(lhs, rhs interface{}) (interface{}, error) {
+	if lhs == nil || rhs == nil {
+		return nil, nil
+	}
+	lvalue, ok := lhs.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("Value wrong format %v", lhs)
+	}
+	lv, err := lvalue.Float64()
+	if err != nil {
+		return nil, err
+	}
+	rvalue, ok := rhs.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("Value wrong format %v", rhs)
+	}
+	rv, err := rvalue.Float64()
+	if err != nil {
+		return nil, err
+	}
+	if rv == 0 {
+		return nil, nil
+	}
+	sum := lv / rv
+	return json.Number(strconv.FormatFloat(sum, 'g', -1, 64)), nil
+}
+
+// piecewiseDivide divides each values in the lhs time series by the value
+// with the same timestamp in the rhs time series and returns the resulting
+// time series. for lhs and rhs [][0] is the time as a json.Number and [][1]
+// is the value as a json.Number. If a value in lhs does not have a
+// value with the same timestamp in rhs or vice versa, the value is skipped.
+// Both lhs and rhs must be sorted in increasing order by time.
+func piecewiseDivide(lhs, rhs [][]interface{}) (
+	[][]interface{}, error) {
+	var result [][]interface{}
+	lindex, rindex := 0, 0
+	llen, rlen := len(lhs), len(rhs)
+	for lindex < llen && rindex < rlen {
+		lts := toInt64(lhs[lindex][0])
+		rts := toInt64(rhs[rindex][0])
+		if lts < rts {
+			lindex++
+		} else if lts > rts {
+			rindex++
+		} else { // timestamps are equal, divide
+			quotientValue, err := divideBy(lhs[lindex][1], rhs[rindex][1])
+			if err != nil {
+				return nil, err
+			}
+			result = append(
+				result, []interface{}{lhs[lindex][0], quotientValue})
+			lindex++
+			rindex++
+		}
+	}
+	return result, nil
+}
+
+// addValues computes lhs + rhs. lhs and rhs are either json.Number values or
+// nil. x + nil = x. addValues returns an error if lhs and rhs are neither
+// nil nor json.Number instances
+func addValues(lhs, rhs interface{}) (interface{}, error) {
+	if lhs == nil && rhs == nil {
+		return nil, nil
+	}
+	var lv, rv float64
+	if lhs != nil {
+		lvalue, ok := lhs.(json.Number)
+		if !ok {
+			return nil, fmt.Errorf("Value wrong format %v", lhs)
+		}
+		var err error
+		lv, err = lvalue.Float64()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if rhs != nil {
+		rvalue, ok := rhs.(json.Number)
+		if !ok {
+			return nil, fmt.Errorf("Value wrong format %v", rhs)
+		}
+		var err error
+		rv, err = rvalue.Float64()
+		if err != nil {
+			return nil, err
+		}
+	}
+	sum := lv + rv
+	return json.Number(strconv.FormatFloat(sum, 'g', -1, 64)), nil
+}
+
+// sumTogether2 adds each values in the lhs time series to the value
+// with the same timestamp in the rhs time series and returns the resulting
+// time series. for lhs and rhs [][0] is the time as a json.Number and [][1]
+// is the value as a json.Number. If a value in lhs does not have a
+// value with the same timestamp in rhs or vice versa, that value is added
+// to the resulting time series as is. both lhs and rhs must be sorted
+// in increasing order by time.
+func sumTogether2(lhs, rhs [][]interface{}) ([][]interface{}, error) {
+	var result [][]interface{}
+	lindex, rindex := 0, 0
+	llen, rlen := len(lhs), len(rhs)
+	for lindex < llen && rindex < rlen {
+		lts := toInt64(lhs[lindex][0])
+		rts := toInt64(rhs[rindex][0])
+		if lts < rts {
+			result = append(result, lhs[lindex])
+			lindex++
+		} else if lts > rts {
+			result = append(result, rhs[rindex])
+			rindex++
+		} else { // timestamps are equal, add them
+			sumValue, err := addValues(lhs[lindex][1], rhs[rindex][1])
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, []interface{}{lhs[lindex][0], sumValue})
+			lindex++
+			rindex++
+		}
+	}
+	if lindex < llen {
+		result = append(result, lhs[lindex:]...)
+	} else {
+		result = append(result, rhs[rindex:]...)
+	}
+	return result, nil
+}
+
+// encodeTags encodes a group of tags into a single string.
+func encodeTags(tags map[string]string) string {
+	var b bytes.Buffer
+	e := gob.NewEncoder(&b)
+	err := e.Encode(tags)
+	// Should never fail.
+	if err != nil {
+		panic(err)
+	}
+	return b.String()
+}
+
+// decodeTags is the inverse of encode tags. decodeTags returns an error
+// if encodeTags did not produce the given string.
+func decodeTags(encoded string) (result map[string]string, err error) {
+	d := gob.NewDecoder(strings.NewReader(encoded))
+	err = d.Decode(&result)
+	return
+}
+
+// columnsEqual returns true if lhs and rhs are the same strings in the same
+// order.
+func columnsEqual(lhs, rhs []string) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+	for i := range lhs {
+		if lhs[i] != rhs[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func divideRows(lhs, rhs []models.Row, columns []string) (
+	result []models.Row, err error) {
+
+	// defensive copy since we hold onto columns in returned rows
+	columnsCopy := make([]string, len(columns))
+	copy(columnsCopy, columns)
+
+	type nameTagsType struct {
+		Name string
+		Tags string
+	}
+
+	runningTotals := make(map[nameTagsType][][]interface{})
+	for _, row := range lhs {
+		index := nameTagsType{Name: row.Name, Tags: encodeTags(row.Tags)}
+		runningTotals[index] = row.Values
+	}
+	var quotientRows rowListType
+	for _, row := range rhs {
+		index := nameTagsType{Name: row.Name, Tags: encodeTags(row.Tags)}
+		lvalues, ok := runningTotals[index]
+		if ok {
+			var quotient [][]interface{}
+			quotient, err = piecewiseDivide(lvalues, row.Values)
+			if err != nil {
+				return
+			}
+			if len(quotient) > 0 {
+				quotientRows = append(quotientRows, models.Row{
+					Name:    row.Name,
+					Tags:    row.Tags,
+					Columns: columnsCopy,
+					Values:  quotient})
+			}
+		}
+	}
+	sort.Sort(quotientRows)
+	return quotientRows, nil
+}
+
+func sumRowsTogether(rowGroups ...[]models.Row) (result []models.Row, err error) {
+	var rowList []models.Row
+	for _, rowGroup := range rowGroups {
+		rowList = append(rowList, rowGroup...)
+	}
+
+	if len(rowList) == 0 {
+		return nil, nil
+	}
+
+	// sanity checks. We expect column names to be the same.
+	for _, row := range rowList[1:] {
+		if !columnsEqual(rowList[0].Columns, row.Columns) {
+			err = errors.New("Columns don't match")
+			return
+		}
+	}
+
+	type nameTagsType struct {
+		Name string
+		Tags string
+	}
+
+	runningTotals := make(map[nameTagsType][][]interface{})
+	for _, row := range rowList {
+		index := nameTagsType{Name: row.Name, Tags: encodeTags(row.Tags)}
+		var total [][]interface{}
+		total, err = sumTogether2(runningTotals[index], row.Values)
+		if err != nil {
+			return
+		}
+		runningTotals[index] = total
+	}
+	var summedRows rowListType
+	for nameTag, timeSeries := range runningTotals {
+		sumRow := models.Row{
+			Name:    nameTag.Name,
+			Columns: rowList[0].Columns,
+			Values:  timeSeries,
+		}
+		sumRow.Tags, err = decodeTags(nameTag.Tags)
+		if err != nil {
+			return
+		}
+		summedRows = append(summedRows, sumRow)
+	}
+	sort.Sort(summedRows)
+	return summedRows, nil
+}
+
+func extractRows(response *client.Response) ([]models.Row, error) {
+	if err := response.Error(); err != nil {
+		return nil, err
+	}
+	if l := len(response.Results); l != 1 {
+		return nil, fmt.Errorf("Expected 1 result, got %d", l)
+	}
+	return response.Results[0].Series, nil
 }

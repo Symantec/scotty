@@ -103,3 +103,28 @@ func Serialise(resp *client.Response) (interface{}, error) {
 	}
 	return results, nil
 }
+
+// ExtractRows extracts the rows from the single result in the given response.
+// ExtractRows returns an error if there are multiple results or if
+// resp.Error() returns a non-nil value.
+func ExtractRows(resp *client.Response) ([]models.Row, error) {
+	return extractRows(resp)
+}
+
+// SumRowsTogether sums together the values in multiple sets of rows.
+// values in rows are summed together only if they have the same name and
+// tags. Rows with different names and tags are kept separate in the returned
+// result.
+func SumRowsTogether(rows ...[]models.Row) ([]models.Row, error) {
+	return sumRowsTogether(rows...)
+}
+
+// DivideRows divides two sets of rows. rows in lhs are the sums of values
+// while the rows in rhs are the counts of the same values. The name and tags
+// of a row in lhs must match the name and tags of a row in rhs to be divided.
+// umatching rows are not included in result. columnNames are the names of
+// the columns of the results.
+func DivideRows(lhs, rhs []models.Row, columnNames []string) (
+	[]models.Row, error) {
+	return divideRows(lhs, rhs, columnNames)
+}

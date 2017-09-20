@@ -13,6 +13,25 @@ var (
 	ErrUnsupported        = errors.New("qlutils: Unsupported")
 )
 
+// SingleQuery turns a statement into a query with that one statement.
+func SingleQuery(stmt influxql.Statement) *influxql.Query {
+	return &influxql.Query{Statements: influxql.Statements{stmt}}
+}
+
+// WithAggregationType returns a statement like stmt that uses aggregation
+// as the aggregation function.
+func WithAggregationType(stmt influxql.Statement, aggregation string) (
+	influxql.Statement, error) {
+	return withAggregationType(stmt, aggregation)
+}
+
+// AggregationType returns that aggregation function stmt uses in lowercase.
+// AggregationType returns an error if stmt doesn't use an aggregation
+// function.
+func AggregationType(stmt influxql.Statement) (lowercase string, err error) {
+	return aggregationType(stmt)
+}
+
 // NewQuery creates a new query instance from a string substituting currentTime
 // for now().
 func NewQuery(ql string, currentTime time.Time) (*influxql.Query, error) {

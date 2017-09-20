@@ -4,6 +4,7 @@ import (
 	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/influxdata/influxdb/influxql"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,62 @@ func parseQuery(query *influxql.Query, now time.Time) (
 		}
 	}
 	return result, colNames, nil
+}
+
+func withAggregationType(stmt influxql.Statement, aggregation string) (
+	result influxql.Statement, err error) {
+	sel, ok := stmt.(*influxql.SelectStatement)
+	if !ok {
+		err = ErrUnsupported
+		return
+	}
+	selCopy := sel.Clone()
+	fields := selCopy.Fields
+	if len(fields) != 1 {
+		err = ErrUnsupported
+		return
+	}
+	field := fields[0]
+	call, ok := field.Expr.(*influxql.Call)
+	if !ok {
+		err = ErrUnsupported
+		return
+	}
+	call.Name = aggregation
+	return selCopy, nil
+}
+
+func aggregationType(stmt influxql.Statement) (lowerCase string, err error) {
+	sel, ok := stmt.(*influxql.SelectStatement)
+	if !ok {
+		err = ErrUnsupported
+		return
+	}
+	fields := sel.Fields
+	if len(fields) != 1 {
+		err = ErrUnsupported
+		return
+	}
+	field := fields[0]
+	call, ok := field.Expr.(*influxql.Call)
+	if !ok {
+		err = ErrUnsupported
+		return
+	}
+	if len(call.Args) != 1 {
+		err = ErrUnsupported
+		return
+	}
+	varRef, ok := call.Args[0].(*influxql.VarRef)
+	if !ok {
+		err = ErrUnsupported
+		return
+	}
+	if varRef.Val != "value" {
+		err = ErrUnsupported
+		return
+	}
+	return strings.ToLower(call.Name), nil
 }
 
 func parseStatement(stmt influxql.Statement, currentTime time.Time) (

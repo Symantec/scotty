@@ -618,34 +618,29 @@ func piecewiseDivide(lhs, rhs [][]interface{}) (
 }
 
 // addValues computes lhs + rhs. lhs and rhs are either json.Number values or
-// nil. x + nil = x. addValues returns an error if lhs and rhs are neither
+// nil. x + nil = nil. addValues returns an error if lhs and rhs are neither
 // nil nor json.Number instances
 func addValues(lhs, rhs interface{}) (interface{}, error) {
-	if lhs == nil && rhs == nil {
+	if lhs == nil || rhs == nil {
 		return nil, nil
 	}
 	var lv, rv float64
-	if lhs != nil {
-		lvalue, ok := lhs.(json.Number)
-		if !ok {
-			return nil, fmt.Errorf("Value wrong format %v", lhs)
-		}
-		var err error
-		lv, err = lvalue.Float64()
-		if err != nil {
-			return nil, err
-		}
+	var err error
+	lvalue, ok := lhs.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("Value wrong format %v", lhs)
 	}
-	if rhs != nil {
-		rvalue, ok := rhs.(json.Number)
-		if !ok {
-			return nil, fmt.Errorf("Value wrong format %v", rhs)
-		}
-		var err error
-		rv, err = rvalue.Float64()
-		if err != nil {
-			return nil, err
-		}
+	lv, err = lvalue.Float64()
+	if err != nil {
+		return nil, err
+	}
+	rvalue, ok := rhs.(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("Value wrong format %v", rhs)
+	}
+	rv, err = rvalue.Float64()
+	if err != nil {
+		return nil, err
 	}
 	sum := lv + rv
 	return json.Number(strconv.FormatFloat(sum, 'g', -1, 64)), nil

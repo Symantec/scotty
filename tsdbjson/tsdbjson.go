@@ -221,7 +221,7 @@ func parseDownSample(downSampleStr string) (result *DownSampleSpec, err error) {
 func (p *ParsedQuery) ensureStartTimeRecentEnough() {
 	if p.Aggregator.DownSample != nil {
 		downSample := p.Aggregator.DownSample
-		if p.End-p.Start/downSample.DurationInSeconds > kMaxDownSampleBuckets {
+		if (p.End-p.Start)/downSample.DurationInSeconds > kMaxDownSampleBuckets {
 			p.Start = p.End - downSample.DurationInSeconds*kMaxDownSampleBuckets
 		}
 	}

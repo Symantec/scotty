@@ -634,6 +634,43 @@ func (c *timeSeriesCollectionType) byWhateverGroupBy(
 	}
 }
 
+func (c *timeSeriesCollectionType) earliest(
+	timeSeries []*timeSeriesType,
+	timestampSeries map[int]*timestampSeriesType) (result float64) {
+
+	for _, ts := range timeSeries {
+		groupId := ts.id.GroupId()
+		if timestampSeries[groupId].GivenUpPages() {
+			earliest := timestampSeries[groupId].Earliest()
+			if earliest > result {
+				result = earliest
+			}
+		}
+	}
+	return
+}
+
+// Earliest returns the earliest time for which a given opentsdb time series
+// is valid. name is the name of the time series. If given time series is
+// new enough that no data has been evicted, Earliest just returns 0.0. If
+// no time series with  name exists, Earliest just returns 0.0.
+func (c *timeSeriesCollectionType) Earliest(name string) float64 {
+	timeSeries, timestampSeries := c.TsAndTimeStampsByName(name)
+	if len(timeSeries) == 0 {
+		return 0.0
+	}
+	partition := GroupMetricByPathAndNumeric.orderedPartition(timeSeries)
+	tslen := len(timeSeries)
+	// Find the numeric one
+	for startIdx, endIdx := 0, 0; startIdx < tslen; startIdx = endIdx {
+		endIdx = nextSubset(partition, startIdx)
+		if timeSeries[startIdx].id.Kind().CanToFromFloat() {
+			return c.earliest(timeSeries[startIdx:endIdx], timestampSeries)
+		}
+	}
+	return 0.0
+}
+
 func (c *timeSeriesCollectionType) tsdbTimeSeries(
 	timeSeries []*timeSeriesType,
 	timestampSeries map[int]*timestampSeriesType,

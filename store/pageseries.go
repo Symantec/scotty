@@ -54,6 +54,7 @@ type pageSeriesType struct {
 	pages         list.List
 	nextPageToUse *pageWithMetaDataType
 	toData        func(*pageWithMetaDataType) basicPageType
+	pagesRemoved  bool
 }
 
 // Init initializes this instance. toData gets the page data out of a page
@@ -189,6 +190,7 @@ func (p *pageSeriesType) GiveUpPage(
 		nodeGoneCallback(front)
 	}
 	p.pages.Remove(front)
+	p.pagesRemoved = true
 	return true
 }
 
@@ -375,6 +377,12 @@ func (t *timestampSeriesType) GiveUpPage(page *pageWithMetaDataType) {
 		}
 		t.metrics.RemoveTimeStampPage()
 	}
+}
+
+func (t *timestampSeriesType) GivenUpPages() bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.pages.pagesRemoved
 }
 
 // AcceptPage grants given page to this series. The page queue calls

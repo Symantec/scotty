@@ -658,6 +658,13 @@ func (s *Store) ByEndpointStrategy(
 		result)
 }
 
+// Earliest returns the earliest time for which a particular time series
+// on a particular endpoint is valid. If no pages have been evicted from the
+// time series or if no such time series exists, Earliest just returns 0.0
+func (s *Store) Earliest(name string, endpointId interface{}) float64 {
+	return s.byApplication[endpointId].Earliest(name)
+}
+
 // TsdbTimeSeries returns the time series with given name from given endpoint.
 //
 // If no such metric exists for given endpoint, TsdbTimeSeries returns false

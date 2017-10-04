@@ -387,6 +387,33 @@ func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type earliestHandler struct {
+	ES     *machine.EndpointStore
+	Logger log.Logger
+}
+
+func (h earliestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	w.Header().Set("Content-Type", "application/json")
+	hostNameAndPath := strings.SplitN(r.URL.Path, "/", 3)
+	var host string
+	var name string
+	var path string
+	if len(hostNameAndPath) < 3 {
+		httpError(w, 404)
+		return
+	} else {
+		host, name, path = hostNameAndPath[0], hostNameAndPath[1], canonicalisePath(hostNameAndPath[2])
+	}
+	endpoint, metricStore := h.ES.ByHostAndName(host, name)
+	if endpoint == nil {
+		httpError(w, 404)
+		return
+	}
+	earliest := metricStore.Earliest(path, endpoint)
+	fmt.Fprintln(w, "Earliest", earliest)
+}
+
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
 	ES     *machine.EndpointStore

@@ -328,7 +328,7 @@ func startCollector(
 	collector.SetConcurrentConnects(*fConnectionCount)
 
 	sweepDurationDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-	collectionBucketer := tricorder.NewGeometricBucketer(1e-4, 100.0)
+	collectionBucketer := tricorder.NewArbitraryBucketer(0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 50.0, 100.0)
 	collectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	tricorderCollectionTimesDist := collectionBucketer.NewCumulativeDistribution()
 	changedMetricsPerEndpointDist := tricorder.NewGeometricBucketer(1.0, 10000.0).NewCumulativeDistribution()

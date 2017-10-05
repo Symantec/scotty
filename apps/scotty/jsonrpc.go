@@ -394,24 +394,17 @@ type earliestHandler struct {
 
 func (h earliestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
-	w.Header().Set("Content-Type", "application/json")
-	hostNameAndPath := strings.SplitN(r.URL.Path, "/", 3)
-	var host string
-	var name string
-	var path string
-	if len(hostNameAndPath) < 3 {
-		httpError(w, 404)
-		return
-	} else {
-		host, name, path = hostNameAndPath[0], hostNameAndPath[1], canonicalisePath(hostNameAndPath[2])
+	path := canonicalisePath(r.URL.Path)
+	apps, metricStore := h.ES.AllWithStore()
+	result := 0.0
+	for i := range apps {
+		earliest := metricStore.Earliest(path, apps[i].App.EP)
+		if earliest > result {
+			result = earliest
+		}
 	}
-	endpoint, metricStore := h.ES.ByHostAndName(host, name)
-	if endpoint == nil {
-		httpError(w, 404)
-		return
-	}
-	earliest := metricStore.Earliest(path, endpoint)
-	fmt.Fprintln(w, "Earliest", earliest)
+	fmt.Fprintln(w, "PATH: ", path)
+	fmt.Fprintln(w, "Earliest: ", result)
 }
 
 // byEndpointHandler handles serving api/hosts requests

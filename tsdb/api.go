@@ -22,6 +22,12 @@ type TsValue struct {
 // instances must be treated as immutable.
 type TimeSeries []TsValue
 
+// EarlyTruncate returns a time series like this one but without any times
+// before earliest.
+func (t TimeSeries) EarlyTruncate(earliest float64) TimeSeries {
+	return t.earlyTruncate(earliest)
+}
+
 // MarshalJSON satisfies the encoding/json.Marshaler interface and allows
 // correct JSON encoding of TimeSeries values. In particular, time series
 // must be encoded as

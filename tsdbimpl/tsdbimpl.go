@@ -30,7 +30,7 @@ func query(
 	if options.GroupByHostName && options.GroupByAppName {
 		for i := range apps {
 			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
-				timeSeries, ok := store.TsdbTimeSeries(
+				timeSeries, earliest, ok := store.TsdbTimeSeries(
 					metricName,
 					apps[i].App.EP,
 					start,
@@ -43,7 +43,7 @@ func query(
 						return
 					}
 					aggregator.Add(timeSeries)
-					aggregatedTimeSeries := aggregator.Aggregate()
+					aggregatedTimeSeries := aggregator.Aggregate().EarlyTruncate(earliest)
 					if len(aggregatedTimeSeries) != 0 {
 						taggedTimeSeriesSlice = append(
 							taggedTimeSeriesSlice, tsdb.TaggedTimeSeries{
@@ -59,9 +59,10 @@ func query(
 		}
 	} else {
 		aggregatorMap := make(map[tsdb.TagSet]tsdb.Aggregator)
+		earliestMap := make(map[tsdb.TagSet]float64)
 		for i := range apps {
 			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
-				timeSeries, ok := store.TsdbTimeSeries(
+				timeSeries, earliest, ok := store.TsdbTimeSeries(
 					metricName,
 					apps[i].App.EP,
 					start,
@@ -84,12 +85,15 @@ func query(
 						aggregatorMap[tagSet] = aggregator
 					}
 					aggregator.Add(timeSeries)
+					if earliest > earliestMap[tagSet] {
+						earliestMap[tagSet] = earliest
+					}
 				}
 			}
 		}
 		if metricNameFound {
 			for k, v := range aggregatorMap {
-				aggregatedTimeSeries := v.Aggregate()
+				aggregatedTimeSeries := v.Aggregate().EarlyTruncate(earliestMap[k])
 				if len(aggregatedTimeSeries) != 0 {
 					taggedTimeSeriesSlice = append(
 						taggedTimeSeriesSlice, tsdb.TaggedTimeSeries{

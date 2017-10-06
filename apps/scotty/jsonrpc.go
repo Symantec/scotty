@@ -436,8 +436,9 @@ func (h byTsdbHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := duration.TimeToFloat(time.Now())
-	timeSeries, ok := metricStore.TsdbTimeSeries(
+	timeSeries, earliest, ok := metricStore.TsdbTimeSeries(
 		path, endpoint.App.EP, now-60.0*float64(history), now)
+	fmt.Fprintln(w, "EARLIEST=", earliest)
 	fmt.Fprintln(w, "OK=", ok)
 	for i := range timeSeries {
 		fmt.Fprintln(w, timeSeries[i].Ts, timeSeries[i].Value)

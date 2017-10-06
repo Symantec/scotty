@@ -682,7 +682,7 @@ func (s *Store) Earliest(name string, endpointId interface{}) float64 {
 func (s *Store) TsdbTimeSeries(
 	name string,
 	endpointId interface{},
-	start, end float64) (tsdb.TimeSeries, bool) {
+	start, end float64) (result tsdb.TimeSeries, earliest float64, ok bool) {
 	return s.tsdbTimeSeries(name, endpointId, start, end)
 }
 

@@ -710,10 +710,11 @@ func (c *timeSeriesCollectionType) ByName(
 }
 
 func (c *timeSeriesCollectionType) TsdbTimeSeries(
-	name string, start, end float64) (tsdb.TimeSeries, bool) {
+	name string, start, end float64) (
+	result tsdb.TimeSeries, early float64, ok bool) {
 	timeSeries, timestampSeries := c.TsAndTimeStampsByName(name)
 	if len(timeSeries) == 0 {
-		return nil, false
+		return nil, 0.0, false
 	}
 	partition := GroupMetricByPathAndNumeric.orderedPartition(timeSeries)
 	tslen := len(timeSeries)
@@ -722,10 +723,12 @@ func (c *timeSeriesCollectionType) TsdbTimeSeries(
 		endIdx = nextSubset(partition, startIdx)
 		if timeSeries[startIdx].id.Kind().CanToFromFloat() {
 			return c.tsdbTimeSeries(
-				timeSeries[startIdx:endIdx], timestampSeries, start, end), true
+					timeSeries[startIdx:endIdx], timestampSeries, start, end),
+				c.earliest(timeSeries[startIdx:endIdx], timestampSeries),
+				true
 		}
 	}
-	return nil, false
+	return nil, 0.0, false
 }
 
 // Unique values by metric prefix in descending order happening before end and

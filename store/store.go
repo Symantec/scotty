@@ -83,7 +83,7 @@ func (s *Store) byNameAndEndpoint(
 func (s *Store) tsdbTimeSeries(
 	name string,
 	endpointId interface{},
-	start, end float64) (tsdb.TimeSeries, bool) {
+	start, end float64) (tsdb.TimeSeries, float64, bool) {
 	return s.byApplication[endpointId].TsdbTimeSeries(name, start, end)
 }
 

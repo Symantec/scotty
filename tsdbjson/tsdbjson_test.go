@@ -250,6 +250,12 @@ func TestParseQueryRequest(t *testing.T) {
 						Filter:  "some_20App",
 						GroupBy: false,
 					},
+					{
+						Type:    "literal_or",
+						Tagk:    "region",
+						Filter:  "some_20Region",
+						GroupBy: true,
+					},
 				},
 			},
 			{
@@ -296,7 +302,12 @@ func TestParseQueryRequest(t *testing.T) {
 					Type:  "wildcard",
 					Value: "some_20App",
 				},
+				RegionFilter: &tsdbjson.FilterSpec{
+					Type:  "literal_or",
+					Value: "some_20Region",
+				},
 				GroupByHostName: true,
+				GroupByRegion:   true,
 			},
 		},
 		{

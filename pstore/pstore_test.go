@@ -54,6 +54,10 @@ var (
 	kWriteError = errors.New("An error")
 )
 
+func newTagGroup(appName string) pstore.TagGroup {
+	return pstore.TagGroup{pstore.TagAppName: appName}
+}
+
 func TestSubTypes(t *testing.T) {
 	writer := &noListStringWriterType{}
 	builder := pstore.NewConsumerWithMetricsBuilder(writer)
@@ -76,7 +80,7 @@ func TestSubTypes(t *testing.T) {
 	iterator := compoundIteratorType{
 		listInt64Iterator, listStringIterator}
 
-	consumer.Write(iterator, "someHost", "someApp")
+	consumer.Write(iterator, "someHost", newTagGroup("someApp"))
 	consumer.Flush()
 
 	// three values should be written
@@ -110,7 +114,7 @@ func TestBug1586(t *testing.T) {
 	iterator := compoundIteratorType{
 		int64Iterator, stringIterator}
 
-	consumer.Write(iterator, "someHost", "someApp")
+	consumer.Write(iterator, "someHost", newTagGroup("someApp"))
 	consumer.Flush()
 
 	// Writing to the consumer should exhaust all the values in the
@@ -129,12 +133,12 @@ func TestConsumer(t *testing.T) {
 	// Ten values
 	tenIterator := newNamedIteratorForTesting(10)
 	assertSuccess(t, consumer.Write(
-		fiveIterator, "fiveHost", "fiveApp"))
+		fiveIterator, "fiveHost", newTagGroup("fiveApp")))
 	// Buffer not full yet, no writes and no commits
 	fiveIterator.VerifyNoCommits(t)
 	baseWriter.VerifyNoMoreWrites(t)
 	assertSuccess(t, consumer.Write(
-		tenIterator, "tenHost", "tenApp"))
+		tenIterator, "tenHost", newTagGroup("tenApp")))
 	// This iterator committed
 	fiveIterator.VerifyCommitPoints(t, 5)
 	// This iterator commited after 2 and 9 writes.
@@ -152,9 +156,9 @@ func TestConsumer(t *testing.T) {
 	// Throw error on second write
 	baseWriter.ThrowErrorOnNthWrite(2)
 	assertSuccess(t, consumer.Write(
-		oneIterator, "oneHost", "oneApp"))
+		oneIterator, "oneHost", newTagGroup("oneApp")))
 	assertFailure(t, consumer.Write(
-		fourteenIterator, "fourteenHost", "fourteenApp"))
+		fourteenIterator, "fourteenHost", newTagGroup("fourteenApp")))
 	tenIterator.VerifyCommitPoints(t, 2, 9, 10)
 	oneIterator.VerifyCommitPoints(t, 1)
 	// This iterator committed up to last successful write only
@@ -170,16 +174,16 @@ func TestConsumer(t *testing.T) {
 	fourIterator := newNamedIteratorForTesting(4)
 	// Succeeds since buffer not yet full
 	assertSuccess(t, consumer.Write(
-		threeIterator, "threeHost", "threeApp"))
+		threeIterator, "threeHost", newTagGroup("threeApp")))
 	// Fails because buffer is full and the write fails
 	assertFailure(t, consumer.Write(
-		fourIterator, "fourHost", "fourApp"))
+		fourIterator, "fourHost", newTagGroup("fourApp")))
 	// These two iterators not committed because of failure
 	threeIterator.VerifyNoCommits(t)
 	fourIterator.VerifyNoCommits(t)
 	sixIterator := newNamedIteratorForTesting(6)
 	assertSuccess(t, consumer.Write(
-		sixIterator, "sixHost", "sixApp"))
+		sixIterator, "sixHost", newTagGroup("sixApp")))
 	sixIterator.VerifyNoCommits(t)
 	baseWriter.VerifyNoMoreWrites(t)
 	assertSuccess(t, consumer.Flush())

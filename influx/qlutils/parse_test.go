@@ -77,7 +77,7 @@ func TestConvert(t *testing.T) {
 
 	Convey("With where clause query", t, func() {
 
-		ql := "select count(value) from \"/b/metric\" WHERE host='some-host' and appname = 'some-app' and time > now() - 1h group by time(5m)"
+		ql := "select count(value) from \"/b/metric\" WHERE host='some-host' and appname = 'some-app' and region = 'some-region' and time > now() - 1h group by time(5m)"
 		query, err := qlutils.NewQuery(ql, now)
 		So(err, ShouldBeNil)
 		origQueryString := query.String()
@@ -109,6 +109,10 @@ func TestConvert(t *testing.T) {
 							Type:  "literal_or",
 							Value: "some-app",
 						},
+						RegionFilter: &tsdbjson.FilterSpec{
+							Type:  "literal_or",
+							Value: "some-region",
+						},
 					},
 				},
 			)
@@ -122,7 +126,7 @@ func TestConvert(t *testing.T) {
 
 	Convey("With group by query", t, func() {
 
-		ql := "select sum(value) from \"/c/metric\" WHERE time > now() - 30m group by host, appname, time(6m)"
+		ql := "select sum(value) from \"/c/metric\" WHERE time > now() - 30m group by host, appname, region, time(6m)"
 		query, err := qlutils.NewQuery(ql, now)
 		So(err, ShouldBeNil)
 		origQueryString := query.String()
@@ -148,6 +152,7 @@ func TestConvert(t *testing.T) {
 					Options: tsdbjson.ParsedQueryOptions{
 						GroupByHostName: true,
 						GroupByAppName:  true,
+						GroupByRegion:   true,
 					},
 				},
 			)
@@ -161,7 +166,7 @@ func TestConvert(t *testing.T) {
 
 	Convey("With all caps aggregator query", t, func() {
 
-		ql := "SELECT SUM(value) FROM \"/c/metric\" WHERE time > now() - 30m group by host, appname, time(6m); SELECT MEAN(value) FROM \"/c/metric\" WHERE time > now() - 45m group by host, time(9m)"
+		ql := "SELECT SUM(value) FROM \"/c/metric\" WHERE time > now() - 30m group by host, appname, region, time(6m); SELECT MEAN(value) FROM \"/c/metric\" WHERE time > now() - 45m group by host, time(9m)"
 		query, err := qlutils.NewQuery(ql, now)
 		So(err, ShouldBeNil)
 

@@ -61,6 +61,9 @@ type Machine struct {
 	// The host name of the machine
 	Host string
 
+	// The region of the machine
+	Region string
+
 	// Whether or not machine is active
 	Active bool
 

@@ -518,6 +518,22 @@ func main() {
 			Logger: logger,
 		}})
 	http.Handle(
+		"/api/earliest/",
+		http.StripPrefix(
+			"/api/earliest/",
+			&earliestHandler{
+				ES:     endpointStore,
+				Logger: logger,
+			}))
+	http.Handle(
+		"/api/tsdb/",
+		http.StripPrefix(
+			"/api/tsdb/",
+			&byTsdbHandler{
+				ES:     endpointStore,
+				Logger: logger,
+			}))
+	http.Handle(
 		"/api/hosts/",
 		http.StripPrefix(
 			"/api/hosts/",

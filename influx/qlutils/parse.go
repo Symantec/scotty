@@ -20,9 +20,11 @@ type tsdbAggSpecType struct {
 
 var (
 	kTsdbAggSpecsByInfluxName = map[string]*tsdbAggSpecType{
-		"mean":  &tsdbAggSpecType{Agg: "avg", Downsample: "avg"},
-		"sum":   &tsdbAggSpecType{Agg: "sum", Downsample: "sum"},
-		"count": &tsdbAggSpecType{Agg: "sum", Downsample: "count"},
+		"mean":   &tsdbAggSpecType{Agg: "avg", Downsample: "avg"},
+		"sum":    &tsdbAggSpecType{Agg: "sum", Downsample: "sum"},
+		"count":  &tsdbAggSpecType{Agg: "sum", Downsample: "count"},
+		"ecount": &tsdbAggSpecType{Agg: "count", Downsample: "avg"},
+		"esum":   &tsdbAggSpecType{Agg: "sum", Downsample: "avg"},
 	}
 )
 

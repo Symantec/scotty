@@ -1320,7 +1320,7 @@ func TestTsdbTimeSeries(t *testing.T) {
 
 	var timeSeries tsdb.TimeSeries
 	var ok bool
-	if timeSeries, ok = aStore.TsdbTimeSeries(
+	if timeSeries, _, ok = aStore.TsdbTimeSeries(
 		"Alice", kEndpoint0, 0, 1200.0); !ok {
 		t.Fatal("Expected to find metric Alice")
 	}
@@ -1331,19 +1331,19 @@ func TestTsdbTimeSeries(t *testing.T) {
 		{700.0, 70.0}, {750.0, 75.0}, {800.0, 80.0}, {850.0, 85.0},
 		{900.0, 90.0}, {1000.0, 100.0}}
 	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
-	if timeSeries, ok = aStore.TsdbTimeSeries(
+	if timeSeries, _, ok = aStore.TsdbTimeSeries(
 		"Alice", kEndpoint0, 150.0, 300.0); !ok {
 		t.Fatal("Expected to find metric Alice")
 	}
 	expectedTimeSeries = tsdb.TimeSeries{
 		{150.0, 15.0}, {200.0, 20.0}, {250.0, 25.0}}
 	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
-	if timeSeries, ok = aStore.TsdbTimeSeries(
+	if timeSeries, _, ok = aStore.TsdbTimeSeries(
 		"Alice", kEndpoint0, 10000.0, 11000.0); !ok {
 		t.Fatal("Expected to find metric Alice")
 	}
 	assertValueEquals(t, 0, len(timeSeries))
-	_, ok = aStore.TsdbTimeSeries("Bob", kEndpoint0, 500.0, 600.0)
+	_, _, ok = aStore.TsdbTimeSeries("Bob", kEndpoint0, 500.0, 600.0)
 	if ok {
 		t.Error("Expected not to find time series bob.")
 	}
@@ -1445,13 +1445,13 @@ func TestIterator(t *testing.T) {
 	playback.Play(aStore, kEndpoint0)
 
 	// Test tsdbTimeSeries
-	timeSeries, _ := aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 202.0, 502.0)
+	timeSeries, _, _ := aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 202.0, 502.0)
 	expectedTimeSeries := tsdb.TimeSeries{
 		{202.0, 3.0}, {302.0, 203.0}, {402.0, 203.0}}
 	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)
 
 	// Test with missing values
-	timeSeries, _ = aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 600.0, 2000.0)
+	timeSeries, _, _ = aStore.TsdbTimeSeries("FoxTrot", kEndpoint0, 600.0, 2000.0)
 	expectedTimeSeries = tsdb.TimeSeries{
 		{602.0, 503.0}, {702.0, 603.0}, {802.0, 703.0}, {902.0, 803.0}}
 	assertValueDeepEquals(t, expectedTimeSeries, timeSeries)

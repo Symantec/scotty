@@ -387,6 +387,65 @@ func (h latestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type earliestHandler struct {
+	ES     *machine.EndpointStore
+	Logger log.Logger
+}
+
+func (h earliestHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	path := canonicalisePath(r.URL.Path)
+	apps, metricStore := h.ES.AllWithStore()
+	result := 0.0
+	for i := range apps {
+		earliest := metricStore.Earliest(path, apps[i].App.EP)
+		if earliest > result {
+			result = earliest
+		}
+	}
+	fmt.Fprintln(w, "PATH: ", path)
+	fmt.Fprintln(w, "Earliest: ", result)
+}
+
+// byEndpointHandler handles serving api/hosts requests
+type byTsdbHandler struct {
+	ES     *machine.EndpointStore
+	Logger log.Logger
+}
+
+func (h byTsdbHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	//	w.Header().Set("Content-Type", "application/json")
+	hostNameAndPath := strings.SplitN(r.URL.Path, "/", 3)
+	var host string
+	var name string
+	var path string
+	if len(hostNameAndPath) < 3 {
+		httpError(w, 404)
+		return
+	} else {
+		host, name, path = hostNameAndPath[0], hostNameAndPath[1], canonicalisePath(hostNameAndPath[2])
+	}
+	history, err := strconv.Atoi(r.Form.Get("history"))
+	if err != nil {
+		history = 360
+	}
+	endpoint, metricStore := h.ES.ByHostAndName(host, name)
+	if endpoint == nil {
+		httpError(w, 404)
+		return
+	}
+	now := duration.TimeToFloat(time.Now())
+	timeSeries, earliest, ok := metricStore.TsdbTimeSeries(
+		path, endpoint.App.EP, now-60.0*float64(history), now)
+	fmt.Fprintln(w, "EARLIEST=", earliest)
+	fmt.Fprintln(w, "OK=", ok)
+	for i := range timeSeries {
+		fmt.Fprintln(w, timeSeries[i].Ts, timeSeries[i].Value)
+	}
+
+}
+
 // byEndpointHandler handles serving api/hosts requests
 type byEndpointHandler struct {
 	ES     *machine.EndpointStore

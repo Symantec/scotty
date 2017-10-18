@@ -77,6 +77,9 @@ type Application struct {
 	// of this field can change.
 	Port uint
 
+	// TODO: comment
+	IsTLS bool
+
 	// The statistics for collecting metrics from this application. This
 	// field changes.
 	EndpointStats

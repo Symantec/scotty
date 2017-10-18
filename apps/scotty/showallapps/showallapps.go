@@ -38,7 +38,7 @@ const (
 	\ {{range .Apps}} \
 	  <tr>
 	  <td>{{.App.EP.HostName}}<br>{{.M.InstanceId}}<br>{{.M.AccountId}}<br>{{if .M.CloudHealth}}CH&nbsp;{{end}}{{if .M.CloudWatchStr}}CW: {{.M.CloudWatchStr}}{{end}}</td>
-	    <td>{{.App.Port}}</td>
+	    <td>{{.App.Port}}&nbsp;{{if .App.IsTLS}}TLS{{else}}Plain{{end}}</td>
 	    <td><a href="{{$top.Link .}}">{{.App.EP.AppName}}</a></td>
 	    <td>{{if .Active}}Yes{{else}}&nbsp;{{end}}</td>
 	    \ {{if .App.Down}} \

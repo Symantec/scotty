@@ -79,15 +79,15 @@ func TestAPI(t *testing.T) {
 				"host1": {
 					SeqNo: 1,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty": 6980,
-						"subd":   6912,
+						"scotty": {Port: 6980},
+						"subd":   {Port: 6912},
 					},
 				},
 				"host2": {
 					SeqNo: 1,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty":    6980,
-						"dominator": 6970,
+						"scotty":    {Port: 6980},
+						"dominator": {Port: 6970, IsTLS: true},
 					},
 				},
 			})
@@ -102,6 +102,7 @@ func TestAPI(t *testing.T) {
 		So(scotty1.App.EP.AppName(), ShouldEqual, "scotty")
 		So(scotty1.App.Active, ShouldBeTrue)
 		So(scotty1.App.Port, ShouldEqual, 6980)
+		So(scotty1.App.IsTLS, ShouldBeFalse)
 		So(store.IsRegistered(scotty1.App.EP), ShouldBeTrue)
 		So(store.IsEndpointActive(scotty1.App.EP), ShouldBeTrue)
 		dominator2, store := endpointStore.ByHostAndName("host2", "dominator")
@@ -112,6 +113,7 @@ func TestAPI(t *testing.T) {
 		So(dominator2.App.EP.AppName(), ShouldEqual, "dominator")
 		So(dominator2.App.Active, ShouldBeTrue)
 		So(dominator2.App.Port, ShouldEqual, 6970)
+		So(dominator2.App.IsTLS, ShouldBeTrue)
 		So(store.IsRegistered(dominator2.App.EP), ShouldBeTrue)
 		So(store.IsEndpointActive(dominator2.App.EP), ShouldBeTrue)
 
@@ -168,14 +170,14 @@ func TestAPI(t *testing.T) {
 				"host1": {
 					SeqNo: 2,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty": 6990, // changed from 6980. subd gone
+						"scotty": {Port: 6990, IsTLS: true}, // changed from 6980. subd gone
 					},
 				},
 				"host2": {
 					SeqNo: 2,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty":    6980,
-						"dominator": 6970,
+						"scotty":    {Port: 6980},
+						"dominator": {Port: 6970},
 					},
 				},
 			})
@@ -185,6 +187,7 @@ func TestAPI(t *testing.T) {
 
 		scotty1, store = endpointStore.ByHostAndName("host1", "scotty")
 		So(scotty1.App.Port, ShouldEqual, 6990)
+		So(scotty1.App.IsTLS, ShouldBeTrue)
 		So(store.IsEndpointActive(scotty1.App.EP), ShouldBeTrue)
 
 		subd1, store := endpointStore.ByHostAndName("host1", "subd")
@@ -231,15 +234,15 @@ func TestAPI(t *testing.T) {
 				"host1": {
 					SeqNo: 3,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty": 6990,
-						"subd":   6912, // subd back
+						"scotty": {Port: 6990},
+						"subd":   {Port: 6912}, // subd back
 					},
 				},
 				"host2": {
 					SeqNo: 3,
 					Endpoints: namesandports.NamesAndPorts{
-						"scotty":    6980,
-						"dominator": 6970,
+						"scotty":    {Port: 6980},
+						"dominator": {Port: 6970},
 					},
 				},
 			})

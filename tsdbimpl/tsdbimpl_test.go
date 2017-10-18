@@ -6,6 +6,7 @@ import (
 	"github.com/Symantec/scotty/awsinfo"
 	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/metrics"
+	"github.com/Symantec/scotty/namesandports"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/scotty/tsdb"
 	"github.com/Symantec/scotty/tsdb/aggregators"
@@ -64,23 +65,23 @@ func TestAPI(t *testing.T) {
 		map[string]machine.EndpointObservation{
 			"host1": {
 				SeqNo:     1,
-				Endpoints: map[string]uint{"AnotherApp": 6997},
+				Endpoints: namesandports.NamesAndPorts{"AnotherApp": {Port: 6997}},
 			},
 			"host2": {
 				SeqNo:     1,
-				Endpoints: map[string]uint{"AnotherApp": 6997},
+				Endpoints: namesandports.NamesAndPorts{"AnotherApp": {Port: 6997}},
 			},
 			"host3": {
 				SeqNo:     1,
-				Endpoints: map[string]uint{"AnotherApp": 6997},
+				Endpoints: namesandports.NamesAndPorts{"AnotherApp": {Port: 6997}},
 			},
 			"host4": {
 				SeqNo:     1,
-				Endpoints: map[string]uint{"AnotherApp": 6997},
+				Endpoints: namesandports.NamesAndPorts{"AnotherApp": {Port: 6997}},
 			},
 			"host5": {
 				SeqNo:     1,
-				Endpoints: map[string]uint{"AnotherApp": 6997},
+				Endpoints: namesandports.NamesAndPorts{"AnotherApp": {Port: 6997}},
 			},
 		})
 	endpointId, aStore := appStatus.ByHostAndName(

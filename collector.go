@@ -117,34 +117,6 @@ func (s *State) goToFailedToPoll(t time.Time) *State {
 	return s.finishedPolling(t, FailedToPoll)
 }
 
-type hostAndPort struct {
-	Host string
-	Port uint
-}
-
-type resourceConnector struct {
-	sources.Connector
-}
-
-func (c *resourceConnector) NewResource(
-	host string, port uint) sources.Resource {
-	return &hostAndPort{Host: host, Port: port}
-}
-
-func (c *resourceConnector) ResourceConnect(r sources.Resource) (
-	sources.Poller, error) {
-	hAndP := r.(*hostAndPort)
-	return c.Connect(hAndP.Host, hAndP.Port)
-}
-
-func asResourceConnector(
-	connector sources.Connector) sources.ResourceConnector {
-	if rc, ok := connector.(sources.ResourceConnector); ok {
-		return rc
-	}
-	return &resourceConnector{Connector: connector}
-}
-
 func newEndpoint(
 	hostId *hostid.HostID,
 	appName string,
@@ -152,7 +124,7 @@ func newEndpoint(
 	return &Endpoint{
 		hostId:         hostId,
 		name:           appName,
-		conn:           asResourceConnector(connector),
+		conn:           sources.AsResourceConnector(connector),
 		onePollAtATime: make(chan bool, 1),
 	}
 }
@@ -190,17 +162,19 @@ func (e *Endpoint) pollWithResource(
 	return true
 }
 
-func (e *Endpoint) getResource(port uint) sources.Resource {
+func (e *Endpoint) getResource(isTls bool, port uint) sources.Resource {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	if e.resource == nil || port != e.resourcePort {
-		e.resource = e.conn.NewResource(e.hostId.ConnectID(), port)
+	if e.resource == nil || port != e.resourcePort || isTls != e.isTls {
+		e.resource = e.conn.NewResource(
+			e.hostId.ConnectID(), port, sources.Config{IsTls: isTls})
 		e.resourcePort = port
+		e.isTls = isTls
 	}
 	return e.resource
 }
 
-func (e *Endpoint) poll(sweepStartTime time.Time, port uint, logger Logger) {
+func (e *Endpoint) poll(sweepStartTime time.Time, isTls bool, port uint, logger Logger) {
 	select {
 	case e.onePollAtATime <- true:
 		state := waitingToConnect(sweepStartTime)
@@ -213,7 +187,7 @@ func (e *Endpoint) poll(sweepStartTime time.Time, port uint, logger Logger) {
 			defer func() {
 				<-connectSemaphore
 			}()
-			e.pollWithResource(state, logger, e.getResource(port))
+			e.pollWithResource(state, logger, e.getResource(isTls, port))
 		}(state)
 	default:
 		return

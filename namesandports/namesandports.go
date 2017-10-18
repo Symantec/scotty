@@ -11,16 +11,16 @@ func (n NamesAndPorts) _copy() NamesAndPorts {
 	return result
 }
 
-func (n *NamesAndPorts) add(name string, port uint) {
+func (n *NamesAndPorts) add(name string, port uint, isTLS bool) {
 	if *n == nil {
 		*n = make(NamesAndPorts)
 	}
-	(*n)[name] = port
+	(*n)[name] = Record{Port: port, IsTLS: isTLS}
 }
 
 func (n NamesAndPorts) hasPort(port uint) bool {
 	for _, v := range n {
-		if v == port {
+		if v.Port == port {
 			return true
 		}
 	}

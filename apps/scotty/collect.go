@@ -499,7 +499,8 @@ func startCollector(
 				}
 
 				portNum := endpoint.App.Port
-				endpoint.App.EP.Poll(sweepTime, portNum, pollLogger)
+				isTLS := endpoint.App.IsTLS
+				endpoint.App.EP.Poll(sweepTime, isTLS, portNum, pollLogger)
 			}
 			sweepDuration := time.Now().Sub(sweepTime)
 			sweepDurationDist.Add(sweepDuration)

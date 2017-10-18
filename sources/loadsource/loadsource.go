@@ -13,7 +13,8 @@ type connectorType struct {
 	config *Config
 }
 
-func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
+func (c connectorType) Connect(
+	host string, port uint, config sources.Config) (sources.Poller, error) {
 	return &pollerType{c.config}, nil
 }
 

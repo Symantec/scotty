@@ -30,10 +30,10 @@ type multiResourceConnectorType struct {
 }
 
 func (m *multiResourceConnectorType) NewResource(
-	host string, port uint) Resource {
+	host string, port uint, config Config) Resource {
 	resources := make([]Resource, len(m.conns))
 	for i := range resources {
-		resources[i] = m.conns[i].NewResource(host, port)
+		resources[i] = m.conns[i].NewResource(host, port, config)
 	}
 	return &preferenceResourceType{
 		Resources: resources,
@@ -54,9 +54,10 @@ func (m *multiResourceConnectorType) ResourceConnect(r Resource) (
 	return
 }
 
-func (m *multiResourceConnectorType) Connect(host string, port uint) (
+func (m *multiResourceConnectorType) Connect(
+	host string, port uint, config Config) (
 	Poller, error) {
-	return m.ResourceConnect(m.NewResource(host, port))
+	return m.ResourceConnect(m.NewResource(host, port, config))
 }
 
 func (m *multiResourceConnectorType) Name() string {
@@ -80,8 +81,9 @@ func multiResourceConnector(
 }
 
 type hostAndPort struct {
-	Host string
-	Port uint
+	Host   string
+	Port   uint
+	Config Config
 }
 
 type simpleResourceConnectorType struct {
@@ -89,14 +91,14 @@ type simpleResourceConnectorType struct {
 }
 
 func (c *simpleResourceConnectorType) NewResource(
-	host string, port uint) Resource {
-	return &hostAndPort{Host: host, Port: port}
+	host string, port uint, config Config) Resource {
+	return &hostAndPort{Host: host, Port: port, Config: config}
 }
 
 func (c *simpleResourceConnectorType) ResourceConnect(r Resource) (
 	Poller, error) {
 	hAndP := r.(*hostAndPort)
-	return c.Connect(hAndP.Host, hAndP.Port)
+	return c.Connect(hAndP.Host, hAndP.Port, hAndP.Config)
 }
 
 func simpleResourceConnector(conn Connector) ResourceConnector {

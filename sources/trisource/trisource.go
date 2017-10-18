@@ -1,7 +1,9 @@
 package trisource
 
 import (
+	"crypto/tls"
 	"fmt"
+	libtls "github.com/Symantec/Dominator/lib/net/tls"
 	"github.com/Symantec/Dominator/lib/rpcclientpool"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
@@ -17,7 +19,15 @@ var (
 )
 
 func (c connectorType) NewResource(
-	host string, port uint) sources.Resource {
+	host string, port uint, config sources.Config) sources.Resource {
+	if config.IsTls {
+		return rpcclientpool.NewWithDialer(
+			"tcp",
+			fmt.Sprintf("%s:%d", host, port),
+			true,
+			"",
+			libtls.NewDialer(nil, &tls.Config{InsecureSkipVerify: true}))
+	}
 	return rpcclientpool.New(
 		"tcp",
 		fmt.Sprintf("%s:%d", host, port),
@@ -25,8 +35,9 @@ func (c connectorType) NewResource(
 		"")
 }
 
-func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
-	return c.ResourceConnect(c.NewResource(host, port))
+func (c connectorType) Connect(host string, port uint, config sources.Config) (
+	sources.Poller, error) {
+	return c.ResourceConnect(c.NewResource(host, port, config))
 }
 
 func (c connectorType) ResourceConnect(resource sources.Resource) (

@@ -283,9 +283,9 @@ func TestEndpoints(t *testing.T) {
 	}
 	actual := metrics.Endpoints(list)
 	expected := namesandports.NamesAndPorts{
-		"bar":    6990,
-		"foo":    6974,
-		"scotty": 6980,
+		"bar":    {Port: 6990, IsTLS: false},
+		"foo":    {Port: 6974, IsTLS: false},
+		"scotty": {Port: 6980, IsTLS: false},
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		t.Errorf("Expected %v; got %v", expected, actual)

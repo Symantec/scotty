@@ -139,6 +139,7 @@ type Endpoint struct {
 	state        *State
 	errored      bool
 	lock         sync.Mutex
+	isTls        bool
 	resourcePort uint
 	resource     sources.Resource
 }
@@ -175,10 +176,12 @@ func (e *Endpoint) ConnectorName() string {
 // requests for metrics are in progress. Poll returns immediately if this
 // instance is already in the process of collecting metrics.
 // sweepStartTime is the start time of the current collection of metrics.
+// isTls indicates whether or not TLS should be used
 // port is the port to use to connect.
 // logger logs collection events for this polling
-func (e *Endpoint) Poll(sweepStartTime time.Time, port uint, logger Logger) {
-	e.poll(sweepStartTime, port, logger)
+func (e *Endpoint) Poll(
+	sweepStartTime time.Time, isTls bool, port uint, logger Logger) {
+	e.poll(sweepStartTime, isTls, port, logger)
 }
 
 // SetConcurrentPolls sets the maximum number of concurrent polls.

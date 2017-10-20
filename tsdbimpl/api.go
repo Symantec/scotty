@@ -22,10 +22,14 @@ type QueryOptions struct {
 	HostNameFilter tsdb.TagFilter
 	// Filter for "appname" tag values. Optional
 	AppNameFilter tsdb.TagFilter
+	// Filter for "region" tag value. Optional
+	RegionFilter tsdb.TagFilter
 	// True if results should be grouped by "HostName" tag
 	GroupByHostName bool
 	// True if results should be groupd by "appname" tag.
 	GroupByAppName bool
+	// True if results should be grouped by region
+	GroupByRegion bool
 }
 
 // Query queries scotty for given tsdb query.

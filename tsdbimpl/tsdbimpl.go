@@ -5,11 +5,14 @@ import (
 	"github.com/Symantec/scotty/tsdb"
 )
 
-func (o *QueryOptions) isIncluded(hostName, appName string) bool {
+func (o *QueryOptions) isIncluded(hostName, appName, region string) bool {
 	if o.HostNameFilter != nil && !o.HostNameFilter.Filter(hostName) {
 		return false
 	}
 	if o.AppNameFilter != nil && !o.AppNameFilter.Filter(appName) {
+		return false
+	}
+	if o.RegionFilter != nil && !o.RegionFilter.Filter(region) {
 		return false
 	}
 	return true
@@ -27,9 +30,14 @@ func query(
 	apps, store := endpoints.AllWithStore()
 	var taggedTimeSeriesSlice []tsdb.TaggedTimeSeries
 	var metricNameFound bool
-	if options.GroupByHostName && options.GroupByAppName {
+
+	// We are grouping by everything
+	if options.GroupByHostName && options.GroupByAppName && options.GroupByRegion {
 		for i := range apps {
-			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
+			if options.isIncluded(
+				apps[i].App.EP.HostName(),
+				apps[i].App.EP.AppName(),
+				apps[i].M.Region) {
 				timeSeries, earliest, ok := store.TsdbTimeSeries(
 					metricName,
 					apps[i].App.EP,
@@ -50,6 +58,7 @@ func query(
 								Tags: tsdb.TagSet{
 									HostName: apps[i].App.EP.HostName(),
 									AppName:  apps[i].App.EP.AppName(),
+									Region:   apps[i].M.Region,
 								},
 								Values: aggregatedTimeSeries,
 							})
@@ -58,10 +67,15 @@ func query(
 			}
 		}
 	} else {
+		// We aren't grouping by everything so we need multiple aggregators
+		// to merge.
 		aggregatorMap := make(map[tsdb.TagSet]tsdb.Aggregator)
 		earliestMap := make(map[tsdb.TagSet]float64)
 		for i := range apps {
-			if options.isIncluded(apps[i].App.EP.HostName(), apps[i].App.EP.AppName()) {
+			if options.isIncluded(
+				apps[i].App.EP.HostName(),
+				apps[i].App.EP.AppName(),
+				apps[i].M.Region) {
 				timeSeries, earliest, ok := store.TsdbTimeSeries(
 					metricName,
 					apps[i].App.EP,
@@ -75,6 +89,9 @@ func query(
 					}
 					if options.GroupByAppName {
 						tagSet.AppName = apps[i].App.EP.AppName()
+					}
+					if options.GroupByRegion {
+						tagSet.Region = apps[i].M.Region
 					}
 					aggregator := aggregatorMap[tagSet]
 					if aggregator == nil {
@@ -110,6 +127,7 @@ func query(
 			Data:              taggedTimeSeriesSlice,
 			GroupedByHostName: options.GroupByHostName,
 			GroupedByAppName:  options.GroupByAppName,
+			GroupedByRegion:   options.GroupByRegion,
 		}, nil
 	}
 	return nil, ErrNoSuchMetric

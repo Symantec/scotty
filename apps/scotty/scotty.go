@@ -468,7 +468,7 @@ func main() {
 	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
 	metricNameEngine := suggest.NewEngine()
 	metricNameAdder := newTsdbAdder(metricNameEngine)
-	tagkEngine := suggest.NewSuggester("appname", "HostName")
+	tagkEngine := suggest.NewSuggester("appname", "HostName", "region")
 	tagvEngine := suggest.NewEngine()
 	tagvAdder := newTsdbAdder(tagvEngine)
 	// TODO: Fix this somehow to include all apps

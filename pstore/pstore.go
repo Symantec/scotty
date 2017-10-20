@@ -135,7 +135,7 @@ func (w *RecordWriterMetrics) logWriteError(err string, timeTaken time.Duration)
 type consumerRequestType struct {
 	Iterator store.NamedIterator
 	HostName string
-	AppName  string
+	TagGroup TagGroup
 }
 
 // barrier releases callers in groups of N and makes callers wait until
@@ -196,7 +196,7 @@ func (a *AsyncConsumer) loop(w RecordWriter, bufferSize uint) {
 			consumer.Write(
 				request.Iterator,
 				request.HostName,
-				request.AppName)
+				request.TagGroup)
 		} else {
 			consumer.Flush()
 
@@ -208,7 +208,7 @@ func (a *AsyncConsumer) loop(w RecordWriter, bufferSize uint) {
 }
 
 func (a *AsyncConsumer) writeAsync(
-	n store.NamedIterator, hostName, appName string) {
+	n store.NamedIterator, hostName string, tagGroup TagGroup) {
 	// nil signals a flush request, so we don't allow it here.
 	if n == nil {
 		panic("Got nil NamedIterator")
@@ -216,7 +216,7 @@ func (a *AsyncConsumer) writeAsync(
 	a.requests <- consumerRequestType{
 		Iterator: n,
 		HostName: hostName,
-		AppName:  appName}
+		TagGroup: tagGroup}
 }
 
 func (a *AsyncConsumer) flush() {
@@ -245,13 +245,13 @@ func newConsumer(w RecordWriter, bufferSize uint) *Consumer {
 }
 
 func (c *Consumer) write(
-	n store.NamedIterator, hostName, appName string) error {
+	n store.NamedIterator, hostName string, tagGroup TagGroup) error {
 	var r store.Record
 	c.toBeCommitted = append(c.toBeCommitted, n)
 	for n.Next(&r) {
 		c.buffer[c.idx] = Record{
 			HostName:  hostName,
-			Tags:      TagGroup{TagAppName: appName},
+			Tags:      tagGroup,
 			Path:      r.Info.Path(),
 			Kind:      r.Info.Kind(),
 			SubType:   r.Info.SubType(),
@@ -289,7 +289,7 @@ func (c *Consumer) flush() (err error) {
 }
 
 type consumerType interface {
-	Write(n store.NamedIterator, hostName, appName string)
+	Write(n store.NamedIterator, hostName string, tagGroup TagGroup)
 	Flush()
 }
 
@@ -306,8 +306,8 @@ type consumerTypeAdapter struct {
 }
 
 func (c consumerTypeAdapter) Write(
-	n store.NamedIterator, hostName, appName string) {
-	c.c.Write(n, hostName, appName)
+	n store.NamedIterator, hostName string, tagGroup TagGroup) {
+	c.c.Write(n, hostName, tagGroup)
 }
 
 func (c consumerTypeAdapter) Flush() {
@@ -319,8 +319,8 @@ type asyncConsumerTypeAdapter struct {
 }
 
 func (c asyncConsumerTypeAdapter) Write(
-	n store.NamedIterator, hostName, appName string) {
-	c.WriteAsync(n, hostName, appName)
+	n store.NamedIterator, hostName string, tagGroup TagGroup) {
+	c.WriteAsync(n, hostName, tagGroup)
 }
 
 func (s *ConsumerMetricsStore) metrics(m *ConsumerMetrics) {

@@ -17,7 +17,7 @@ type Config struct {
 	ApiKey string `yaml:"apiKey"`
 	// Name for metrics
 	Name string `yaml:"name"`
-	//  AWS region
+	//  Not used anymore.
 	Region string `yaml:"region"`
 }
 

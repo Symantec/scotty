@@ -5,10 +5,15 @@ import (
 	"github.com/Symantec/scotty/metrics"
 )
 
+// Config controls how a Connector connects.
+type Config struct {
+	IsTls bool // If true, Connector connects using TLS
+}
+
 // Connector connects to a particular type of source.
 // Connector instances must be safe to use with multiple goroutines.
 type Connector interface {
-	Connect(host string, port uint) (Poller, error)
+	Connect(host string, port uint, config Config) (Poller, error)
 	Name() string
 }
 
@@ -35,7 +40,7 @@ type ResourceConnector interface {
 	// Creates a long lived resource from host and port. Returned resource
 	// can be passed to ResourceConnect again and again amortizing the cost
 	// of connecting.
-	NewResource(host string, port uint) Resource
+	NewResource(host string, port uint, config Config) Resource
 
 	ResourceConnect(resource Resource) (Poller, error)
 }
@@ -48,6 +53,11 @@ type ResourceConnector interface {
 func MultiResourceConnector(
 	conns ConnectorList, consecutiveCallsForReset int) ResourceConnector {
 	return multiResourceConnector(conns, consecutiveCallsForReset)
+}
+
+// AsResourceConnector upgrades conn to a ResourceConnector.
+func AsResourceConnector(conn Connector) ResourceConnector {
+	return simpleResourceConnector(conn)
 }
 
 // Poller polls metrics from a particular source. Generally, a Poller

@@ -67,7 +67,7 @@ func (g *Group) applications() (result []*Application) {
 
 func (g *Group) setApplications(namesAndPorts namesandports.NamesAndPorts) (
 	newApps, active, inactive []*scotty.Endpoint) {
-	for name, port := range namesAndPorts {
+	for name, record := range namesAndPorts {
 		if name == HealthAgentName {
 			continue
 		}
@@ -78,7 +78,8 @@ func (g *Group) setApplications(namesAndPorts namesandports.NamesAndPorts) (
 			appData := &applicationDataType{
 				A: Application{
 					EP:     ep,
-					Port:   port,
+					Port:   record.Port,
+					IsTLS:  record.IsTLS,
 					Active: true,
 				},
 			}
@@ -87,11 +88,13 @@ func (g *Group) setApplications(namesAndPorts namesandports.NamesAndPorts) (
 		} else if !appData.A.Active {
 			appData.A.Active = true
 			appData.InactiveCount = 0
-			appData.A.Port = port
+			appData.A.Port = record.Port
+			appData.A.IsTLS = record.IsTLS
 			active = append(active, appData.A.EP)
 		} else {
 			appData.InactiveCount = 0
-			appData.A.Port = port
+			appData.A.Port = record.Port
+			appData.A.IsTLS = record.IsTLS
 		}
 	}
 	// inactivate apps

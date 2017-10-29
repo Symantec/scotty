@@ -1,6 +1,7 @@
 package jsonsource
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,14 +20,28 @@ var (
 	kConnector = connectorType(0)
 )
 
-func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
-	url := fmt.Sprintf("http://%s:%d/metricsapi", host, port)
-	var client http.Client
-	response, err := client.Get(url)
-	if err != nil {
-		return nil, err
+func (c connectorType) Connect(
+	host string, port uint, config sources.Config) (sources.Poller, error) {
+	// TODO: Use TLS.
+	if config.IsTls {
+		url := fmt.Sprintf("https://%s:%d/metricsapi", host, port)
+		client := &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+		response, err := client.Get(url)
+		if err != nil {
+			return nil, err
+		}
+		return &pollerType{response: response}, nil
+	} else {
+		url := fmt.Sprintf("http://%s:%d/metricsapi", host, port)
+		var client http.Client
+		response, err := client.Get(url)
+		if err != nil {
+			return nil, err
+		}
+		return &pollerType{response: response}, nil
 	}
-	return &pollerType{response: response}, nil
 }
 
 func (c connectorType) Name() string {

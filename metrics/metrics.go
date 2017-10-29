@@ -92,9 +92,10 @@ func endpoints(list List) (result namesandports.NamesAndPorts) {
 		name := current[healthChecksLen]
 		base := current.Truncate(healthChecksLen + 1)
 		if istri, _ := getBool(list, base.String()+"/has-tricorder-metrics"); istri {
+			isTls, _ := getBool(list, base.String()+"/use-tls")
 			port, ok := getAsUint(list, base.String()+"/port-number")
 			if ok {
-				result.Add(name, port)
+				result.Add(name, port, isTls)
 			}
 		}
 		beginning = findNext(list, base)

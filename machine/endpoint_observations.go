@@ -34,7 +34,7 @@ func (e *EndpointObservations) maybeAddApp(
 			eo.SeqNo = 1
 		}
 		endpointsCopy := eo.Endpoints.Copy()
-		endpointsCopy.Add(appName, port)
+		endpointsCopy.Add(appName, port, false)
 		eo.Endpoints = endpointsCopy
 		e.data[hostName] = eo
 	}

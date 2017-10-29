@@ -17,8 +17,8 @@ func TestApi(t *testing.T) {
 		So(healthAgentEp.AppName(), ShouldEqual, application.HealthAgentName)
 		newapps, active, inactive := group.SetApplications(
 			namesandports.NamesAndPorts{
-				"scotty":    6980,
-				"dominator": 6970,
+				"scotty":    {Port: 6980},
+				"dominator": {Port: 6970, IsTLS: true},
 			})
 		So(
 			newapps,
@@ -36,8 +36,14 @@ func TestApi(t *testing.T) {
 			healthAgent := group.ByName(application.HealthAgentName)
 			So(healthAgent.EP.HostName(), ShouldEqual, "ahost")
 			So(healthAgent.EP.AppName(), ShouldEqual, application.HealthAgentName)
+			So(healthAgent.IsTLS, ShouldBeFalse)
 			So(healthAgent.Port, ShouldEqual, application.HealthAgentPort)
 			So(healthAgent.Active, ShouldBeTrue)
+
+			dominator := group.ByName("dominator")
+			So(dominator.EP.HostName(), ShouldEqual, "ahost")
+			So(dominator.EP.AppName(), ShouldEqual, "dominator")
+			So(dominator.IsTLS, ShouldBeTrue)
 		})
 		Convey("ByName returns nil on not found", func() {
 			So(group.ByName("does not exist"), ShouldBeNil)
@@ -61,9 +67,9 @@ func TestApi(t *testing.T) {
 		Convey("SetApplications works", func() {
 			newApps, active, inactive := group.SetApplications(
 				namesandports.NamesAndPorts{
-					application.HealthAgentName: 7007,
-					"scotty":                    6981,
-					"new app":                   7000,
+					application.HealthAgentName: {Port: 7007},
+					"scotty":                    {Port: 6981},
+					"new app":                   {Port: 7000},
 				})
 			So(
 				newApps,
@@ -76,9 +82,9 @@ func TestApi(t *testing.T) {
 
 			newApps, active, inactive = group.SetApplications(
 				namesandports.NamesAndPorts{
-					application.HealthAgentName: 7007,
-					"scotty":                    6981,
-					"new app":                   7000,
+					application.HealthAgentName: {Port: 7007},
+					"scotty":                    {Port: 6981},
+					"new app":                   {Port: 7000},
 				})
 			So(newApps, ShouldHaveLength, 0)
 			So(active, ShouldHaveLength, 0)
@@ -86,9 +92,9 @@ func TestApi(t *testing.T) {
 
 			newApps, active, inactive = group.SetApplications(
 				namesandports.NamesAndPorts{
-					application.HealthAgentName: 7007,
-					"scotty":                    6981,
-					"new app":                   7000,
+					application.HealthAgentName: {Port: 7007},
+					"scotty":                    {Port: 6981, IsTLS: true},
+					"new app":                   {Port: 7000},
 				})
 			So(newApps, ShouldHaveLength, 0)
 			So(active, ShouldHaveLength, 0)
@@ -98,6 +104,7 @@ func TestApi(t *testing.T) {
 				"dominator")
 			Convey("port numbers update", func() {
 				So(group.ByName("scotty").Port, ShouldEqual, 6981)
+				So(group.ByName("scotty").IsTLS, ShouldBeTrue)
 				So(
 					group.ByName(application.HealthAgentName).Port,
 					ShouldEqual,
@@ -110,7 +117,7 @@ func TestApi(t *testing.T) {
 			Convey("Reactivating works", func() {
 				newApps, active, inactive := group.SetApplications(
 					namesandports.NamesAndPorts{
-						"dominator": 6972,
+						"dominator": {Port: 6972},
 					})
 				So(newApps, ShouldHaveLength, 0)
 				So(

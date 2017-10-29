@@ -13,8 +13,8 @@ func TestEndpointObservations(t *testing.T) {
 		eos.Save(
 			"host1",
 			namesandports.NamesAndPorts{
-				"app1": 6911,
-				"app2": 6912,
+				"app1": {Port: 6911},
+				"app2": {Port: 6912},
 			})
 		eos.Save("host2", nil)
 		eos.Save("host2", nil)
@@ -22,8 +22,8 @@ func TestEndpointObservations(t *testing.T) {
 			"host1": machine.EndpointObservation{
 				SeqNo: 1,
 				Endpoints: namesandports.NamesAndPorts{
-					"app1": 6911,
-					"app2": 6912,
+					"app1": {Port: 6911},
+					"app2": {Port: 6912},
 				},
 			},
 			"host2": machine.EndpointObservation{
@@ -36,13 +36,15 @@ func TestEndpointObservations(t *testing.T) {
 			"host1": machine.EndpointObservation{
 				SeqNo: 1,
 				Endpoints: namesandports.NamesAndPorts{
-					"app1": 6911,
-					"app2": 6912,
+					"app1": {Port: 6911},
+					"app2": {Port: 6912},
 				},
 			},
 			"host2": machine.EndpointObservation{
-				SeqNo:     2,
-				Endpoints: namesandports.NamesAndPorts{"scotty": 6980},
+				SeqNo: 2,
+				Endpoints: namesandports.NamesAndPorts{
+					"scotty": {Port: 6980},
+				},
 			},
 		})
 		eos.MaybeAddApp("host1", "scotty", 6980)
@@ -51,14 +53,14 @@ func TestEndpointObservations(t *testing.T) {
 			"host1": machine.EndpointObservation{
 				SeqNo: 1,
 				Endpoints: namesandports.NamesAndPorts{
-					"app1":   6911,
-					"app2":   6912,
-					"scotty": 6980,
+					"app1":   {Port: 6911},
+					"app2":   {Port: 6912},
+					"scotty": {Port: 6980},
 				},
 			},
 			"host2": machine.EndpointObservation{
 				SeqNo:     2,
-				Endpoints: namesandports.NamesAndPorts{"scotty": 6980},
+				Endpoints: namesandports.NamesAndPorts{"scotty": {Port: 6980}},
 			},
 		})
 		eos.MaybeAddApp("host1", "do", 6980)
@@ -68,18 +70,18 @@ func TestEndpointObservations(t *testing.T) {
 			"host1": machine.EndpointObservation{
 				SeqNo: 1,
 				Endpoints: namesandports.NamesAndPorts{
-					"app1":   6911,
-					"app2":   6912,
-					"scotty": 6980,
+					"app1":   {Port: 6911},
+					"app2":   {Port: 6912},
+					"scotty": {Port: 6980},
 				},
 			},
 			"host2": machine.EndpointObservation{
 				SeqNo:     2,
-				Endpoints: namesandports.NamesAndPorts{"scotty": 6980},
+				Endpoints: namesandports.NamesAndPorts{"scotty": {Port: 6980}},
 			},
 			"host3": machine.EndpointObservation{
 				SeqNo:     1,
-				Endpoints: namesandports.NamesAndPorts{"mi": 6980},
+				Endpoints: namesandports.NamesAndPorts{"mi": {Port: 6980}},
 			},
 		})
 	})

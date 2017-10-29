@@ -11,7 +11,8 @@ func newConnector(community string) sources.Connector {
 	return connectorType(community)
 }
 
-func (c connectorType) Connect(host string, port uint) (sources.Poller, error) {
+func (c connectorType) Connect(host string, port uint, config sources.Config) (
+	sources.Poller, error) {
 	return nil, errors.New("SNMP not supported.")
 }
 

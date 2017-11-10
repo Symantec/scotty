@@ -3,19 +3,23 @@ package trisource
 import (
 	"crypto/tls"
 	"fmt"
+	"time"
+
+	"github.com/Symantec/Dominator/lib/net/reverseconnection"
 	libtls "github.com/Symantec/Dominator/lib/net/tls"
 	"github.com/Symantec/Dominator/lib/rpcclientpool"
 	"github.com/Symantec/scotty/metrics"
 	"github.com/Symantec/scotty/sources"
 	"github.com/Symantec/tricorder/go/tricorder/messages"
 	"github.com/Symantec/tricorder/go/tricorder/types"
-	"time"
 )
 
 type connectorType int
 
 var (
 	kConnector = connectorType(0)
+
+	rawDialer = reverseconnection.NewDialer(nil, nil, time.Minute, 0, nil)
 )
 
 func (c connectorType) NewResource(
@@ -26,13 +30,14 @@ func (c connectorType) NewResource(
 			fmt.Sprintf("%s:%d", host, port),
 			true,
 			"",
-			libtls.NewDialer(nil, &tls.Config{InsecureSkipVerify: true}))
+			libtls.NewDialer(rawDialer, &tls.Config{InsecureSkipVerify: true}))
 	}
-	return rpcclientpool.New(
+	return rpcclientpool.NewWithDialer(
 		"tcp",
 		fmt.Sprintf("%s:%d", host, port),
 		true,
-		"")
+		"",
+		rawDialer)
 }
 
 func (c connectorType) Connect(host string, port uint, config sources.Config) (

@@ -3,7 +3,7 @@ package qlutils
 import (
 	"github.com/Symantec/scotty/tsdbjson"
 	"github.com/Symantec/tricorder/go/tricorder/duration"
-	"github.com/influxdata/influxdb/influxql"
+	"github.com/influxdata/influxql"
 	"strings"
 	"time"
 )

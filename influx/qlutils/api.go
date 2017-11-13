@@ -3,7 +3,7 @@ package qlutils
 import (
 	"errors"
 	"github.com/Symantec/scotty/tsdbjson"
-	"github.com/influxdata/influxdb/influxql"
+	"github.com/influxdata/influxql"
 	"time"
 )
 

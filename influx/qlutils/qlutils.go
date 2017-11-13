@@ -1,7 +1,7 @@
 package qlutils
 
 import (
-	"github.com/influxdata/influxdb/influxql"
+	"github.com/influxdata/influxql"
 	"time"
 )
 

@@ -21,6 +21,7 @@ import (
 const (
 	TagAppName    = "appname"
 	TagRegionName = "region"
+	TagIpAddress  = "ipaddress"
 )
 
 var (

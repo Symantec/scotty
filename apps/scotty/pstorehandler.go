@@ -227,6 +227,7 @@ func (p *pstoreHandlerType) VisitEndpoint(
 	hostName := endpoint.App.EP.HostName()
 	appName := endpoint.App.EP.AppName()
 	region := endpoint.M.Region
+	ipAddress := endpoint.M.IpAddress
 	iterator, iteratorData := p.namedIterator(theStore, endpoint.App.EP)
 	if p.maybeNilCoord != nil {
 		// aMetricStore from the consumer exposes the same filtering that
@@ -248,6 +249,9 @@ func (p *pstoreHandlerType) VisitEndpoint(
 	tagGroup := pstore.TagGroup{pstore.TagAppName: appName}
 	if region != "" {
 		tagGroup[pstore.TagRegionName] = region
+	}
+	if ipAddress != "" {
+		tagGroup[pstore.TagIpAddress] = ipAddress
 	}
 	p.consumer.Write(iterator, hostName, tagGroup)
 	if iteratorData.RemainingValueInSeconds > p.secondsBehind {

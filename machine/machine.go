@@ -72,6 +72,7 @@ func (e *EndpointStore) _updateMachines(
 			if ahost.AwsMetadata != nil {
 				m.M.Region = ahost.AwsMetadata.Region
 			}
+			m.M.IpAddress = ahost.IpAddress
 			var ep *scotty.Endpoint
 			m.Group, ep = application.NewGroup(
 				&hostid.HostID{

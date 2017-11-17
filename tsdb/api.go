@@ -39,9 +39,10 @@ func (t TimeSeries) MarshalJSON() ([]byte, error) {
 
 // TagSet represents a set of tsdb tags for time series in scotty.
 type TagSet struct {
-	HostName string
-	AppName  string
-	Region   string
+	HostName  string
+	AppName   string
+	Region    string
+	IpAddress string
 }
 
 // TaggedTimeSeries represents a single tagged timeSeries.
@@ -62,6 +63,8 @@ type TaggedTimeSeriesSet struct {
 	GroupedByAppName bool
 	// If true, Data is grouped by the "region" tag
 	GroupedByRegion bool
+	// If true, data is grouped by the "ipaddress" tag
+	GroupedByIpAddress bool
 }
 
 // Aggregator aggregates time series together.

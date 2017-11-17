@@ -155,14 +155,6 @@ func (h gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.H.ServeHTTP(gzr, r)
 }
 
-func hostNames(machines []mdb.Machine) (result []string) {
-	result = make([]string, len(machines))
-	for i := range machines {
-		result[i] = machines[i].Hostname
-	}
-	return
-}
-
 func loadTestMdbChannel(count int) <-chan *mdb.Mdb {
 	machines := make([]mdb.Machine, count)
 	for i := range machines {
@@ -240,8 +232,9 @@ func createEndpointStore(
 		machines = &mdb.Mdb{}
 		logger.Println("No mdb available.")
 	}
-	for _, aName := range hostNames(machines.Machines) {
-		tagvAdder.Add(aName)
+	for _, machine := range machines.Machines {
+		tagvAdder.Add(machine.Hostname)
+		tagvAdder.Add(machine.IpAddress)
 	}
 	myHostNameStr := getMyHostName(machines.Machines, myIpAddrs)
 	if myHostNameStr == "" {
@@ -468,7 +461,7 @@ func main() {
 	maybeNilMemoryManager := maybeCreateMemoryManager(logger)
 	metricNameEngine := suggest.NewEngine()
 	metricNameAdder := newTsdbAdder(metricNameEngine)
-	tagkEngine := suggest.NewSuggester("appname", "HostName", "region")
+	tagkEngine := suggest.NewSuggester("appname", "HostName", "region", "ipaddress")
 	tagvEngine := suggest.NewEngine()
 	tagvAdder := newTsdbAdder(tagvEngine)
 	// TODO: Fix this somehow to include all apps

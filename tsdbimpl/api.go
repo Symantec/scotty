@@ -24,12 +24,16 @@ type QueryOptions struct {
 	AppNameFilter tsdb.TagFilter
 	// Filter for "region" tag value. Optional
 	RegionFilter tsdb.TagFilter
+	// Filter for "ipaddress" tag value. Optional
+	IpAddressFilter tsdb.TagFilter
 	// True if results should be grouped by "HostName" tag
 	GroupByHostName bool
 	// True if results should be groupd by "appname" tag.
 	GroupByAppName bool
 	// True if results should be grouped by region
 	GroupByRegion bool
+	// True if results should be grouped by ip address
+	GroupByIpAddress bool
 }
 
 // Query queries scotty for given tsdb query.

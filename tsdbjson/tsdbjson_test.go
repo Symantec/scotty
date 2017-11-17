@@ -256,6 +256,12 @@ func TestParseQueryRequest(t *testing.T) {
 						Filter:  "some_20Region",
 						GroupBy: true,
 					},
+					{
+						Type:    "literal_or",
+						Tagk:    "ipaddress",
+						Filter:  "some_20IpAddress",
+						GroupBy: true,
+					},
 				},
 			},
 			{
@@ -306,8 +312,13 @@ func TestParseQueryRequest(t *testing.T) {
 					Type:  "literal_or",
 					Value: "some_20Region",
 				},
-				GroupByHostName: true,
-				GroupByRegion:   true,
+				IpAddressFilter: &tsdbjson.FilterSpec{
+					Type:  "literal_or",
+					Value: "some_20IpAddress",
+				},
+				GroupByHostName:  true,
+				GroupByRegion:    true,
+				GroupByIpAddress: true,
 			},
 		},
 		{

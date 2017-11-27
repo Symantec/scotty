@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	kInfluxHost    = "host"
-	kInfluxAppName = "appname"
-	kInfluxRegion  = "region"
+	kInfluxHost      = "host"
+	kInfluxAppName   = "appname"
+	kInfluxRegion    = "region"
+	kInfluxIpAddress = "ipaddress"
 )
 
 type tsdbAggSpecType struct {
@@ -234,6 +235,8 @@ func parseGroupByClause(
 			options.GroupByAppName = true
 		case kInfluxRegion:
 			options.GroupByRegion = true
+		case kInfluxIpAddress:
+			options.GroupByIpAddress = true
 		}
 	}
 	return dur, nil
@@ -304,6 +307,15 @@ func parseWCEqual(
 			return ErrUnsupported
 		}
 		options.RegionFilter = &tsdbjson.FilterSpec{
+			Type:  "literal_or",
+			Value: lit.Val,
+		}
+		return nil
+	case kInfluxIpAddress:
+		if options.IpAddressFilter != nil {
+			return ErrUnsupported
+		}
+		options.IpAddressFilter = &tsdbjson.FilterSpec{
 			Type:  "literal_or",
 			Value: lit.Val,
 		}

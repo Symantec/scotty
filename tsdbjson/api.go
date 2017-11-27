@@ -17,6 +17,8 @@ const (
 	AppName = "appname"
 	// Region tag name
 	Region = "region"
+	// IpAddress tag name
+	IpAddress = "ipaddress"
 )
 
 var (
@@ -140,12 +142,16 @@ type ParsedQueryOptions struct {
 	AppNameFilter *FilterSpec
 	// Optional filter on region
 	RegionFilter *FilterSpec
+	// Optional filter on ipaddress
+	IpAddressFilter *FilterSpec
 	// True if results should be grouped by host name
 	GroupByHostName bool
 	// True if results should be grouped by application name
 	GroupByAppName bool
 	// True if results should be grouped by region
 	GroupByRegion bool
+	// True if results should be grouped by ip address
+	GroupByIpAddress bool
 }
 
 // ParsedQuery represents a single query in a parsed /api/query request

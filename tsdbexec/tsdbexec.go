@@ -137,9 +137,15 @@ func runSingleParsedQuery(
 	if err != nil {
 		return
 	}
+	options.IpAddressFilter, err = newTagFilter(
+		request.Options.IpAddressFilter)
+	if err != nil {
+		return
+	}
 	options.GroupByAppName = request.Options.GroupByAppName
 	options.GroupByHostName = request.Options.GroupByHostName
 	options.GroupByRegion = request.Options.GroupByRegion
+	options.GroupByIpAddress = request.Options.GroupByIpAddress
 	if request.Aggregator.DownSample == nil {
 		return nil, tsdbjson.ErrUnsupportedAggregator
 	}

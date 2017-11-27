@@ -64,6 +64,9 @@ type Machine struct {
 	// The region of the machine
 	Region string
 
+	// The IP address of the machine
+	IpAddress string
+
 	// Whether or not machine is active
 	Active bool
 

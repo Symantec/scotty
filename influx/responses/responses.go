@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	kInfluxHostName = "host"
-	kInfluxAppName  = "appname"
+	kInfluxHostName  = "host"
+	kInfluxAppName   = "appname"
+	kInfluxRegion    = "region"
+	kInfluxIpAddress = "ipaddress"
 )
 
 var (
@@ -100,6 +102,12 @@ func fromTaggedTimeSeriesSet(
 		}
 		if seriesSet.GroupedByAppName {
 			tags[kInfluxAppName] = series.Tags.AppName
+		}
+		if seriesSet.GroupedByRegion {
+			tags[kInfluxRegion] = series.Tags.Region
+		}
+		if seriesSet.GroupedByIpAddress {
+			tags[kInfluxIpAddress] = series.Tags.IpAddress
 		}
 		downSample := pq.Aggregator.DownSample
 		var values [][]interface{}

@@ -23,7 +23,8 @@ func TestAPI(t *testing.T) {
 			100.0,
 			[]mdb.Machine{
 				{
-					Hostname: "host1",
+					Hostname:  "host1",
+					IpAddress: "10.1.1.1",
 					AwsMetadata: &mdb.AwsMetadata{
 						AccountId:   "12345",
 						AccountName: "prod",
@@ -32,7 +33,8 @@ func TestAPI(t *testing.T) {
 					},
 				},
 				{
-					Hostname: "host2",
+					Hostname:  "host2",
+					IpAddress: "10.1.1.2",
 					AwsMetadata: &mdb.AwsMetadata{
 						AccountId:   "67890",
 						AccountName: "dev",
@@ -49,6 +51,7 @@ func TestAPI(t *testing.T) {
 		healthAgent1, store := endpointStore.ByHostAndName(
 			"host1", application.HealthAgentName)
 		So(healthAgent1.M.Host, ShouldEqual, "host1")
+		So(healthAgent1.M.IpAddress, ShouldEqual, "10.1.1.1")
 		So(healthAgent1.M.Active, ShouldBeTrue)
 		So(healthAgent1.M.Region, ShouldEqual, "us-east-1")
 		So(healthAgent1.M.Aws.AccountId, ShouldEqual, "12345")
@@ -62,6 +65,7 @@ func TestAPI(t *testing.T) {
 		healthAgent2, store := endpointStore.ByHostAndName(
 			"host2", application.HealthAgentName)
 		So(healthAgent2.M.Host, ShouldEqual, "host2")
+		So(healthAgent2.M.IpAddress, ShouldEqual, "10.1.1.2")
 		So(healthAgent2.M.Active, ShouldBeTrue)
 		So(healthAgent2.M.Region, ShouldEqual, "us-west-2")
 		So(healthAgent2.M.Aws.AccountId, ShouldEqual, "67890")

@@ -36,6 +36,9 @@ func (c Config) getAwsInfo(aws *mdb.AwsMetadata) *AwsInfo {
 			if err != nil {
 				result.CloudWatch = c.CloudWatchRefresh
 			}
+		} else {
+			result.CloudWatch = c.CloudWatchRefresh
+			result.CloudWatchMemoryOnly = true
 		}
 	}
 	return &result

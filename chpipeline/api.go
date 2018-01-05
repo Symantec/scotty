@@ -65,6 +65,12 @@ func (s InstanceStats) WithCombinedFsStats() InstanceStats {
 	return s
 }
 
+// ClearNonMemory clears the non memory related stats in place.
+func (s *InstanceStats) ClearNonMemory() {
+	s.UserTimeFraction.Ok = false
+	s.Fss = nil
+}
+
 // CombineFsStats combines the file system stats of this instance in
 // place using the CombineFsStats() function.
 func (s *InstanceStats) CombineFsStats() {

@@ -247,6 +247,9 @@ func (l *loggerType) LogResponse(
 				stats.CombineFsStats()
 				statsOk = true
 			}
+			if l.App.M.Aws != nil && l.App.M.Aws.CloudWatchMemoryOnly {
+				stats.ClearNonMemory()
+			}
 			if !cwRollup.TimeOk(stats.Ts) {
 				l.CloudWatchChannel.Send(chpipeline.AgedSnapshot{
 					Ts:       time.Now(),

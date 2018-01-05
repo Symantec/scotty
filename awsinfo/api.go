@@ -26,6 +26,9 @@ type AwsInfo struct {
 	// How often scotty is to write health-agent data to cloud watch. 0
 	// means don't write to cloud watch.
 	CloudWatch time.Duration
+
+	// If true, write only memory stats to cloud watch for this instance
+	CloudWatchMemoryOnly bool
 }
 
 // Config represents scotty configuration for AWS

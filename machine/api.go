@@ -107,6 +107,9 @@ func (m *Machine) CloudHealth() bool {
 // data should be written to cloud watch.
 func (m *Machine) CloudWatchStr() string {
 	if m.Aws != nil && m.Aws.CloudWatch != 0 {
+		if m.Aws.CloudWatchMemoryOnly {
+			return m.Aws.CloudWatch.String() + "M"
+		}
 		return m.Aws.CloudWatch.String()
 	}
 	return ""

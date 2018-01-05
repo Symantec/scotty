@@ -25,7 +25,8 @@ func TestAwsInfo(t *testing.T) {
 			So(info.InstanceId, ShouldEqual, "i-456")
 			So(info.Region, ShouldEqual, "us-east-1")
 			So(info.CloudHealth, ShouldBeTrue)
-			So(info.CloudWatch, ShouldEqual, 0)
+			So(info.CloudWatch, ShouldEqual, 5*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeTrue)
 		})
 		Convey("cloud watch machine default rate", func() {
 			aws := &mdb.AwsMetadata{
@@ -36,6 +37,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeTrue)
 			So(info.CloudWatch, ShouldEqual, 5*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 		Convey("cloud watch machine rate too small", func() {
 			aws := &mdb.AwsMetadata{
@@ -46,6 +48,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeTrue)
 			So(info.CloudWatch, ShouldEqual, 5*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 		Convey("cloud watch machine special rate", func() {
 			aws := &mdb.AwsMetadata{
@@ -56,6 +59,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeTrue)
 			So(info.CloudWatch, ShouldEqual, 3*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 		Convey("cloud watch test machine", func() {
 			aws := &mdb.AwsMetadata{
@@ -78,6 +82,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeFalse)
 			So(info.CloudWatch, ShouldEqual, 3*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 	})
 	Convey("Cloud health test mode", t, func() {
@@ -103,6 +108,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeTrue)
 			So(info.CloudWatch, ShouldEqual, 3*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 	})
 	Convey("Cloud watch test mode", t, func() {
@@ -117,6 +123,7 @@ func TestAwsInfo(t *testing.T) {
 			info := config.GetAwsInfo(aws)
 			So(info.CloudHealth, ShouldBeTrue)
 			So(info.CloudWatch, ShouldEqual, 3*time.Minute)
+			So(info.CloudWatchMemoryOnly, ShouldBeFalse)
 		})
 		Convey("cloud health test machine", func() {
 			aws := &mdb.AwsMetadata{

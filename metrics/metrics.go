@@ -4,14 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Symantec/scotty/namesandports"
+	"github.com/Symantec/tricorder/go/tricorder/duration"
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"sort"
 	"strings"
 	"time"
-)
-
-var (
-	errGroupId = errors.New("metrics: Conflicting Timestamps for group Id.")
 )
 
 var (
@@ -242,8 +239,15 @@ func verifyList(list List) error {
 			lastTs, ok := groupIdToTimeStamp[value.GroupId]
 			if !ok {
 				groupIdToTimeStamp[value.GroupId] = value.TimeStamp
-			} else if value.TimeStamp != lastTs {
-				return errGroupId
+			} else if !value.TimeStamp.Equal(lastTs) {
+				return fmt.Errorf(
+					"Conflicting timestamps for group %d: %s and %s; %v and %v",
+					value.GroupId,
+					duration.SinceEpoch(lastTs).String(),
+					duration.SinceEpoch(value.TimeStamp).String(),
+					lastTs,
+					value.TimeStamp,
+				)
 			}
 		}
 	}

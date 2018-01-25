@@ -4,9 +4,33 @@ package trimetrics
 
 import (
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"sync"
 	"time"
 )
+
+type SlidingSuccessCounter struct {
+	now time.Time
+}
+
+func NewSlidingSuccessCounter() *SlidingSuccessCounter {
+	return &SlidingSuccessCounter{now: time.Now()}
+}
+
+func (s *SlidingSuccessCounter) Add(total, success uint64) {
+}
+
+func (s *SlidingSuccessCounter) Elapsed() int64 {
+	return int64(time.Since(s.now) / time.Second)
+}
+
+func (s *SlidingSuccessCounter) Register(path string) error {
+	return tricorder.RegisterMetric(
+		path,
+		s.Elapsed,
+		units.Second,
+		"time elapsed in seconds")
+}
 
 // Duration stores a time.Duration behind a mutex
 type Duration struct {

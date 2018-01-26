@@ -80,7 +80,7 @@ func (w *RecordWriterWithMetrics) logWrite(
 	batchSize uint, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
 	if w.WriteCount != nil {
-		w.WriteCount.Add(1, 1)
+		w.WriteCount.Inc(1, 1)
 	}
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -91,7 +91,7 @@ func (w *RecordWriterWithMetrics) logWriteError(
 	batchSize uint, err error, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
 	if w.WriteCount != nil {
-		w.WriteCount.Add(1, 0)
+		w.WriteCount.Inc(1, 0)
 	}
 	w.Logger.Printf("Error writing to persistent store: %v", err)
 	w.lock.Lock()

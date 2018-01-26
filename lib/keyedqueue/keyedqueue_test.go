@@ -46,9 +46,11 @@ func TestQueue(t *testing.T) {
 
 			Convey("A,B,C,D removed", func() {
 				So(queue.Len(), ShouldEqual, 4)
+				So(queue.Peek().(*element).K, ShouldEqual, "A")
 				So(queue.Remove().(*element).K, ShouldEqual, "A")
 				So(queue.Remove().(*element).K, ShouldEqual, "B")
 				So(queue.Remove().(*element).K, ShouldEqual, "C")
+				So(queue.Peek().(*element).K, ShouldEqual, "D")
 				So(queue.Remove().(*element).K, ShouldEqual, "D")
 				So(queue.Len(), ShouldEqual, 0)
 			})

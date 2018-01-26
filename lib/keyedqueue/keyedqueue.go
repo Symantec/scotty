@@ -30,3 +30,12 @@ func (q *Queue) remove() Element {
 	delete(q.byKey, removedElement.Key())
 	return removedElement
 }
+
+func (q *Queue) peek() Element {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+	for q.queue.Len() == 0 {
+		q.elementsOn.Wait()
+	}
+	return q.queue.Front().Value.(Element)
+}

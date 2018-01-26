@@ -322,7 +322,8 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		return
 	}
 	if err = p.writeCount.Register(
-		fmt.Sprintf("writer/%s/writeCount", p.Name())); err != nil {
+		fmt.Sprintf("writer/%s/writeCount", p.Name()),
+		"write count"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(

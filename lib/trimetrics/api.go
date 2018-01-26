@@ -4,32 +4,46 @@ package trimetrics
 
 import (
 	"github.com/Symantec/tricorder/go/tricorder"
-	"github.com/Symantec/tricorder/go/tricorder/units"
 	"sync"
 	"time"
 )
 
+// SlidingSuccessCounter tracks the total and success count of an event
+// over a period of one hour and 24 hours.
 type SlidingSuccessCounter struct {
-	now time.Time
+	mu          sync.Mutex
+	totalHour   ringCounterType
+	totalDay    ringCounterType
+	successHour ringCounterType
+	successDay  ringCounterType
 }
 
+// NewSlidingSuccessCounter returns a new instance.
 func NewSlidingSuccessCounter() *SlidingSuccessCounter {
-	return &SlidingSuccessCounter{now: time.Now()}
+	return newSlidingSuccessCounter()
 }
 
-func (s *SlidingSuccessCounter) Add(total, success uint64) {
+// Inc increments the total and success count of the event being tracked.
+// The events are assumed to have happened at time.Now()
+func (s *SlidingSuccessCounter) Inc(total, success int64) {
+	s.inc(total, success)
 }
 
-func (s *SlidingSuccessCounter) Elapsed() int64 {
-	return int64(time.Since(s.now) / time.Second)
-}
-
-func (s *SlidingSuccessCounter) Register(path string) error {
-	return tricorder.RegisterMetric(
-		path,
-		s.Elapsed,
-		units.Second,
-		"time elapsed in seconds")
+// Register ensures that the metrics this instance is tracking are being
+// published to the tricorder ecosystem. This method only needs to be called
+// once unless caller later uses the tricorder API to remove the published
+// metrics. path is the path for the metrics; desc is the description for
+// the metrics. This method publishes 6 metrics each with the following suffix
+// added to path.
+//
+// 	_ratio_1d - success/total over last 24 hours
+// 	_ratio_1h - success/total over last hour
+// 	_success_1d - success over last 24 hours
+// 	_success_1h - success over last 1 hour
+// 	_total_1d - total over last 24 hours
+// 	_total_1h - total over last 1 hour
+func (s *SlidingSuccessCounter) Register(path, desc string) error {
+	return s.register(path, desc)
 }
 
 // Duration stores a time.Duration behind a mutex

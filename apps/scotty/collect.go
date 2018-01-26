@@ -834,9 +834,16 @@ func startCisLoop(
 						lastSuccessfulWriteTime = time.Now()
 					}
 				}
-				totalWrites++
-				writeTimesDist.Add(time.Since(writeStartTime))
+				totalWrites += uint64(numWritten)
+				if numWritten > 0 {
+					timeElapsed := time.Since(writeStartTime)
+					timePerWrite := timeElapsed / time.Duration(numWritten)
+					for i := 0; i < numWritten; i++ {
+						writeTimesDist.Add(timePerWrite)
+					}
+				}
 			}
+			writeStartTime := time.Now()
 			numWritten, err := bulkCisClient.Flush()
 			if err != nil {
 				logger.Printf("Error writing to CIS: %v", err)
@@ -845,6 +852,14 @@ func startCisLoop(
 				successfulWrites += uint64(numWritten)
 				if numWritten > 0 {
 					lastSuccessfulWriteTime = time.Now()
+				}
+			}
+			totalWrites += uint64(numWritten)
+			if numWritten > 0 {
+				timeElapsed := time.Since(writeStartTime)
+				timePerWrite := timeElapsed / time.Duration(numWritten)
+				for i := 0; i < numWritten; i++ {
+					writeTimesDist.Add(timePerWrite)
 				}
 			}
 		}

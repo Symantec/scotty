@@ -129,16 +129,18 @@ func NewBuffered(size int, writer BulkWriter) *Buffered {
 	}
 }
 
-// Write buffers data. When size pieces of data are buffered, Write bulk
+// Write buffers data. When size pieces of data are buffered, Write
 // clears the buffer, and reports number of pieces written and any error.
 // When simply adding to the buffer instead of bulk writing, Write always
-// returns 0, nil.
+// returns 0, nil. Even on error, Write returns the number of pieces that
+// would have been written if there was no error.
 func (b *Buffered) Write(stats Stats) (int, error) {
 	return b.write(stats)
 }
 
 // Flush writes out the contents of the buffer, clears the buffer, and
-// returns number of pieces written and any error.
+// returns number of pieces written and any error. On error, Flush returns
+// the number of pieces that would have been written.
 func (b *Buffered) Flush() (int, error) {
 	return b.flush()
 }

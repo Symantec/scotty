@@ -25,6 +25,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder/types"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"io"
+	"math/rand"
 	"os"
 	"path"
 	"regexp"
@@ -61,7 +62,7 @@ var (
 		"CIS Buffer Size")
 	fCisSleep = flag.Duration(
 		"cisSleep",
-		0,
+		3*time.Hour,
 		"Sleep time between writes")
 )
 
@@ -798,9 +799,32 @@ func startCisLoop(
 	// CIS loop
 	go func() {
 		lastTimeStampByKey := make(map[interface{}]time.Time)
+		rndGen := rand.New(rand.NewSource(time.Now().UnixNano()))
 		for {
-			if cisQueue.Len() == 0 {
-				numWritten, err := bulkCisClient.Flush()
+
+			// Sleep a random time of 50% to 150% of desired sleep time
+			if *fCisSleep > 0 {
+				rnd := time.Duration(rndGen.Int63n(int64(*fCisSleep)) + 1)
+				time.Sleep(*fCisSleep/2 + rnd)
+			}
+
+			// Block until the queue is non-empty
+			cisQueue.Peek()
+
+			queueLength := cisQueue.Len()
+			for i := 0; i < queueLength; i++ {
+				stat := cisQueue.Remove().(*cis.Stats)
+				key := stat.Key()
+				if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
+					timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
+				} else {
+					// On first write, just use time elapsed since start of
+					// scotty
+					timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
+				}
+				lastTimeStampByKey[key] = stat.TimeStamp
+				writeStartTime := time.Now()
+				numWritten, err := bulkCisClient.Write(*stat)
 				if err != nil {
 					logger.Printf("Error writing to CIS: %v", err)
 					lastWriteError = err.Error()
@@ -810,22 +834,10 @@ func startCisLoop(
 						lastSuccessfulWriteTime = time.Now()
 					}
 				}
-				if *fCisSleep > 0 {
-					time.Sleep(*fCisSleep)
-				}
+				totalWrites++
+				writeTimesDist.Add(time.Since(writeStartTime))
 			}
-			stat := cisQueue.Remove().(*cis.Stats)
-			key := stat.Key()
-			if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
-				timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
-			} else {
-				// On first write, just use time elapsed since start of
-				// scotty
-				timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
-			}
-			lastTimeStampByKey[key] = stat.TimeStamp
-			writeStartTime := time.Now()
-			numWritten, err := bulkCisClient.Write(*stat)
+			numWritten, err := bulkCisClient.Flush()
 			if err != nil {
 				logger.Printf("Error writing to CIS: %v", err)
 				lastWriteError = err.Error()
@@ -835,8 +847,6 @@ func startCisLoop(
 					lastSuccessfulWriteTime = time.Now()
 				}
 			}
-			totalWrites++
-			writeTimesDist.Add(time.Since(writeStartTime))
 		}
 	}()
 }

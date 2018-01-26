@@ -50,3 +50,9 @@ func (q *Queue) Add(elementToAdd Element) {
 func (q *Queue) Remove() Element {
 	return q.remove()
 }
+
+// Peek returns the element at the front of the queue without removing it.
+// If queue is empty, Peek blocks.
+func (q *Queue) Peek() Element {
+	return q.peek()
+}

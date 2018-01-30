@@ -24,7 +24,7 @@ func (b *Buffered) _flush() (int, error) {
 	result := b.writer.WriteAll(b.statsList)
 	b.statsList = b.statsList[:0]
 	if result != nil {
-		return 0, result
+		return l, result
 	}
 	return l, nil
 }

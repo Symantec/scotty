@@ -59,10 +59,6 @@ var (
 		"cisBufferSize",
 		40,
 		"CIS Buffer Size")
-	fCisSleep = flag.Duration(
-		"cisSleep",
-		0,
-		"Sleep time between writes")
 )
 
 // toInstanceMap converts a slice of instanceIds to a map of instanceIds.
@@ -800,6 +796,7 @@ func startCisLoop(
 		lastTimeStampByKey := make(map[interface{}]time.Time)
 		for {
 			if cisQueue.Len() == 0 {
+				writeStartTime := time.Now()
 				numWritten, err := bulkCisClient.Flush()
 				if err != nil {
 					logger.Printf("Error writing to CIS: %v", err)
@@ -810,8 +807,13 @@ func startCisLoop(
 						lastSuccessfulWriteTime = time.Now()
 					}
 				}
-				if *fCisSleep > 0 {
-					time.Sleep(*fCisSleep)
+				totalWrites += uint64(numWritten)
+				if numWritten > 0 {
+					timeElapsed := time.Since(writeStartTime)
+					timePerWrite := timeElapsed / time.Duration(numWritten)
+					for i := 0; i < numWritten; i++ {
+						writeTimesDist.Add(timePerWrite)
+					}
 				}
 			}
 			stat := cisQueue.Remove().(*cis.Stats)
@@ -835,8 +837,14 @@ func startCisLoop(
 					lastSuccessfulWriteTime = time.Now()
 				}
 			}
-			totalWrites++
-			writeTimesDist.Add(time.Since(writeStartTime))
+			totalWrites += uint64(numWritten)
+			if numWritten > 0 {
+				timeElapsed := time.Since(writeStartTime)
+				timePerWrite := timeElapsed / time.Duration(numWritten)
+				for i := 0; i < numWritten; i++ {
+					writeTimesDist.Add(timePerWrite)
+				}
+			}
 		}
 	}()
 }

@@ -43,7 +43,8 @@ func (s *SlidingSuccessCounter) Inc(total, success int64) {
 // 	_total_1d - total over last 24 hours
 // 	_total_1h - total over last 1 hour
 func (s *SlidingSuccessCounter) Register(path, desc string) error {
-	return s.register(path, desc)
+	root, _ := tricorder.RegisterDirectory("/")
+	return s.registerUnder(root, path, desc)
 }
 
 // Duration stores a time.Duration behind a mutex
@@ -88,6 +89,7 @@ func (c *Counter) Inc(x uint64) {
 type WriterMetrics struct {
 	timeToWriteDist *tricorder.CumulativeDistribution
 	batchSizeDist   *tricorder.CumulativeDistribution
+	counter         *SlidingSuccessCounter
 	mu              sync.Mutex
 	singles         writerSingleMetricsType
 }

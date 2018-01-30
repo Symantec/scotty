@@ -56,6 +56,12 @@ func createDistributions(
 	return nil
 }
 
+func createCounter(
+	parentDir *tricorder.DirectorySpec, result *WriterMetrics) error {
+	result.counter = newSlidingSuccessCounter()
+	return result.counter.registerUnder(parentDir, "write", "writes")
+}
+
 func newWriterMetrics(parentPath string) (*WriterMetrics, error) {
 	parentDir, err := tricorder.RegisterDirectory(parentPath)
 	if err != nil {
@@ -64,6 +70,9 @@ func newWriterMetrics(parentPath string) (*WriterMetrics, error) {
 
 	result := &WriterMetrics{}
 	if err := createDistributions(parentDir, result); err != nil {
+		return nil, err
+	}
+	if err := createCounter(parentDir, result); err != nil {
 		return nil, err
 	}
 
@@ -104,6 +113,7 @@ func (w *WriterMetrics) logError(
 	elapsed time.Duration, numToWrite uint64, err error) {
 	w.timeToWriteDist.Add(elapsed)
 	w.batchSizeDist.Add(float64(numToWrite))
+	w.counter.Inc(int64(numToWrite), 0)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.singles.Total++
@@ -114,6 +124,7 @@ func (w *WriterMetrics) logError(
 func (w *WriterMetrics) logSuccess(elapsed time.Duration, numWritten uint64) {
 	w.timeToWriteDist.Add(elapsed)
 	w.batchSizeDist.Add(float64(numWritten))
+	w.counter.Inc(int64(numWritten), int64(numWritten))
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.singles.Total++

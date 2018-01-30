@@ -64,33 +64,35 @@ func (s *SlidingSuccessCounter) get(result *slidingSuccessCounterDataType) {
 	result.SuccessDay = s.successDay.Total(slot)
 }
 
-func (s *SlidingSuccessCounter) register(path, desc string) error {
+func (s *SlidingSuccessCounter) registerUnder(
+	dir *tricorder.DirectorySpec, path, desc string) error {
 	var data slidingSuccessCounterDataType
 	grp := tricorder.NewGroup()
 	grp.RegisterUpdateFunc(func() time.Time {
 		s.get(&data)
 		return time.Now()
 	})
-	if err := grp.RegisterMetric(
+	dg := tricorder.DirectoryGroup{Group: grp, Directory: dir}
+	if err := dg.RegisterMetric(
 		path+"_total_1h", &data.TotalHour, units.None, desc); err != nil {
 		return err
 	}
-	if err := grp.RegisterMetric(
+	if err := dg.RegisterMetric(
 		path+"_total_1d", &data.TotalDay, units.None, desc); err != nil {
 		return err
 	}
-	if err := grp.RegisterMetric(
+	if err := dg.RegisterMetric(
 		path+"_success_1h", &data.SuccessHour, units.None, desc); err != nil {
 		return err
 	}
-	if err := grp.RegisterMetric(
+	if err := dg.RegisterMetric(
 		path+"_success_1d", &data.SuccessDay, units.None, desc); err != nil {
 		return err
 	}
-	if err := grp.RegisterMetric(
+	if err := dg.RegisterMetric(
 		path+"_ratio_1h", data.SuccessRatioHour, units.None, desc); err != nil {
 		return err
 	}
-	return grp.RegisterMetric(
+	return dg.RegisterMetric(
 		path+"_ratio_1d", data.SuccessRatioDay, units.None, desc)
 }

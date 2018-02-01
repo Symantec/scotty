@@ -1,30 +1,28 @@
 package cis
 
-func (b *Buffered) write(stats Stats) (int, error) {
+func (b *Buffered) write(stats Stats) ([]Stats, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.statsList = append(b.statsList, stats)
 	if len(b.statsList) == cap(b.statsList) {
 		return b._flush()
 	}
-	return 0, nil
+	return nil, nil
 }
 
-func (b *Buffered) flush() (int, error) {
+func (b *Buffered) flush() ([]Stats, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b._flush()
 }
 
-func (b *Buffered) _flush() (int, error) {
+func (b *Buffered) _flush() ([]Stats, error) {
 	if len(b.statsList) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-	l := len(b.statsList)
-	result := b.writer.WriteAll(b.statsList)
+	result := make([]Stats, len(b.statsList))
+	copy(result, b.statsList)
+	err := b.writer.WriteAll(b.statsList)
 	b.statsList = b.statsList[:0]
-	if result != nil {
-		return 0, result
-	}
-	return l, nil
+	return result, err
 }

@@ -59,10 +59,6 @@ var (
 		"cisBufferSize",
 		40,
 		"CIS Buffer Size")
-	fCisSleep = flag.Duration(
-		"cisSleep",
-		0,
-		"Sleep time between writes")
 )
 
 // toInstanceMap converts a slice of instanceIds to a map of instanceIds.
@@ -754,14 +750,6 @@ func startCisLoop(
 		"Length of queue"); err != nil {
 		logger.Fatal(err)
 	}
-	timeBetweenWritesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
-	if err := tricorder.RegisterMetric(
-		"cis/timeBetweenWrites",
-		timeBetweenWritesDist,
-		units.Second,
-		"elapsed time between CIS updates"); err != nil {
-		logger.Fatal(err)
-	}
 	writeTimesDist := tricorder.NewGeometricBucketer(1, 100000.0).NewCumulativeDistribution()
 	if err := tricorder.RegisterMetric(
 		"cis/writeTimes",
@@ -797,46 +785,80 @@ func startCisLoop(
 
 	// CIS loop
 	go func() {
-		lastTimeStampByKey := make(map[interface{}]time.Time)
+		// Last package data written keyed by instance id
+		lastWrittenByKey := make(map[interface{}]cis.Stats)
+
 		for {
+			// If queue is empty, take time to flush the writer
 			if cisQueue.Len() == 0 {
-				numWritten, err := bulkCisClient.Flush()
+				writeStartTime := time.Now()
+				statsWritten, err := bulkCisClient.Flush()
+				numWritten := len(statsWritten)
 				if err != nil {
 					logger.Printf("Error writing to CIS: %v", err)
 					lastWriteError = err.Error()
 				} else {
 					successfulWrites += uint64(numWritten)
+
+					// Update what was last written
+					updateLastWrittenByKey(statsWritten, lastWrittenByKey)
 					if numWritten > 0 {
 						lastSuccessfulWriteTime = time.Now()
 					}
 				}
-				if *fCisSleep > 0 {
-					time.Sleep(*fCisSleep)
+
+				// Update total writes and time spent per write
+				totalWrites += uint64(numWritten)
+				if numWritten > 0 {
+					timeElapsed := time.Since(writeStartTime)
+					timePerWrite := timeElapsed / time.Duration(numWritten)
+					for i := 0; i < numWritten; i++ {
+						writeTimesDist.Add(timePerWrite)
+					}
 				}
 			}
+			// Get next piece to write off queue
 			stat := cisQueue.Remove().(*cis.Stats)
 			key := stat.Key()
-			if lastTimeStamp, ok := lastTimeStampByKey[key]; ok {
-				timeBetweenWritesDist.Add(stat.TimeStamp.Sub(lastTimeStamp))
-			} else {
-				// On first write, just use time elapsed since start of
-				// scotty
-				timeBetweenWritesDist.Add(time.Now().Sub(programStartTime))
+
+			// If what was pulled of the queue for an instance matches what
+			// was last written for that instance, skip writing it.
+			lastWritten, lastWrittenOk := lastWrittenByKey[key]
+			if lastWrittenOk && lastWritten.Packages.Equals(&stat.Packages) {
+				continue
 			}
-			lastTimeStampByKey[key] = stat.TimeStamp
 			writeStartTime := time.Now()
-			numWritten, err := bulkCisClient.Write(*stat)
+			statsWritten, err := bulkCisClient.Write(*stat)
+			numWritten := len(statsWritten)
 			if err != nil {
 				logger.Printf("Error writing to CIS: %v", err)
 				lastWriteError = err.Error()
 			} else {
 				successfulWrites += uint64(numWritten)
+
+				// Update what was last written
+				updateLastWrittenByKey(statsWritten, lastWrittenByKey)
 				if numWritten > 0 {
 					lastSuccessfulWriteTime = time.Now()
 				}
 			}
-			totalWrites++
-			writeTimesDist.Add(time.Since(writeStartTime))
+
+			// Update total writes and time spent per write.
+			totalWrites += uint64(numWritten)
+			if numWritten > 0 {
+				timeElapsed := time.Since(writeStartTime)
+				timePerWrite := timeElapsed / time.Duration(numWritten)
+				for i := 0; i < numWritten; i++ {
+					writeTimesDist.Add(timePerWrite)
+				}
+			}
 		}
 	}()
+}
+
+func updateLastWrittenByKey(
+	records []cis.Stats, lastWrittenByKey map[interface{}]cis.Stats) {
+	for _, record := range records {
+		lastWrittenByKey[record.Key()] = record
+	}
 }

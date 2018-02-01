@@ -10,6 +10,7 @@ import (
 )
 
 // PackageEntry represents a single package on a machine
+// This type should support ==
 type PackageEntry struct {
 	// Package name e.g python3.4
 	Name string
@@ -25,6 +26,11 @@ type PackageInfo struct {
 	ManagementType string
 	// The individual packages
 	Packages []PackageEntry
+}
+
+// Equals returns true if p is equivalent to rhs.
+func (p *PackageInfo) Equals(rhs *PackageInfo) bool {
+	return p.equals(rhs)
 }
 
 // Stats represents fetching package data for a machine
@@ -130,15 +136,17 @@ func NewBuffered(size int, writer BulkWriter) *Buffered {
 }
 
 // Write buffers data. When size pieces of data are buffered, Write bulk
-// clears the buffer, and reports number of pieces written and any error.
+// clears the buffer, and returns the pieces written or the pieces that would
+// have been written if there was any error.
 // When simply adding to the buffer instead of bulk writing, Write always
-// returns 0, nil.
-func (b *Buffered) Write(stats Stats) (int, error) {
+// returns nil, nil.
+func (b *Buffered) Write(stats Stats) ([]Stats, error) {
 	return b.write(stats)
 }
 
 // Flush writes out the contents of the buffer, clears the buffer, and
-// returns number of pieces written and any error.
-func (b *Buffered) Flush() (int, error) {
+// returns the pieces written or the pieces that would have been written
+// if there was any error.
+func (b *Buffered) Flush() ([]Stats, error) {
 	return b.flush()
 }

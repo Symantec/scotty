@@ -93,3 +93,18 @@ func getStats(list metrics.List, optInstanceId string) *Stats {
 	}
 	return &result
 }
+
+func (p *PackageInfo) equals(rhs *PackageInfo) bool {
+	if p.ManagementType != rhs.ManagementType {
+		return false
+	}
+	if len(p.Packages) != len(rhs.Packages) {
+		return false
+	}
+	for i := range p.Packages {
+		if p.Packages[i] != rhs.Packages[i] {
+			return false
+		}
+	}
+	return true
+}

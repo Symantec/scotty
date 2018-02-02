@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	"github.com/Symantec/scotty/lib/gate"
+	"github.com/Symantec/scotty/lib/trimetrics"
 	"github.com/Symantec/scotty/machine"
 	"github.com/Symantec/scotty/pstore"
 	"github.com/Symantec/scotty/pstore/config"
@@ -153,6 +154,7 @@ type pstoreHandlerType struct {
 	percentCaughtUp     store.FloatVar
 	totalTimeSpentDist  *tricorder.CumulativeDistribution
 	perMetricWriteTimes *tricorder.CumulativeDistribution
+	writeCount          *trimetrics.SlidingSuccessCounter
 	visitorMetricsStore *visitorMetricsStoreType
 	maybeNilCoord       store.Coordinator
 }
@@ -168,19 +170,22 @@ type coordinatorBuilderType interface {
 	WatchPStoreConfig(done <-chan struct{}) <-chan string
 }
 
-// appList converts port numbers to application names.
 // consumer is what builds the consumer to write to the pstore
 // perMetricWriteTimes is the distribution to where write speeds get
-// recorded. totalTimeSpentDist is the distribution to where total time spent
+// recorded.
+// writeCount keeps track of write successes and failures over periods of time.
+// totalTimeSpentDist is the distribution to where total time spent
 // doing one cycle of writing out the scotty store gets recorded. If
 // maybeNilCoordBuilder is not nil, it arranges to acquire a lease from
 // consul before any writing happens.
 func newPStoreHandler(
 	consumer *pstore.ConsumerWithMetricsBuilder,
 	perMetricWriteTimes *tricorder.CumulativeDistribution,
+	writeCount *trimetrics.SlidingSuccessCounter,
 	totalTimeSpentDist *tricorder.CumulativeDistribution,
 	maybeNilCoordBuilder coordinatorBuilderType) *pstoreHandlerType {
 	consumer.SetPerMetricWriteTimeDist(perMetricWriteTimes)
+	consumer.SetWriteCount(writeCount)
 	visitorMetricsStore := newVisitorMetricsStoreType()
 	var maybeNilCoord store.Coordinator
 	if maybeNilCoordBuilder != nil {
@@ -191,6 +196,7 @@ func newPStoreHandler(
 		consumer:            consumer.Build(),
 		totalTimeSpentDist:  totalTimeSpentDist,
 		perMetricWriteTimes: perMetricWriteTimes,
+		writeCount:          writeCount,
 		visitorMetricsStore: visitorMetricsStore,
 		maybeNilCoord:       maybeNilCoord,
 	}
@@ -313,6 +319,11 @@ func (p *pstoreHandlerType) RegisterMetrics() (err error) {
 		p.perMetricWriteTimes,
 		units.Millisecond,
 		"Time spent writing each metric"); err != nil {
+		return
+	}
+	if err = p.writeCount.Register(
+		fmt.Sprintf("writer/%s/writeCount", p.Name()),
+		"write count"); err != nil {
 		return
 	}
 	if err = tricorder.RegisterMetric(
@@ -512,18 +523,22 @@ func newPStoreRunner(
 	logger log.Logger) *pstoreRunnerType {
 	var perMetricWriteTimes *tricorder.CumulativeDistribution
 	var totalTimeSpentDist *tricorder.CumulativeDistribution
+	var writeCount *trimetrics.SlidingSuccessCounter
 	if maybeNilInAttrs != nil {
 		perMetricWriteTimes = maybeNilInAttrs.PerMetricWriteTimes
+		writeCount = maybeNilInAttrs.WriteCount
 		totalTimeSpentDist = maybeNilInAttrs.TotalTimeSpentDist
 		consumer.SetConsumerMetrics(&maybeNilInAttrs.ConsumerMetrics)
 	} else {
 		perMetricWriteTimes = kBucketer.NewCumulativeDistribution()
 		totalTimeSpentDist = kBucketer.NewCumulativeDistribution()
+		writeCount = trimetrics.NewSlidingSuccessCounter()
 	}
 	consumer.SetLogger(prefixlogger.New(consumer.Name()+": ", logger))
 	handler := newPStoreHandler(
 		consumer,
 		perMetricWriteTimes,
+		writeCount,
 		totalTimeSpentDist,
 		maybeNilCoordBuilder)
 	var attributes pstore.ConsumerAttributes

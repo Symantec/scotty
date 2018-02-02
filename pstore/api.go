@@ -8,6 +8,7 @@ import (
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/nulllogger"
 	"github.com/Symantec/scotty/lib/gate"
+	"github.com/Symantec/scotty/lib/trimetrics"
 	"github.com/Symantec/scotty/store"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/types"
@@ -129,6 +130,7 @@ type RecordWriterWithMetrics struct {
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
 	// Client populates this to collect batch sizes
 	BatchSizes      *tricorder.CumulativeDistribution
+	WriteCount      *trimetrics.SlidingSuccessCounter
 	Logger          log.Logger
 	criticalSection *gate.Gate
 	lock            sync.Mutex
@@ -380,6 +382,7 @@ type ConsumerAttributes struct {
 	MetricsToExclude    []*regexp.Regexp
 	BatchSizes          *tricorder.CumulativeDistribution
 	PerMetricWriteTimes *tricorder.CumulativeDistribution
+	WriteCount          *trimetrics.SlidingSuccessCounter
 }
 
 // WritesSameAs returns true if these consumer attributes would cause the
@@ -569,6 +572,11 @@ func (b *ConsumerWithMetricsBuilder) SetPerMetricWriteTimeDist(
 func (b *ConsumerWithMetricsBuilder) SetBatchSizeDist(
 	d *tricorder.CumulativeDistribution) {
 	b.c.attributes.BatchSizes = d
+}
+
+func (b *ConsumerWithMetricsBuilder) SetWriteCount(
+	counter *trimetrics.SlidingSuccessCounter) {
+	b.c.attributes.WriteCount = counter
 }
 
 // Attributes gets the attributes in this builder object

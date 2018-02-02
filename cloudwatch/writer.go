@@ -24,19 +24,17 @@ func newWriter(c Config) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	serviceClientsByAccount := make(
-		map[string]*serviceClientsType, len(c.Roles))
+	credentialsByAccount := make(
+		map[string]*credentials.Credentials, len(c.Roles))
 	for _, awsRole := range c.Roles {
-		creds := stscreds.NewCredentials(sess, awsRole.RoleArn)
-		cwService := cloudwatch.New(sess, &aws.Config{Credentials: creds})
-		serviceClients := &serviceClientsType{CloudWatch: cwService}
-		serviceClientsByAccount[awsRole.AccountNumber] = serviceClients
+		credentialsByAccount[awsRole.AccountNumber] = stscreds.NewCredentials(
+			sess, awsRole.RoleArn)
 	}
-	return &Writer{serviceClientsByAccount: serviceClientsByAccount}, nil
+	return &Writer{credentialsByAccount: credentialsByAccount, sess: sess}, nil
 }
 
 func (w *Writer) write(snapshot *chpipeline.Snapshot) error {
-	serviceClients, ok := w.serviceClientsByAccount[snapshot.AccountNumber]
+	creds, ok := w.credentialsByAccount[snapshot.AccountNumber]
 	if !ok {
 		return fmt.Errorf("Unrecognizsed account: %s", snapshot.AccountNumber)
 	}
@@ -45,7 +43,12 @@ func (w *Writer) write(snapshot *chpipeline.Snapshot) error {
 			"multiple file systems not supported. found %d",
 			len(snapshot.Fss))
 	}
-	_, err := serviceClients.CloudWatch.PutMetricData(
-		toPutMetricData(snapshot))
+	svc := cloudwatch.New(
+		w.sess,
+		&aws.Config{
+			Credentials: creds,
+			Region:      aws.String(snapshot.Region),
+		})
+	_, err := svc.PutMetricData(toPutMetricData(snapshot))
 	return err
 }

@@ -167,6 +167,7 @@ func (r *RollUpStats) takeSnapshot() *Snapshot {
 	return &Snapshot{
 		AccountNumber:     r.accountNumber,
 		InstanceId:        r.instanceId,
+		Region:            r.region,
 		Ts:                r.ts,
 		CpuUsedPercent:    r.cpuUsedPercent,
 		MemoryFreeBytes:   r.memoryFreeBytes,

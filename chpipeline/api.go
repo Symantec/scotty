@@ -125,6 +125,7 @@ func (c CloudHealthInstanceCall) Split() (
 type Snapshot struct {
 	AccountNumber     string
 	InstanceId        string
+	Region            string
 	Ts                time.Time
 	CpuUsedPercent    cloudhealth.FVariable
 	MemoryFreeBytes   cloudhealth.IVariable
@@ -226,6 +227,7 @@ func (a *AgedSnapshotListChannel) Overflows() uint64 {
 type RollUpStats struct {
 	accountNumber     string
 	instanceId        string
+	region            string
 	ts                time.Time
 	tsOk              bool
 	roundDuration     time.Duration
@@ -242,10 +244,12 @@ type RollUpStats struct {
 func NewRollUpStats(
 	accountNumber string,
 	instanceId string,
+	region string,
 	roundDuration time.Duration) *RollUpStats {
 	return &RollUpStats{
 		accountNumber: accountNumber,
 		instanceId:    instanceId,
+		region:        region,
 		roundDuration: roundDuration,
 		fss:           make(map[string]*rollUpFsStatsType)}
 }
@@ -255,6 +259,8 @@ func (r *RollUpStats) RoundDuration() time.Duration { return r.roundDuration }
 func (r *RollUpStats) AccountNumber() string { return r.accountNumber }
 
 func (r *RollUpStats) InstanceId() string { return r.instanceId }
+
+func (r *RollUpStats) Region() string { return r.region }
 
 // TimeOk returns true if time t is for the same time period as the other times
 // in this instancce.

@@ -783,6 +783,11 @@ func startCisLoop(
 		logger.Fatal(err)
 	}
 
+	writeCounter := trimetrics.NewSlidingSuccessCounter()
+	if err := writeCounter.Register("cis/write", "writes"); err != nil {
+		logger.Fatal(err)
+	}
+
 	// CIS loop
 	go func() {
 		// Last package data written keyed by instance id
@@ -797,8 +802,12 @@ func startCisLoop(
 				if err != nil {
 					logger.Printf("Error writing to CIS: %v", err)
 					lastWriteError = err.Error()
+					totalWrites += uint64(numWritten)
+					writeCounter.Inc(int64(numWritten), 0)
 				} else {
 					successfulWrites += uint64(numWritten)
+					totalWrites += uint64(numWritten)
+					writeCounter.Inc(int64(numWritten), int64(numWritten))
 
 					// Update what was last written
 					updateLastWrittenByKey(statsWritten, lastWrittenByKey)
@@ -806,9 +815,7 @@ func startCisLoop(
 						lastSuccessfulWriteTime = time.Now()
 					}
 				}
-
-				// Update total writes and time spent per write
-				totalWrites += uint64(numWritten)
+				// Update time spent per write
 				if numWritten > 0 {
 					timeElapsed := time.Since(writeStartTime)
 					timePerWrite := timeElapsed / time.Duration(numWritten)
@@ -833,8 +840,12 @@ func startCisLoop(
 			if err != nil {
 				logger.Printf("Error writing to CIS: %v", err)
 				lastWriteError = err.Error()
+				totalWrites += uint64(numWritten)
+				writeCounter.Inc(int64(numWritten), 0)
 			} else {
 				successfulWrites += uint64(numWritten)
+				totalWrites += uint64(numWritten)
+				writeCounter.Inc(int64(numWritten), int64(numWritten))
 
 				// Update what was last written
 				updateLastWrittenByKey(statsWritten, lastWrittenByKey)
@@ -843,8 +854,7 @@ func startCisLoop(
 				}
 			}
 
-			// Update total writes and time spent per write.
-			totalWrites += uint64(numWritten)
+			// Update time spent per write.
 			if numWritten > 0 {
 				timeElapsed := time.Since(writeStartTime)
 				timePerWrite := timeElapsed / time.Duration(numWritten)

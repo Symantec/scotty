@@ -30,6 +30,7 @@ func (e *EndpointData) updateForCloudHealth(
 		result.CHRollup = chpipeline.NewRollUpStats(
 			endpoint.M.Aws.AccountId,
 			endpoint.M.Aws.InstanceId,
+			endpoint.M.Region,
 			time.Hour)
 		result.CHStore = chpipeline.NewSnapshotStore(
 			*fCloudHealthPath,
@@ -63,6 +64,7 @@ func (e *EndpointData) updateForCloudWatch(
 			result.CWRollup = chpipeline.NewRollUpStats(
 				endpoint.M.Aws.AccountId,
 				endpoint.M.Aws.InstanceId,
+				endpoint.M.Region,
 				newCloudWatchRefresh)
 		}
 		return &result

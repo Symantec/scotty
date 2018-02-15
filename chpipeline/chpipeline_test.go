@@ -160,7 +160,7 @@ func TestFileSystemStats(t *testing.T) {
 func TestRollUp(t *testing.T) {
 	Convey("With file system stats", t, func() {
 		rollup := chpipeline.NewRollUpStats(
-			"accountNumber", "instanceId", time.Hour)
+			"accountNumber", "instanceId", "us-east-1", time.Hour)
 		stats1 := chpipeline.InstanceStats{
 			Ts: kToday.Add(13 * time.Hour).Add(31 * time.Minute),
 			UserTimeFraction: chpipeline.MaybeFloat64{

@@ -4,6 +4,8 @@ package cloudwatch
 import (
 	"github.com/Symantec/scotty/chpipeline"
 	"github.com/Symantec/scotty/lib/yamlutil"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
 )
 
 // AwsRole represents a single AwsRole in a config file
@@ -32,13 +34,19 @@ type Config struct {
 	// Omitting this is equivalent to specifying the "default" profile
 	SharedCredentialsProfile string `yaml:"sharedCredentialsProfile"`
 
-	// looks like "us-east-1", "us-west-2", etc.
+	// Not used anymore. Zeroed out when read.
 	Region string `yaml:"region"`
 }
 
 func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	type configFields Config
-	return yamlutil.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
+	err := yamlutil.StrictUnmarshalYAML(unmarshal, (*configFields)(c))
+	if err != nil {
+		return err
+	}
+	// Zero out region, we aren't using it anymore
+	c.Region = ""
+	return nil
 }
 
 func (c *Config) Reset() {
@@ -47,7 +55,8 @@ func (c *Config) Reset() {
 
 // A Writer instance writes cloudwatch data to AWS
 type Writer struct {
-	serviceClientsByAccount map[string]*serviceClientsType
+	credentialsByAccount map[string]*credentials.Credentials
+	sess                 *session.Session
 }
 
 func NewWriter(c Config) (*Writer, error) {

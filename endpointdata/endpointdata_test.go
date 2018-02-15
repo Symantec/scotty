@@ -55,6 +55,7 @@ func TestCloudHealth(t *testing.T) {
 	Convey("Non health agent endpoints skipped", t, func() {
 		endpoint := &machine.Endpoint{
 			M: &machine.Machine{
+				Region: "us-west-2",
 				Aws: &awsinfo.AwsInfo{
 					AccountId:   "12345",
 					InstanceId:  "i-12345",
@@ -72,6 +73,7 @@ func TestCloudHealth(t *testing.T) {
 		data = newData
 		So(data.CHRollup.InstanceId(), ShouldEqual, "i-12345")
 		So(data.CHRollup.AccountNumber(), ShouldEqual, "12345")
+		So(data.CHRollup.Region(), ShouldEqual, "us-west-2")
 		So(data.CHStore.HostName(), ShouldEqual, "host")
 		So(data.CHStore.AppName(), ShouldEqual, application.HealthAgentName)
 
@@ -95,6 +97,7 @@ func TestCloudWatch(t *testing.T) {
 	Convey("Non health agent endpoints skipped", t, func() {
 		endpoint := &machine.Endpoint{
 			M: &machine.Machine{
+				Region: "eu-central-1",
 				Aws: &awsinfo.AwsInfo{
 					AccountId:  "12345",
 					InstanceId: "i-12345",
@@ -111,6 +114,7 @@ func TestCloudWatch(t *testing.T) {
 		newData := data.UpdateForCloudWatch(endpoint)
 		So(newData, ShouldNotEqual, data)
 		data = newData
+		So(data.CWRollup.Region(), ShouldEqual, "eu-central-1")
 		So(data.CWRollup.InstanceId(), ShouldEqual, "i-12345")
 		So(data.CWRollup.AccountNumber(), ShouldEqual, "12345")
 		So(data.CWRollup.RoundDuration(), ShouldEqual, 4*time.Minute)

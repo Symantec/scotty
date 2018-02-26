@@ -156,6 +156,7 @@ type loggerType struct {
 	CloudWatchChannel     *chpipeline.AgedSnapshotChannel
 	EndpointData          *endpointdata.EndpointData
 	EndpointObservations  *machine.EndpointObservations
+	Logger                log.Logger
 }
 
 func (l *loggerType) LogStateChange(
@@ -220,7 +221,9 @@ func (l *loggerType) LogResponse(
 				snapshot := chRollup.TakeSnapshot()
 				chStore.Add(snapshot)
 				if err := chStore.Save(); err != nil {
-					return err
+					l.Logger.Printf(
+						"Error saving cloudhealth snapshots to disk: %v",
+						err)
 				}
 				if l.CloudHealthChannel != nil {
 					l.CloudHealthChannel.Send(chpipeline.AgedSnapshotList{
@@ -495,6 +498,7 @@ func startCollector(
 					CloudWatchChannel:     cloudWatchChannel,
 					EndpointData:          endpointData,
 					EndpointObservations:  endpointObservations,
+					Logger:                logger,
 				}
 
 				portNum := endpoint.App.Port

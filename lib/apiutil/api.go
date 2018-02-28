@@ -1,3 +1,4 @@
+// Package apiutil contains routines for creating API endpoints.
 package apiutil
 
 import (

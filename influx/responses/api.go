@@ -1,3 +1,4 @@
+// Package responses contains routines for handling influx ql result sets.
 package responses
 
 import (

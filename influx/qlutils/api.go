@@ -1,3 +1,4 @@
+// Package qlutils contains utilities for handling influx ql queries.
 package qlutils
 
 import (

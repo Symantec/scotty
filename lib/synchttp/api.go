@@ -1,3 +1,4 @@
+// Package synchttp writes JSON to an endpoint and waits for a response.
 package synchttp
 
 import (

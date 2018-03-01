@@ -1,3 +1,4 @@
+//Package cloudhealth contains routines for writing to cloud health
 package cloudhealth
 
 import (
@@ -10,7 +11,7 @@ const (
 	DefaultEndpoint = "https://chapi.cloudhealthtech.com/metrics/v1"
 )
 
-// FVariable represents a floating point cloudfire variable rolled up over
+// FVariable represents a floating point cloudhealth variable rolled up over
 // some amount of time
 type FVariable struct {
 	Count uint64
@@ -39,7 +40,7 @@ func (v FVariable) Avg() float64 {
 	return v.Sum / float64(v.Count)
 }
 
-// IVariable represents an integer cloudfire variable rolled up over
+// IVariable represents an integer cloudhealth variable rolled up over
 // some amount of time
 type IVariable struct {
 	Count uint64

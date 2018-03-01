@@ -1,3 +1,4 @@
+// Package retry allows multiple goroutines to function until it succeeds.
 package retry
 
 import (

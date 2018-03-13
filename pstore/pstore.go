@@ -79,6 +79,9 @@ func (w *RecordWriterWithMetrics) _metrics(m *RecordWriterMetrics) {
 func (w *RecordWriterWithMetrics) logWrite(
 	batchSize uint, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
+	if w.WriteCount != nil {
+		w.WriteCount.Inc(1, 1)
+	}
 	w.lock.Lock()
 	defer w.lock.Unlock()
 	w.metrics.logWrite(batchSize, timeTaken)
@@ -87,6 +90,9 @@ func (w *RecordWriterWithMetrics) logWrite(
 func (w *RecordWriterWithMetrics) logWriteError(
 	batchSize uint, err error, timeTaken time.Duration) {
 	w.logDistributions(batchSize, timeTaken)
+	if w.WriteCount != nil {
+		w.WriteCount.Inc(1, 0)
+	}
 	w.Logger.Printf("Error writing to persistent store: %v", err)
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -420,6 +426,7 @@ func (b *ConsumerWithMetricsBuilder) build() *ConsumerWithMetrics {
 	// fix up metrics
 	result.metricsStore.w.BatchSizes = result.attributes.BatchSizes
 	result.metricsStore.w.PerMetricWriteTimes = result.attributes.PerMetricWriteTimes
+	result.metricsStore.w.WriteCount = result.attributes.WriteCount
 	result.metricsStore.w.Logger = b.logger
 
 	result.metricsStore.SetMetrics(&b.metrics)
